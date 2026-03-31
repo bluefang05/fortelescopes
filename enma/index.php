@@ -775,45 +775,119 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         </section>
         <?php elseif ($activeTab === 'guides'): ?>
         <section class="box">
-            <h2>Guides Text Manager</h2>
-            <p class="muted">Edit key conversion copy for the three main guides without touching code.</p>
-            <form method="post">
-                <input type="hidden" name="action" value="save_guides_overrides">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <?php
-                $guideMeta = [
-                    'best-beginner-telescopes' => 'Best Beginner Telescopes',
-                    'best-telescope-accessories' => 'Best Telescope Accessories',
-                    'best-telescopes-under-500' => 'Best Telescopes Under $500',
-                ];
-                $fields = [
-                    'title' => 'Title',
-                    'description' => 'Meta Description / Intro Description',
-                    'intro' => 'Quick Answer Intro',
-                    'final_recommendation' => 'Final Recommendation',
-                    'cta_text' => 'CTA Button Text',
-                    'cta_note' => 'CTA Note',
-                ];
-                ?>
-                <?php foreach ($guideMeta as $slug => $label): ?>
-                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;background:#f9fbfe;">
-                        <h3 style="margin:0 0 10px;"><?= e($label) ?> <span class="muted">(<?= e($slug) ?>)</span></h3>
-                        <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
-                            <label><?= e($fieldLabel) ?></label>
-                            <?php
-                            $name = $slug . '__' . $fieldKey;
-                            $val = (string) ($guideOverrides[$slug][$fieldKey] ?? '');
-                            ?>
-                            <?php if (in_array($fieldKey, ['description', 'intro', 'final_recommendation', 'cta_note'], true)): ?>
-                                <textarea name="<?= e($name) ?>" rows="3" placeholder="Leave empty to keep default"><?= e($val) ?></textarea>
-                            <?php else: ?>
-                                <input type="text" name="<?= e($name) ?>" value="<?= e($val) ?>" placeholder="Leave empty to keep default">
-                            <?php endif; ?>
-                        <?php endforeach; ?>
+            <h2>Guides Manager</h2>
+            <p class="muted">Manage your astronomy buying guides. Preview guide content or edit key conversion copy.</p>
+            
+            <?php
+            $guideMode = $_GET['guide_mode'] ?? 'list';
+            $editingSlug = $_GET['edit'] ?? null;
+            ?>
+            
+            <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
+                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=list')) ?>" style="background:<?= $guideMode === 'list' ? '#0b1f3a' : '#e8edf3' ?>;color:<?= $guideMode === 'list' ? '#fff' : '#334155' ?>;">List View</a>
+                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit')) ?>" style="background:<?= $guideMode === 'edit' ? '#0b1f3a' : '#e8edf3' ?>;color:<?= $guideMode === 'edit' ? '#fff' : '#334155' ?>;">Edit All</a>
+                <?php if ($editingSlug): ?>
+                    <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit&edit=' . urlencode($editingSlug))) ?>" style="background:#0b1f3a;color:#fff;">Back to Editing</a>
+                <?php endif; ?>
+            </div>
+            
+            <?php if ($guideMode === 'list' && !$editingSlug): ?>
+                <h3 style="margin-top:0;">Available Guides</h3>
+                <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+                    <?php
+                    $guideList = [
+                        'best-beginner-telescopes' => [
+                            'title' => 'Best Beginner Telescopes',
+                            'summary' => 'A practical guide to choosing your first telescope: what matters, what to avoid, and which real models are easiest to start with.',
+                            'focus' => 'telescopes',
+                        ],
+                        'best-telescope-accessories' => [
+                            'title' => 'Best Telescope Accessories',
+                            'summary' => 'Actionable telescope upgrades for beginners to intermediate users: what to buy first, what to skip, and which accessories deliver real value.',
+                            'focus' => 'accessories',
+                        ],
+                        'best-telescopes-under-500' => [
+                            'title' => 'Best Telescopes Under $500',
+                            'summary' => 'A practical under-$500 telescope guide focused on real value, mount stability, and beginner-friendly performance.',
+                            'focus' => 'telescopes',
+                        ],
+                    ];
+                    
+                    foreach ($guideList as $slug => $info): 
+                        $override = $guideOverrides[$slug] ?? [];
+                    ?>
+                        <article style="border:1px solid #e2e8f0;border-radius:10px;padding:16px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);">
+                            <span class="badge" style="display:inline-block;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;background:#e8edf3;color:#0b1f3a;margin-bottom:8px;"><?= e($info['focus']) ?></span>
+                            <h4 style="margin:0 0 8px;font-size:18px;"><?= e($override['title'] ?? $info['title']) ?></h4>
+                            <p style="font-size:14px;color:#5b6678;margin:0 0 12px;line-height:1.5;"><?= e($override['description'] ?? $info['summary']) ?></p>
+                            
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit&edit=' . urlencode($slug))) ?>" style="padding:8px 12px;font-size:13px;">Edit This Guide</a>
+                                <a class="btn" href="<?= e(url('/' . $slug)) ?>" target="_blank" rel="noopener" style="padding:8px 12px;font-size:13px;background:#e8edf3;color:#334155;">View Live →</a>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+                
+                <h3 style="margin-top:24px;">Quick Stats</h3>
+                <div class="stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px;">
+                    <div class="stat" style="background:#f9fbfe;padding:12px;border-radius:8px;text-align:center;">
+                        <div class="stat-k" style="font-size:12px;color:#5b6678;text-transform:uppercase;">Total Guides</div>
+                        <div class="stat-v" style="font-size:24px;font-weight:700;color:#0b1f3a;">3</div>
                     </div>
-                <?php endforeach; ?>
-                <button class="btn" type="submit">Save Guide Text Overrides</button>
-            </form>
+                    <div class="stat" style="background:#f9fbfe;padding:12px;border-radius:8px;text-align:center;">
+                        <div class="stat-k" style="font-size:12px;color:#5b6678;text-transform:uppercase;">With Overrides</div>
+                        <div class="stat-v" style="font-size:24px;font-weight:700;color:#0b1f3a;"><?= count($guideOverrides) ?></div>
+                    </div>
+                </div>
+                
+            <?php elseif ($guideMode === 'edit' || $editingSlug): ?>
+                <h3 style="margin-top:0;"><?= $editingSlug ? 'Editing Guide' : 'Edit All Guides' ?></h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="save_guides_overrides">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <?php
+                    $guideMeta = [
+                        'best-beginner-telescopes' => 'Best Beginner Telescopes',
+                        'best-telescope-accessories' => 'Best Telescope Accessories',
+                        'best-telescopes-under-500' => 'Best Telescopes Under $500',
+                    ];
+                    $fields = [
+                        'title' => 'Title',
+                        'description' => 'Meta Description / Intro Description',
+                        'intro' => 'Quick Answer Intro',
+                        'final_recommendation' => 'Final Recommendation',
+                        'cta_text' => 'CTA Button Text',
+                        'cta_note' => 'CTA Note',
+                    ];
+                    
+                    foreach ($guideMeta as $slug => $label):
+                        if ($editingSlug && $editingSlug !== $slug) continue;
+                    ?>
+                        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;background:#f9fbfe;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <h4 style="margin:0;"><?= e($label) ?> <span class="muted">(<?= e($slug) ?>)</span></h4>
+                                <?php if ($editingSlug): ?>
+                                    <a href="<?= e(url('/enma/?tab=guides&guide_mode=edit')) ?>" style="font-size:13px;color:#0b1f3a;text-decoration:none;">← Edit All</a>
+                                <?php endif; ?>
+                            </div>
+                            <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
+                                <label><?= e($fieldLabel) ?></label>
+                                <?php
+                                $name = $slug . '__' . $fieldKey;
+                                $val = (string) ($guideOverrides[$slug][$fieldKey] ?? '');
+                                ?>
+                                <?php if (in_array($fieldKey, ['description', 'intro', 'final_recommendation', 'cta_note'], true)): ?>
+                                    <textarea name="<?= e($name) ?>" rows="3" placeholder="Leave empty to keep default"><?= e($val) ?></textarea>
+                                <?php else: ?>
+                                    <input type="text" name="<?= e($name) ?>" value="<?= e($val) ?>" placeholder="Leave empty to keep default">
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <button class="btn" type="submit"><?= $editingSlug ? 'Save This Guide' : 'Save All Guide Overrides' ?></button>
+                </form>
+            <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
