@@ -395,6 +395,94 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 }
 
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_product') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $id = (int) ($_POST['id'] ?? 0);
+        $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
+        $title = trim((string) ($_POST['title'] ?? ''));
+        $categoryName = trim((string) ($_POST['category_name'] ?? ''));
+        $price = trim((string) ($_POST['price_amount'] ?? ''));
+        $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
+        $description = trim((string) ($_POST['description'] ?? ''));
+        $keepImage = (string) ($_POST['keep_image'] ?? '');
+        
+        $uploadedImageUrl = enma_handle_image_upload('product_image', $errors);
+        
+        if ($id <= 0 || $asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
+            $errors[] = 'ID, ASIN, title, category and affiliate URL are required.';
+        }
+        if ($affiliateUrl !== '' && filter_var($affiliateUrl, FILTER_VALIDATE_URL) === false) {
+            $errors[] = 'Affiliate URL is not valid.';
+        }
+        if ($errors === []) {
+            $affiliateUrl = amazon_affiliate_url($affiliateUrl);
+        }
+        
+        if ($errors === []) {
+            $now = now_iso();
+            $imageClause = '';
+            $params = [
+                ':asin' => $asin,
+                ':title' => $title,
+                ':description' => $description,
+                ':category_slug' => slugify($categoryName),
+                ':category_name' => $categoryName,
+                ':price_amount' => is_numeric($price) ? (float) $price : null,
+                ':affiliate_url' => $affiliateUrl,
+                ':updated_at' => $now,
+                ':id' => $id,
+            ];
+            
+            if ($uploadedImageUrl !== null) {
+                $imageClause = ', image_url = :image_url';
+                $params[':image_url'] = $uploadedImageUrl;
+            } elseif ($keepImage === '0' || $keepImage === '') {
+                $imageClause = ', image_url = NULL';
+            }
+            
+            try {
+                $stmt = $pdo->prepare(
+                    'UPDATE products SET
+                        asin = :asin,
+                        title = :title,
+                        description = :description,
+                        category_slug = :category_slug,
+                        category_name = :category_name,
+                        price_amount = :price_amount,
+                        affiliate_url = :affiliate_url,
+                        updated_at = :updated_at' . $imageClause . '
+                     WHERE id = :id'
+                );
+                $stmt->execute($params);
+                $flash = 'Product updated successfully.';
+            } catch (Throwable $e) {
+                $errors[] = 'Update failed: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_product') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            $errors[] = 'Invalid product ID.';
+        } else {
+            try {
+                $stmt = $pdo->prepare('DELETE FROM products WHERE id = :id');
+                $stmt->execute([':id' => $id]);
+                $flash = 'Product deleted successfully.';
+            } catch (Throwable $e) {
+                $errors[] = 'Delete failed: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
 if (!in_array($activeTab, ['overview', 'products', 'guides', 'views', 'maintenance'], true)) {
     $activeTab = 'overview';
@@ -576,25 +664,110 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Image</th>
                         <th>ASIN</th>
                         <th>Title</th>
                         <th>Category</th>
                         <th>Price</th>
                         <th>Tag</th>
-                        <th>Last Sync</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($allProducts as $item): ?>
+                    <?php
+                    $editData = null;
+                    if (isset($_GET['edit']) && (int)$_GET['edit'] === (int)$item['id']) {
+                        $editData = $item;
+                        try {
+                            $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id');
+                            $stmt->execute([':id' => $item['id']]);
+                            $editData = $stmt->fetch();
+                        } catch (Throwable $e) {}
+                    }
+                    ?>
                     <tr>
                         <td><?= (int) $item['id'] ?></td>
+                        <td>
+                            <?php if (!empty($item['image_url'])): ?>
+                                <img src="<?= e($item['image_url']) ?>" alt="" style="max-width:60px;max-height:60px;object-fit:contain;border-radius:4px;">
+                            <?php else: ?>
+                                <span class="muted">No image</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= e($item['asin']) ?></td>
                         <td><?= e($item['title']) ?></td>
                         <td><?= e($item['category_name']) ?></td>
                         <td><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, 'USD')) ?></td>
                         <td><?= amazon_tag_present((string) ($item['affiliate_url'] ?? '')) ? 'OK' : 'Missing' ?></td>
-                        <td><?= e((string) $item['last_synced_at']) ?></td>
+                        <td>
+                            <?php if ($editData === null): ?>
+                                <a href="<?= e(url('/enma/?tab=products&edit=' . $item['id'])) ?>" class="btn" style="padding:6px 10px;font-size:12px;">Edit</a>
+                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                                    <input type="hidden" name="action" value="delete_product">
+                                    <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <button type="submit" class="btn" style="padding:6px 10px;font-size:12px;background:#c62828;">Delete</button>
+                                </form>
+                            <?php else: ?>
+                                <span class="muted" style="font-size:12px;">Editing...</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
+                    <?php if ($editData !== null): ?>
+                    <tr>
+                        <td colspan="8" style="background:#f9fbfe;padding:16px;">
+                            <form method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="action" value="edit_product">
+                                <input type="hidden" name="id" value="<?= (int) $editData['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                    <div>
+                                        <label>ASIN</label>
+                                        <input type="text" name="asin" value="<?= e($editData['asin']) ?>" required>
+                                        
+                                        <label>Title</label>
+                                        <input type="text" name="title" value="<?= e($editData['title']) ?>" required>
+                                        
+                                        <label>Category Name</label>
+                                        <input type="text" name="category_name" value="<?= e($editData['category_name']) ?>" required>
+                                        
+                                        <label>Price (USD)</label>
+                                        <input type="number" name="price_amount" step="0.01" min="0" value="<?= e($editData['price_amount']) ?>">
+                                    </div>
+                                    <div>
+                                        <label>Current Image</label>
+                                        <?php if (!empty($editData['image_url'])): ?>
+                                            <div style="margin-bottom:8px;">
+                                                <img src="<?= e($editData['image_url']) ?>" alt="" style="max-width:150px;max-height:150px;object-fit:contain;border-radius:4px;">
+                                            </div>
+                                            <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+                                                <input type="checkbox" name="keep_image" value="1" checked> Keep current image
+                                            </label>
+                                        <?php else: ?>
+                                            <p class="muted" style="font-size:13px;margin:6px 0;">No image currently set.</p>
+                                        <?php endif; ?>
+                                        
+                                        <label style="margin-top:10px;">Upload New Image</label>
+                                        <input type="file" name="product_image" accept="image/*">
+                                        
+                                        <label>Affiliate URL</label>
+                                        <input type="url" name="affiliate_url" value="<?= e($editData['affiliate_url']) ?>" required>
+                                    </div>
+                                </div>
+                                
+                                <label>Description</label>
+                                <textarea name="description" rows="4"><?= e($editData['description']) ?></textarea>
+                                
+                                <div style="margin-top:12px;display:flex;gap:8px;">
+                                    <button class="btn" type="submit">Save Changes</button>
+                                    <a href="<?= e(url('/enma/?tab=products')) ?>" class="btn" style="background:#6c757d;">Cancel</a>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
                 <?php endforeach; ?>
                 </tbody>
             </table>
