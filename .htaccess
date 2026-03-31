@@ -1,0 +1,48 @@
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+
+# Canonical production host + HTTPS (does not affect localhost/XAMPP)
+RewriteCond %{HTTP_HOST} ^(?:www\.)?fortelescopes\.com$ [NC]
+RewriteCond %{HTTPS} !=on [OR]
+RewriteCond %{HTTP_HOST} ^www\.fortelescopes\.com$ [NC]
+RewriteRule ^ https://fortelescopes.com%{REQUEST_URI} [R=301,L,NE]
+
+# Block direct access to sensitive paths/files
+RewriteRule ^(?:includes|scripts|data|templates)/ - [F,L,NC]
+RewriteRule ^(?:\.env|\.env\.example|database\.php|healthcheck\.php)$ - [F,L,NC]
+
+# Keep existing files/directories accessible
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Route everything else through index.php
+RewriteRule . index.php [L,QSA]
+</IfModule>
+
+<IfModule mod_expires.c>
+ExpiresActive On
+ExpiresByType text/html "access plus 5 minutes"
+ExpiresByType text/css "access plus 7 days"
+ExpiresByType application/javascript "access plus 7 days"
+ExpiresByType text/javascript "access plus 7 days"
+ExpiresByType application/json "access plus 1 hour"
+ExpiresByType image/webp "access plus 30 days"
+ExpiresByType image/avif "access plus 30 days"
+ExpiresByType image/svg+xml "access plus 30 days"
+ExpiresByType image/png "access plus 30 days"
+ExpiresByType image/jpeg "access plus 30 days"
+ExpiresByType image/x-icon "access plus 30 days"
+ExpiresByType font/woff2 "access plus 30 days"
+</IfModule>
+
+<IfModule mod_headers.c>
+Header set X-Content-Type-Options "nosniff"
+Header set Referrer-Policy "strict-origin-when-cross-origin"
+Header always append Vary "Accept-Encoding"
+</IfModule>
+
+<IfModule mod_deflate.c>
+AddOutputFilterByType DEFLATE text/plain text/html text/css text/javascript application/javascript application/json application/xml image/svg+xml
+</IfModule>
