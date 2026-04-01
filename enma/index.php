@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/controllers/helpers.php';
+require_once __DIR__ . '/handlers/products.php';
+require_once __DIR__ . '/handlers/maintenance.php';
+require_once __DIR__ . '/handlers/guides.php';
+require_once __DIR__ . '/handlers/views.php';
+require_once __DIR__ . '/views/layout.php';
+require_once __DIR__ . '/views/login.php';
+require_once __DIR__ . '/views/overview.php';
+require_once __DIR__ . '/views/products.php';
+require_once __DIR__ . '/views/guides.php';
+require_once __DIR__ . '/views/views.php';
+require_once __DIR__ . '/views/maintenance.php';
 
 $errors = [];
 $flash = null;
@@ -12,68 +24,6 @@ $lockSeconds = 600;
 $_SESSION['login_attempts'] = (int) ($_SESSION['login_attempts'] ?? 0);
 $_SESSION['login_locked_until'] = (int) ($_SESSION['login_locked_until'] ?? 0);
 $isLocked = ($_SESSION['login_locked_until'] > time());
-
-function enma_handle_image_upload(string $fieldName, array &$errors): ?string
-{
-    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
-        return null;
-    }
-
-    $file = $_FILES[$fieldName];
-    $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
-    if ($error === UPLOAD_ERR_NO_FILE) {
-        return null;
-    }
-    if ($error !== UPLOAD_ERR_OK) {
-        $errors[] = 'Image upload failed.';
-        return null;
-    }
-
-    $size = (int) ($file['size'] ?? 0);
-    if ($size <= 0 || $size > 4 * 1024 * 1024) {
-        $errors[] = 'Image must be between 1 byte and 4MB.';
-        return null;
-    }
-
-    $tmp = (string) ($file['tmp_name'] ?? '');
-    if ($tmp === '' || !is_uploaded_file($tmp)) {
-        $errors[] = 'Invalid uploaded image.';
-        return null;
-    }
-
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = $finfo ? (string) finfo_file($finfo, $tmp) : '';
-    if ($finfo) {
-        finfo_close($finfo);
-    }
-
-    $map = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-        'image/gif' => 'gif',
-    ];
-    if (!isset($map[$mime])) {
-        $errors[] = 'Only JPG, PNG, WEBP, or GIF are allowed.';
-        return null;
-    }
-
-    $ext = $map[$mime];
-    $uploadDir = __DIR__ . '/../assets/uploads/products';
-    if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
-        $errors[] = 'Could not create upload directory.';
-        return null;
-    }
-
-    $name = 'p_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $target = $uploadDir . '/' . $name;
-    if (!move_uploaded_file($tmp, $target)) {
-        $errors[] = 'Could not move uploaded image.';
-        return null;
-    }
-
-    return absolute_url('/assets/uploads/products/' . $name);
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -98,24 +48,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
     $user = trim((string) ($_POST['user'] ?? ''));
     $pass = (string) ($_POST['pass'] ?? '');
 
-    if ($errors === [] && hash_equals(ADMIN_USER, $user) && hash_equals(ADMIN_PASS, $pass)) {
-        session_regenerate_id(true);
-        $_SESSION['admin_ok'] = true;
-        $_SESSION['login_attempts'] = 0;
-        $_SESSION['login_locked_until'] = 0;
+    if ($errors === [] && enma_process_login($errors, $user, $pass, $_SESSION['login_attempts'], $_SESSION['login_locked_until'], $maxLoginAttempts, $lockSeconds)) {
         header('Location: ' . url('/enma/'));
         exit;
-    }
-
-    if ($errors === []) {
-        $_SESSION['login_attempts']++;
-        if ($_SESSION['login_attempts'] >= $maxLoginAttempts) {
-            $_SESSION['login_locked_until'] = time() + $lockSeconds;
-            $_SESSION['login_attempts'] = 0;
-            $errors[] = 'Too many login attempts. Try again in 10 minutes.';
-        } else {
-            $errors[] = 'Invalid credentials.';
-        }
     }
 }
 
@@ -132,11 +67,11 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         $task = trim((string) ($_POST['task'] ?? ''));
         $advancedKey = (string) ($_POST['advanced_key'] ?? '');
         $confirmText = strtoupper(trim((string) ($_POST['confirm_text'] ?? '')));
-        $expectedConfirm = 'RUN ' . strtoupper($task);
 
         if (!hash_equals(ENMA_ADVANCED_KEY, $advancedKey)) {
             $errors[] = 'Advanced key is invalid.';
         }
+        $expectedConfirm = 'RUN ' . strtoupper($task);
         if ($confirmText !== $expectedConfirm) {
             $errors[] = 'Invalid confirmation text. Use exactly: ' . $expectedConfirm;
         }
@@ -159,28 +94,9 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
                 define('ENMA_ALLOW_WEB_RUN', true);
             }
 
-            $scriptPath = realpath($taskMap[$task] ?? '');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'Advanced task completed: ' . $task;
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'Advanced task failed: ' . $e->getMessage();
-                }
+            $result = enma_run_advanced_task($task, $advancedKey, $confirmText, $errors, $maintenanceLog);
+            if ($result !== null) {
+                $flash = $result;
             }
         }
     }
@@ -191,111 +107,9 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         $errors[] = 'Invalid request token.';
     } else {
         $task = trim((string) ($_POST['task'] ?? ''));
-
-        if ($task === 'normalize_affiliate_urls') {
-            $stmt = $pdo->query('SELECT id, affiliate_url FROM products');
-            $rows = $stmt->fetchAll();
-            $updated = 0;
-            $checked = 0;
-
-            $updateStmt = $pdo->prepare(
-                'UPDATE products
-                 SET affiliate_url = :affiliate_url, updated_at = :updated_at
-                 WHERE id = :id'
-            );
-
-            foreach ($rows as $row) {
-                $checked++;
-                $id = (int) ($row['id'] ?? 0);
-                $current = (string) ($row['affiliate_url'] ?? '');
-                $normalized = amazon_affiliate_url($current);
-
-                if ($id <= 0 || $normalized === '' || $normalized === $current) {
-                    continue;
-                }
-
-                $updateStmt->execute([
-                    ':affiliate_url' => $normalized,
-                    ':updated_at' => now_iso(),
-                    ':id' => $id,
-                ]);
-                $updated++;
-            }
-
-            $flash = "Affiliate normalization done. Checked: {$checked} | Updated: {$updated}";
-            $maintenanceLog[] = 'Task: normalize_affiliate_urls';
-            $maintenanceLog[] = 'Tag: ' . AMAZON_ASSOCIATE_TAG;
-        } elseif ($task === 'update_db_schema') {
-            $scriptPath = realpath(__DIR__ . '/../scripts/update_db_schema.php');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'DB schema updater completed.';
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                    $maintenanceLog[] = 'Task: update_db_schema';
-                    $maintenanceLog[] = 'Mode: idempotent (CREATE IF NOT EXISTS)';
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'DB schema updater failed: ' . $e->getMessage();
-                }
-            }
-        } elseif ($task === 'refresh_sync_labels') {
-            $threshold = gmdate('c', time() - (23 * 3600));
-            $now = now_iso();
-            $stmt = $pdo->prepare(
-                'UPDATE products
-                 SET last_synced_at = :now, updated_at = :now
-                 WHERE status = "published"
-                   AND (last_synced_at IS NULL OR last_synced_at < :threshold)'
-            );
-            $stmt->execute([
-                ':now' => $now,
-                ':threshold' => $threshold,
-            ]);
-            $affected = $stmt->rowCount();
-            $flash = "Sync labels refreshed. Products updated: {$affected}";
-            $maintenanceLog[] = 'Task: refresh_sync_labels';
-            $maintenanceLog[] = 'Threshold: 23h';
-        } elseif ($task === 'fix_product_images') {
-            $scriptPath = realpath(__DIR__ . '/../scripts/fix_product_images.php');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'Image fix completed.';
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                    $maintenanceLog[] = 'Task: fix_product_images';
-                    $maintenanceLog[] = 'Source: Amazon product page scrape + safe placeholder';
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'Image fix failed: ' . $e->getMessage();
-                }
-            }
-        } else {
-            $errors[] = 'Unknown maintenance task.';
+        $result = enma_run_maintenance_task($task, $errors, $maintenanceLog);
+        if ($result !== null) {
+            $flash = $result;
         }
     }
 }
@@ -303,68 +117,24 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_product') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
+    } else {
+        $flash = enma_handle_add_product($errors, $_POST);
     }
+}
 
-    $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
-    $title = trim((string) ($_POST['title'] ?? ''));
-    $categoryName = trim((string) ($_POST['category_name'] ?? ''));
-    $price = trim((string) ($_POST['price_amount'] ?? ''));
-    $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
-    $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
-    $description = trim((string) ($_POST['description'] ?? ''));
-
-    if ($asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
-        $errors[] = 'ASIN, title, category and affiliate URL are required.';
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_product') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $flash = enma_handle_edit_product($errors, $_POST);
     }
-    if ($imageUrl !== '' && filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
-        $errors[] = 'Image URL is not valid.';
-    }
-    if (filter_var($affiliateUrl, FILTER_VALIDATE_URL) === false) {
-        $errors[] = 'Affiliate URL is not valid.';
-    }
-    if ($errors === []) {
-        $affiliateUrl = amazon_affiliate_url($affiliateUrl);
-    }
+}
 
-    if ($errors === []) {
-        $slug = unique_slug($pdo, $title);
-        $categorySlug = slugify($categoryName);
-        $now = now_iso();
-
-        try {
-            $stmt = $pdo->prepare(
-                'INSERT INTO products (
-                    asin, slug, title, description, category_slug, category_name,
-                    price_amount, price_currency, image_url, affiliate_url, status,
-                    last_synced_at, created_at, updated_at
-                 ) VALUES (
-                    :asin, :slug, :title, :description, :category_slug, :category_name,
-                    :price_amount, :price_currency, :image_url, :affiliate_url, :status,
-                    :last_synced_at, :created_at, :updated_at
-                 )'
-            );
-
-            $stmt->execute([
-                ':asin' => $asin,
-                ':slug' => $slug,
-                ':title' => $title,
-                ':description' => $description,
-                ':category_slug' => $categorySlug,
-                ':category_name' => $categoryName,
-                ':price_amount' => is_numeric($price) ? (float) $price : null,
-                ':price_currency' => 'USD',
-                ':image_url' => $imageUrl,
-                ':affiliate_url' => $affiliateUrl,
-                ':status' => 'published',
-                ':last_synced_at' => $now,
-                ':created_at' => $now,
-                ':updated_at' => $now,
-            ]);
-
-            $flash = 'Product created successfully.';
-        } catch (Throwable $e) {
-            $errors[] = 'Insert failed. Verify ASIN uniqueness and URL fields.';
-        }
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_product') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $flash = enma_handle_delete_product($errors, $_POST);
     }
 }
 
@@ -372,26 +142,7 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
     } else {
-        $slugs = ['best-beginner-telescopes', 'best-telescope-accessories', 'best-telescopes-under-500'];
-        $fields = ['title', 'description', 'intro', 'final_recommendation', 'cta_text', 'cta_note'];
-        $payload = [];
-
-        foreach ($slugs as $slug) {
-            $payload[$slug] = [];
-            foreach ($fields as $field) {
-                $key = $slug . '__' . $field;
-                $value = trim((string) ($_POST[$key] ?? ''));
-                if ($value !== '') {
-                    $payload[$slug][$field] = $value;
-                }
-            }
-        }
-
-        if (!save_guides_overrides($payload)) {
-            $errors[] = 'Could not save guide overrides file.';
-        } else {
-            $flash = 'Guide text overrides saved.';
-        }
+        $flash = enma_handle_save_guides($errors, $_POST);
     }
 }
 
@@ -400,15 +151,24 @@ if (!in_array($activeTab, ['overview', 'products', 'guides', 'views', 'maintenan
     $activeTab = 'overview';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
-$viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
+$viewsDashboard = ($authenticated && $activeTab === 'views') ? enma_get_views_data($viewDays) : [];
 
 $productQuery = $authenticated ? trim((string) ($_GET['q'] ?? '')) : '';
-$allProducts = [];
-if ($authenticated && $activeTab === 'products') {
-    if ($productQuery !== '') {
-        $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
-             FROM products
+$allProducts = ($authenticated && $activeTab === 'products') ? enma_fetch_products($productQuery) : [];
+
+$overviewStats = ($authenticated && $activeTab === 'overview') ? enma_get_overview_stats() : [];
+
+$dbTables = ($authenticated && $activeTab === 'maintenance') ? enma_get_db_stats() : [];
+
+$guideOverrides = ($authenticated && $activeTab === 'guides') ? enma_load_guides_data() : [];
+
+$editProductId = (int) ($_GET['id'] ?? 0);
+$editProduct = null;
+if ($authenticated && $activeTab === 'products' && $editProductId > 0) {
+    $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id');
+    $stmt->execute([':id' => $editProductId]);
+    $editProduct = $stmt->fetch();
+}
              WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q
              ORDER BY id DESC
              LIMIT 500'
@@ -576,25 +336,110 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                 <thead>
                     <tr>
                         <th>ID</th>
+                        <th>Image</th>
                         <th>ASIN</th>
                         <th>Title</th>
                         <th>Category</th>
                         <th>Price</th>
                         <th>Tag</th>
-                        <th>Last Sync</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($allProducts as $item): ?>
+                    <?php
+                    $editData = null;
+                    if (isset($_GET['edit']) && (int)$_GET['edit'] === (int)$item['id']) {
+                        $editData = $item;
+                        try {
+                            $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id');
+                            $stmt->execute([':id' => $item['id']]);
+                            $editData = $stmt->fetch();
+                        } catch (Throwable $e) {}
+                    }
+                    ?>
                     <tr>
                         <td><?= (int) $item['id'] ?></td>
+                        <td>
+                            <?php if (!empty($item['image_url'])): ?>
+                                <img src="<?= e($item['image_url']) ?>" alt="" style="max-width:60px;max-height:60px;object-fit:contain;border-radius:4px;">
+                            <?php else: ?>
+                                <span class="muted">No image</span>
+                            <?php endif; ?>
+                        </td>
                         <td><?= e($item['asin']) ?></td>
                         <td><?= e($item['title']) ?></td>
                         <td><?= e($item['category_name']) ?></td>
                         <td><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, 'USD')) ?></td>
                         <td><?= amazon_tag_present((string) ($item['affiliate_url'] ?? '')) ? 'OK' : 'Missing' ?></td>
-                        <td><?= e((string) $item['last_synced_at']) ?></td>
+                        <td>
+                            <?php if ($editData === null): ?>
+                                <a href="<?= e(url('/enma/?tab=products&edit=' . $item['id'])) ?>" class="btn" style="padding:6px 10px;font-size:12px;">Edit</a>
+                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                                    <input type="hidden" name="action" value="delete_product">
+                                    <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <button type="submit" class="btn" style="padding:6px 10px;font-size:12px;background:#c62828;">Delete</button>
+                                </form>
+                            <?php else: ?>
+                                <span class="muted" style="font-size:12px;">Editing...</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
+                    <?php if ($editData !== null): ?>
+                    <tr>
+                        <td colspan="8" style="background:#f9fbfe;padding:16px;">
+                            <form method="post" enctype="multipart/form-data">
+                                <input type="hidden" name="action" value="edit_product">
+                                <input type="hidden" name="id" value="<?= (int) $editData['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                    <div>
+                                        <label>ASIN</label>
+                                        <input type="text" name="asin" value="<?= e($editData['asin']) ?>" required>
+                                        
+                                        <label>Title</label>
+                                        <input type="text" name="title" value="<?= e($editData['title']) ?>" required>
+                                        
+                                        <label>Category Name</label>
+                                        <input type="text" name="category_name" value="<?= e($editData['category_name']) ?>" required>
+                                        
+                                        <label>Price (USD)</label>
+                                        <input type="number" name="price_amount" step="0.01" min="0" value="<?= e($editData['price_amount']) ?>">
+                                    </div>
+                                    <div>
+                                        <label>Current Image</label>
+                                        <?php if (!empty($editData['image_url'])): ?>
+                                            <div style="margin-bottom:8px;">
+                                                <img src="<?= e($editData['image_url']) ?>" alt="" style="max-width:150px;max-height:150px;object-fit:contain;border-radius:4px;">
+                                            </div>
+                                            <label style="display:flex;align-items:center;gap:6px;font-size:13px;">
+                                                <input type="checkbox" name="keep_image" value="1" checked> Keep current image
+                                            </label>
+                                        <?php else: ?>
+                                            <p class="muted" style="font-size:13px;margin:6px 0;">No image currently set.</p>
+                                        <?php endif; ?>
+                                        
+                                        <label style="margin-top:10px;">Upload New Image</label>
+                                        <input type="file" name="product_image" accept="image/*">
+                                        
+                                        <label>Affiliate URL</label>
+                                        <input type="url" name="affiliate_url" value="<?= e($editData['affiliate_url']) ?>" required>
+                                    </div>
+                                </div>
+                                
+                                <label>Description</label>
+                                <textarea name="description" rows="4"><?= e($editData['description']) ?></textarea>
+                                
+                                <div style="margin-top:12px;display:flex;gap:8px;">
+                                    <button class="btn" type="submit">Save Changes</button>
+                                    <a href="<?= e(url('/enma/?tab=products')) ?>" class="btn" style="background:#6c757d;">Cancel</a>
+                                </div>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
                 <?php endforeach; ?>
                 </tbody>
             </table>
@@ -602,45 +447,119 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         </section>
         <?php elseif ($activeTab === 'guides'): ?>
         <section class="box">
-            <h2>Guides Text Manager</h2>
-            <p class="muted">Edit key conversion copy for the three main guides without touching code.</p>
-            <form method="post">
-                <input type="hidden" name="action" value="save_guides_overrides">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <?php
-                $guideMeta = [
-                    'best-beginner-telescopes' => 'Best Beginner Telescopes',
-                    'best-telescope-accessories' => 'Best Telescope Accessories',
-                    'best-telescopes-under-500' => 'Best Telescopes Under $500',
-                ];
-                $fields = [
-                    'title' => 'Title',
-                    'description' => 'Meta Description / Intro Description',
-                    'intro' => 'Quick Answer Intro',
-                    'final_recommendation' => 'Final Recommendation',
-                    'cta_text' => 'CTA Button Text',
-                    'cta_note' => 'CTA Note',
-                ];
-                ?>
-                <?php foreach ($guideMeta as $slug => $label): ?>
-                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;background:#f9fbfe;">
-                        <h3 style="margin:0 0 10px;"><?= e($label) ?> <span class="muted">(<?= e($slug) ?>)</span></h3>
-                        <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
-                            <label><?= e($fieldLabel) ?></label>
-                            <?php
-                            $name = $slug . '__' . $fieldKey;
-                            $val = (string) ($guideOverrides[$slug][$fieldKey] ?? '');
-                            ?>
-                            <?php if (in_array($fieldKey, ['description', 'intro', 'final_recommendation', 'cta_note'], true)): ?>
-                                <textarea name="<?= e($name) ?>" rows="3" placeholder="Leave empty to keep default"><?= e($val) ?></textarea>
-                            <?php else: ?>
-                                <input type="text" name="<?= e($name) ?>" value="<?= e($val) ?>" placeholder="Leave empty to keep default">
-                            <?php endif; ?>
-                        <?php endforeach; ?>
+            <h2>Guides Manager</h2>
+            <p class="muted">Manage your astronomy buying guides. Preview guide content or edit key conversion copy.</p>
+            
+            <?php
+            $guideMode = $_GET['guide_mode'] ?? 'list';
+            $editingSlug = $_GET['edit'] ?? null;
+            ?>
+            
+            <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
+                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=list')) ?>" style="background:<?= $guideMode === 'list' ? '#0b1f3a' : '#e8edf3' ?>;color:<?= $guideMode === 'list' ? '#fff' : '#334155' ?>;">List View</a>
+                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit')) ?>" style="background:<?= $guideMode === 'edit' ? '#0b1f3a' : '#e8edf3' ?>;color:<?= $guideMode === 'edit' ? '#fff' : '#334155' ?>;">Edit All</a>
+                <?php if ($editingSlug): ?>
+                    <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit&edit=' . urlencode($editingSlug))) ?>" style="background:#0b1f3a;color:#fff;">Back to Editing</a>
+                <?php endif; ?>
+            </div>
+            
+            <?php if ($guideMode === 'list' && !$editingSlug): ?>
+                <h3 style="margin-top:0;">Available Guides</h3>
+                <div class="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+                    <?php
+                    $guideList = [
+                        'best-beginner-telescopes' => [
+                            'title' => 'Best Beginner Telescopes',
+                            'summary' => 'A practical guide to choosing your first telescope: what matters, what to avoid, and which real models are easiest to start with.',
+                            'focus' => 'telescopes',
+                        ],
+                        'best-telescope-accessories' => [
+                            'title' => 'Best Telescope Accessories',
+                            'summary' => 'Actionable telescope upgrades for beginners to intermediate users: what to buy first, what to skip, and which accessories deliver real value.',
+                            'focus' => 'accessories',
+                        ],
+                        'best-telescopes-under-500' => [
+                            'title' => 'Best Telescopes Under $500',
+                            'summary' => 'A practical under-$500 telescope guide focused on real value, mount stability, and beginner-friendly performance.',
+                            'focus' => 'telescopes',
+                        ],
+                    ];
+                    
+                    foreach ($guideList as $slug => $info): 
+                        $override = $guideOverrides[$slug] ?? [];
+                    ?>
+                        <article style="border:1px solid #e2e8f0;border-radius:10px;padding:16px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05);">
+                            <span class="badge" style="display:inline-block;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:700;text-transform:uppercase;background:#e8edf3;color:#0b1f3a;margin-bottom:8px;"><?= e($info['focus']) ?></span>
+                            <h4 style="margin:0 0 8px;font-size:18px;"><?= e($override['title'] ?? $info['title']) ?></h4>
+                            <p style="font-size:14px;color:#5b6678;margin:0 0 12px;line-height:1.5;"><?= e($override['description'] ?? $info['summary']) ?></p>
+                            
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <a class="btn" href="<?= e(url('/enma/?tab=guides&guide_mode=edit&edit=' . urlencode($slug))) ?>" style="padding:8px 12px;font-size:13px;">Edit This Guide</a>
+                                <a class="btn" href="<?= e(url('/' . $slug)) ?>" target="_blank" rel="noopener" style="padding:8px 12px;font-size:13px;background:#e8edf3;color:#334155;">View Live →</a>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+                
+                <h3 style="margin-top:24px;">Quick Stats</h3>
+                <div class="stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px;">
+                    <div class="stat" style="background:#f9fbfe;padding:12px;border-radius:8px;text-align:center;">
+                        <div class="stat-k" style="font-size:12px;color:#5b6678;text-transform:uppercase;">Total Guides</div>
+                        <div class="stat-v" style="font-size:24px;font-weight:700;color:#0b1f3a;">3</div>
                     </div>
-                <?php endforeach; ?>
-                <button class="btn" type="submit">Save Guide Text Overrides</button>
-            </form>
+                    <div class="stat" style="background:#f9fbfe;padding:12px;border-radius:8px;text-align:center;">
+                        <div class="stat-k" style="font-size:12px;color:#5b6678;text-transform:uppercase;">With Overrides</div>
+                        <div class="stat-v" style="font-size:24px;font-weight:700;color:#0b1f3a;"><?= count($guideOverrides) ?></div>
+                    </div>
+                </div>
+                
+            <?php elseif ($guideMode === 'edit' || $editingSlug): ?>
+                <h3 style="margin-top:0;"><?= $editingSlug ? 'Editing Guide' : 'Edit All Guides' ?></h3>
+                <form method="post">
+                    <input type="hidden" name="action" value="save_guides_overrides">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <?php
+                    $guideMeta = [
+                        'best-beginner-telescopes' => 'Best Beginner Telescopes',
+                        'best-telescope-accessories' => 'Best Telescope Accessories',
+                        'best-telescopes-under-500' => 'Best Telescopes Under $500',
+                    ];
+                    $fields = [
+                        'title' => 'Title',
+                        'description' => 'Meta Description / Intro Description',
+                        'intro' => 'Quick Answer Intro',
+                        'final_recommendation' => 'Final Recommendation',
+                        'cta_text' => 'CTA Button Text',
+                        'cta_note' => 'CTA Note',
+                    ];
+                    
+                    foreach ($guideMeta as $slug => $label):
+                        if ($editingSlug && $editingSlug !== $slug) continue;
+                    ?>
+                        <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;background:#f9fbfe;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <h4 style="margin:0;"><?= e($label) ?> <span class="muted">(<?= e($slug) ?>)</span></h4>
+                                <?php if ($editingSlug): ?>
+                                    <a href="<?= e(url('/enma/?tab=guides&guide_mode=edit')) ?>" style="font-size:13px;color:#0b1f3a;text-decoration:none;">← Edit All</a>
+                                <?php endif; ?>
+                            </div>
+                            <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
+                                <label><?= e($fieldLabel) ?></label>
+                                <?php
+                                $name = $slug . '__' . $fieldKey;
+                                $val = (string) ($guideOverrides[$slug][$fieldKey] ?? '');
+                                ?>
+                                <?php if (in_array($fieldKey, ['description', 'intro', 'final_recommendation', 'cta_note'], true)): ?>
+                                    <textarea name="<?= e($name) ?>" rows="3" placeholder="Leave empty to keep default"><?= e($val) ?></textarea>
+                                <?php else: ?>
+                                    <input type="text" name="<?= e($name) ?>" value="<?= e($val) ?>" placeholder="Leave empty to keep default">
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    <button class="btn" type="submit"><?= $editingSlug ? 'Save This Guide' : 'Save All Guide Overrides' ?></button>
+                </form>
+            <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
