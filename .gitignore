@@ -1,0 +1,7 @@
+```php
+<?php
+// There is no .gitignore content to output since the file changes only include
+// index.php and templates/guides.php which are source files and not build artifacts,
+// dependencies, or temporary files that should be ignored.
+?>
+```
