@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 session_start();
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/controllers/helpers.php';
+require_once __DIR__ . '/handlers/products.php';
+require_once __DIR__ . '/handlers/maintenance.php';
+require_once __DIR__ . '/handlers/guides.php';
+require_once __DIR__ . '/handlers/views.php';
+require_once __DIR__ . '/views/layout.php';
+require_once __DIR__ . '/views/login.php';
+require_once __DIR__ . '/views/overview.php';
+require_once __DIR__ . '/views/products.php';
+require_once __DIR__ . '/views/guides.php';
+require_once __DIR__ . '/views/views.php';
+require_once __DIR__ . '/views/maintenance.php';
 
 $errors = [];
 $flash = null;
@@ -12,68 +24,6 @@ $lockSeconds = 600;
 $_SESSION['login_attempts'] = (int) ($_SESSION['login_attempts'] ?? 0);
 $_SESSION['login_locked_until'] = (int) ($_SESSION['login_locked_until'] ?? 0);
 $isLocked = ($_SESSION['login_locked_until'] > time());
-
-function enma_handle_image_upload(string $fieldName, array &$errors): ?string
-{
-    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
-        return null;
-    }
-
-    $file = $_FILES[$fieldName];
-    $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
-    if ($error === UPLOAD_ERR_NO_FILE) {
-        return null;
-    }
-    if ($error !== UPLOAD_ERR_OK) {
-        $errors[] = 'Image upload failed.';
-        return null;
-    }
-
-    $size = (int) ($file['size'] ?? 0);
-    if ($size <= 0 || $size > 4 * 1024 * 1024) {
-        $errors[] = 'Image must be between 1 byte and 4MB.';
-        return null;
-    }
-
-    $tmp = (string) ($file['tmp_name'] ?? '');
-    if ($tmp === '' || !is_uploaded_file($tmp)) {
-        $errors[] = 'Invalid uploaded image.';
-        return null;
-    }
-
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = $finfo ? (string) finfo_file($finfo, $tmp) : '';
-    if ($finfo) {
-        finfo_close($finfo);
-    }
-
-    $map = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-        'image/gif' => 'gif',
-    ];
-    if (!isset($map[$mime])) {
-        $errors[] = 'Only JPG, PNG, WEBP, or GIF are allowed.';
-        return null;
-    }
-
-    $ext = $map[$mime];
-    $uploadDir = __DIR__ . '/../assets/uploads/products';
-    if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
-        $errors[] = 'Could not create upload directory.';
-        return null;
-    }
-
-    $name = 'p_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
-    $target = $uploadDir . '/' . $name;
-    if (!move_uploaded_file($tmp, $target)) {
-        $errors[] = 'Could not move uploaded image.';
-        return null;
-    }
-
-    return absolute_url('/assets/uploads/products/' . $name);
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -98,24 +48,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
     $user = trim((string) ($_POST['user'] ?? ''));
     $pass = (string) ($_POST['pass'] ?? '');
 
-    if ($errors === [] && hash_equals(ADMIN_USER, $user) && hash_equals(ADMIN_PASS, $pass)) {
-        session_regenerate_id(true);
-        $_SESSION['admin_ok'] = true;
-        $_SESSION['login_attempts'] = 0;
-        $_SESSION['login_locked_until'] = 0;
+    if ($errors === [] && enma_process_login($errors, $user, $pass, $_SESSION['login_attempts'], $_SESSION['login_locked_until'], $maxLoginAttempts, $lockSeconds)) {
         header('Location: ' . url('/enma/'));
         exit;
-    }
-
-    if ($errors === []) {
-        $_SESSION['login_attempts']++;
-        if ($_SESSION['login_attempts'] >= $maxLoginAttempts) {
-            $_SESSION['login_locked_until'] = time() + $lockSeconds;
-            $_SESSION['login_attempts'] = 0;
-            $errors[] = 'Too many login attempts. Try again in 10 minutes.';
-        } else {
-            $errors[] = 'Invalid credentials.';
-        }
     }
 }
 
@@ -132,11 +67,11 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         $task = trim((string) ($_POST['task'] ?? ''));
         $advancedKey = (string) ($_POST['advanced_key'] ?? '');
         $confirmText = strtoupper(trim((string) ($_POST['confirm_text'] ?? '')));
-        $expectedConfirm = 'RUN ' . strtoupper($task);
 
         if (!hash_equals(ENMA_ADVANCED_KEY, $advancedKey)) {
             $errors[] = 'Advanced key is invalid.';
         }
+        $expectedConfirm = 'RUN ' . strtoupper($task);
         if ($confirmText !== $expectedConfirm) {
             $errors[] = 'Invalid confirmation text. Use exactly: ' . $expectedConfirm;
         }
@@ -159,28 +94,9 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
                 define('ENMA_ALLOW_WEB_RUN', true);
             }
 
-            $scriptPath = realpath($taskMap[$task] ?? '');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'Advanced task completed: ' . $task;
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'Advanced task failed: ' . $e->getMessage();
-                }
+            $result = enma_run_advanced_task($task, $advancedKey, $confirmText, $errors, $maintenanceLog);
+            if ($result !== null) {
+                $flash = $result;
             }
         }
     }
@@ -191,111 +107,9 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         $errors[] = 'Invalid request token.';
     } else {
         $task = trim((string) ($_POST['task'] ?? ''));
-
-        if ($task === 'normalize_affiliate_urls') {
-            $stmt = $pdo->query('SELECT id, affiliate_url FROM products');
-            $rows = $stmt->fetchAll();
-            $updated = 0;
-            $checked = 0;
-
-            $updateStmt = $pdo->prepare(
-                'UPDATE products
-                 SET affiliate_url = :affiliate_url, updated_at = :updated_at
-                 WHERE id = :id'
-            );
-
-            foreach ($rows as $row) {
-                $checked++;
-                $id = (int) ($row['id'] ?? 0);
-                $current = (string) ($row['affiliate_url'] ?? '');
-                $normalized = amazon_affiliate_url($current);
-
-                if ($id <= 0 || $normalized === '' || $normalized === $current) {
-                    continue;
-                }
-
-                $updateStmt->execute([
-                    ':affiliate_url' => $normalized,
-                    ':updated_at' => now_iso(),
-                    ':id' => $id,
-                ]);
-                $updated++;
-            }
-
-            $flash = "Affiliate normalization done. Checked: {$checked} | Updated: {$updated}";
-            $maintenanceLog[] = 'Task: normalize_affiliate_urls';
-            $maintenanceLog[] = 'Tag: ' . AMAZON_ASSOCIATE_TAG;
-        } elseif ($task === 'update_db_schema') {
-            $scriptPath = realpath(__DIR__ . '/../scripts/update_db_schema.php');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'DB schema updater completed.';
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                    $maintenanceLog[] = 'Task: update_db_schema';
-                    $maintenanceLog[] = 'Mode: idempotent (CREATE IF NOT EXISTS)';
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'DB schema updater failed: ' . $e->getMessage();
-                }
-            }
-        } elseif ($task === 'refresh_sync_labels') {
-            $threshold = gmdate('c', time() - (23 * 3600));
-            $now = now_iso();
-            $stmt = $pdo->prepare(
-                'UPDATE products
-                 SET last_synced_at = :now, updated_at = :now
-                 WHERE status = "published"
-                   AND (last_synced_at IS NULL OR last_synced_at < :threshold)'
-            );
-            $stmt->execute([
-                ':now' => $now,
-                ':threshold' => $threshold,
-            ]);
-            $affected = $stmt->rowCount();
-            $flash = "Sync labels refreshed. Products updated: {$affected}";
-            $maintenanceLog[] = 'Task: refresh_sync_labels';
-            $maintenanceLog[] = 'Threshold: 23h';
-        } elseif ($task === 'fix_product_images') {
-            $scriptPath = realpath(__DIR__ . '/../scripts/fix_product_images.php');
-            $scriptsRoot = realpath(__DIR__ . '/../scripts');
-
-            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
-                $errors[] = 'Invalid script path.';
-            } else {
-                ob_start();
-                try {
-                    require $scriptPath;
-                    $output = trim((string) ob_get_clean());
-                    $flash = 'Image fix completed.';
-                    if ($output !== '') {
-                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                            if (trim((string) $line) !== '') {
-                                $maintenanceLog[] = (string) $line;
-                            }
-                        }
-                    }
-                    $maintenanceLog[] = 'Task: fix_product_images';
-                    $maintenanceLog[] = 'Source: Amazon product page scrape + safe placeholder';
-                } catch (Throwable $e) {
-                    ob_end_clean();
-                    $errors[] = 'Image fix failed: ' . $e->getMessage();
-                }
-            }
-        } else {
-            $errors[] = 'Unknown maintenance task.';
+        $result = enma_run_maintenance_task($task, $errors, $maintenanceLog);
+        if ($result !== null) {
+            $flash = $result;
         }
     }
 }
@@ -303,95 +117,8 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_product') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
-    }
-
-    $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
-    $title = trim((string) ($_POST['title'] ?? ''));
-    $categoryName = trim((string) ($_POST['category_name'] ?? ''));
-    $price = trim((string) ($_POST['price_amount'] ?? ''));
-    $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
-    $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
-    $description = trim((string) ($_POST['description'] ?? ''));
-
-    if ($asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
-        $errors[] = 'ASIN, title, category and affiliate URL are required.';
-    }
-    if ($imageUrl !== '' && filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
-        $errors[] = 'Image URL is not valid.';
-    }
-    if (filter_var($affiliateUrl, FILTER_VALIDATE_URL) === false) {
-        $errors[] = 'Affiliate URL is not valid.';
-    }
-    if ($errors === []) {
-        $affiliateUrl = amazon_affiliate_url($affiliateUrl);
-    }
-
-    if ($errors === []) {
-        $slug = unique_slug($pdo, $title);
-        $categorySlug = slugify($categoryName);
-        $now = now_iso();
-
-        try {
-            $stmt = $pdo->prepare(
-                'INSERT INTO products (
-                    asin, slug, title, description, category_slug, category_name,
-                    price_amount, price_currency, image_url, affiliate_url, status,
-                    last_synced_at, created_at, updated_at
-                 ) VALUES (
-                    :asin, :slug, :title, :description, :category_slug, :category_name,
-                    :price_amount, :price_currency, :image_url, :affiliate_url, :status,
-                    :last_synced_at, :created_at, :updated_at
-                 )'
-            );
-
-            $stmt->execute([
-                ':asin' => $asin,
-                ':slug' => $slug,
-                ':title' => $title,
-                ':description' => $description,
-                ':category_slug' => $categorySlug,
-                ':category_name' => $categoryName,
-                ':price_amount' => is_numeric($price) ? (float) $price : null,
-                ':price_currency' => 'USD',
-                ':image_url' => $imageUrl,
-                ':affiliate_url' => $affiliateUrl,
-                ':status' => 'published',
-                ':last_synced_at' => $now,
-                ':created_at' => $now,
-                ':updated_at' => $now,
-            ]);
-
-            $flash = 'Product created successfully.';
-        } catch (Throwable $e) {
-            $errors[] = 'Insert failed. Verify ASIN uniqueness and URL fields.';
-        }
-    }
-}
-
-if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_guides_overrides') {
-    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
-        $errors[] = 'Invalid request token.';
     } else {
-        $slugs = ['best-beginner-telescopes', 'best-telescope-accessories', 'best-telescopes-under-500'];
-        $fields = ['title', 'description', 'intro', 'final_recommendation', 'cta_text', 'cta_note'];
-        $payload = [];
-
-        foreach ($slugs as $slug) {
-            $payload[$slug] = [];
-            foreach ($fields as $field) {
-                $key = $slug . '__' . $field;
-                $value = trim((string) ($_POST[$key] ?? ''));
-                if ($value !== '') {
-                    $payload[$slug][$field] = $value;
-                }
-            }
-        }
-
-        if (!save_guides_overrides($payload)) {
-            $errors[] = 'Could not save guide overrides file.';
-        } else {
-            $flash = 'Guide text overrides saved.';
-        }
+        $flash = enma_handle_add_product($errors, $_POST);
     }
 }
 
@@ -399,68 +126,7 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
     } else {
-        $id = (int) ($_POST['id'] ?? 0);
-        $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
-        $title = trim((string) ($_POST['title'] ?? ''));
-        $categoryName = trim((string) ($_POST['category_name'] ?? ''));
-        $price = trim((string) ($_POST['price_amount'] ?? ''));
-        $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
-        $description = trim((string) ($_POST['description'] ?? ''));
-        $keepImage = (string) ($_POST['keep_image'] ?? '');
-        
-        $uploadedImageUrl = enma_handle_image_upload('product_image', $errors);
-        
-        if ($id <= 0 || $asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
-            $errors[] = 'ID, ASIN, title, category and affiliate URL are required.';
-        }
-        if ($affiliateUrl !== '' && filter_var($affiliateUrl, FILTER_VALIDATE_URL) === false) {
-            $errors[] = 'Affiliate URL is not valid.';
-        }
-        if ($errors === []) {
-            $affiliateUrl = amazon_affiliate_url($affiliateUrl);
-        }
-        
-        if ($errors === []) {
-            $now = now_iso();
-            $imageClause = '';
-            $params = [
-                ':asin' => $asin,
-                ':title' => $title,
-                ':description' => $description,
-                ':category_slug' => slugify($categoryName),
-                ':category_name' => $categoryName,
-                ':price_amount' => is_numeric($price) ? (float) $price : null,
-                ':affiliate_url' => $affiliateUrl,
-                ':updated_at' => $now,
-                ':id' => $id,
-            ];
-            
-            if ($uploadedImageUrl !== null) {
-                $imageClause = ', image_url = :image_url';
-                $params[':image_url'] = $uploadedImageUrl;
-            } elseif ($keepImage === '0' || $keepImage === '') {
-                $imageClause = ', image_url = NULL';
-            }
-            
-            try {
-                $stmt = $pdo->prepare(
-                    'UPDATE products SET
-                        asin = :asin,
-                        title = :title,
-                        description = :description,
-                        category_slug = :category_slug,
-                        category_name = :category_name,
-                        price_amount = :price_amount,
-                        affiliate_url = :affiliate_url,
-                        updated_at = :updated_at' . $imageClause . '
-                     WHERE id = :id'
-                );
-                $stmt->execute($params);
-                $flash = 'Product updated successfully.';
-            } catch (Throwable $e) {
-                $errors[] = 'Update failed: ' . $e->getMessage();
-            }
-        }
+        $flash = enma_handle_edit_product($errors, $_POST);
     }
 }
 
@@ -468,18 +134,15 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
     } else {
-        $id = (int) ($_POST['id'] ?? 0);
-        if ($id <= 0) {
-            $errors[] = 'Invalid product ID.';
-        } else {
-            try {
-                $stmt = $pdo->prepare('DELETE FROM products WHERE id = :id');
-                $stmt->execute([':id' => $id]);
-                $flash = 'Product deleted successfully.';
-            } catch (Throwable $e) {
-                $errors[] = 'Delete failed: ' . $e->getMessage();
-            }
-        }
+        $flash = enma_handle_delete_product($errors, $_POST);
+    }
+}
+
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_guides_overrides') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $flash = enma_handle_save_guides($errors, $_POST);
     }
 }
 
@@ -488,15 +151,24 @@ if (!in_array($activeTab, ['overview', 'products', 'guides', 'views', 'maintenan
     $activeTab = 'overview';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
-$viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
+$viewsDashboard = ($authenticated && $activeTab === 'views') ? enma_get_views_data($viewDays) : [];
 
 $productQuery = $authenticated ? trim((string) ($_GET['q'] ?? '')) : '';
-$allProducts = [];
-if ($authenticated && $activeTab === 'products') {
-    if ($productQuery !== '') {
-        $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
-             FROM products
+$allProducts = ($authenticated && $activeTab === 'products') ? enma_fetch_products($productQuery) : [];
+
+$overviewStats = ($authenticated && $activeTab === 'overview') ? enma_get_overview_stats() : [];
+
+$dbTables = ($authenticated && $activeTab === 'maintenance') ? enma_get_db_stats() : [];
+
+$guideOverrides = ($authenticated && $activeTab === 'guides') ? enma_load_guides_data() : [];
+
+$editProductId = (int) ($_GET['id'] ?? 0);
+$editProduct = null;
+if ($authenticated && $activeTab === 'products' && $editProductId > 0) {
+    $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id');
+    $stmt->execute([':id' => $editProductId]);
+    $editProduct = $stmt->fetch();
+}
              WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q
              ORDER BY id DESC
              LIMIT 500'
