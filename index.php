@@ -506,16 +506,19 @@ if ($segments === []) {
             'title' => 'Best Beginner Telescopes (2026)',
             'slug' => 'best-beginner-telescopes',
             'summary' => 'Practical first-telescope picks for beginners with no prior experience.',
+            'image' => '/assets/img/optimized_1.webp',
         ],
         [
             'title' => 'Best Telescope Accessories',
             'slug' => 'best-telescope-accessories',
             'summary' => 'High-impact upgrades that improve real observing sessions.',
+            'image' => '/assets/img/optimized_2.webp',
         ],
         [
             'title' => 'Best Telescopes Under $500',
             'slug' => 'best-telescopes-under-500',
             'summary' => 'Value-focused telescopes with real performance potential under $500.',
+            'image' => '/assets/img/optimized_3.webp',
         ],
     ];
     $pageTitle = 'Astronomy Buying Guides | ' . APP_NAME;

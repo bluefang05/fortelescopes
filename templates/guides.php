@@ -18,7 +18,7 @@ $guides = $data['guides'] ?? [];
     <div class="grid">
         <?php foreach ($guides as $guide): ?>
             <article class="card">
-                <img src="<?= e(url('/assets/logo/512.png')) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                <img src="<?= e(url($guide['image'] ?? '/assets/logo/512.png')) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
                 <div class="body">
                     <span class="badge">Guide</span>
                     <h3><?= e($guide['title']) ?></h3>
