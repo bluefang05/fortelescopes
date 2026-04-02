@@ -48,6 +48,7 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             --radius: 18px;
         }
 
+        /* Typography: Only 2 fonts - Sora for UI/body, Spectral for headings */
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; }
         body {
@@ -138,7 +139,8 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             margin: 4px 0 0;
             max-width: 760px;
             font-size: 14px;
-            color: rgba(255, 255, 255, 0.88);
+            color: rgba(255, 255, 255, 0.95);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
 
         nav {
@@ -154,15 +156,16 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             padding: 9px 13px;
             font-size: 12px;
             font-weight: 700;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            color: #f8f5ed;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #fff;
             transition: transform 180ms ease, background 180ms ease;
+            backdrop-filter: blur(4px);
         }
 
         nav a:hover {
             transform: translateY(-2px);
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
         }
 
         main {
@@ -173,7 +176,7 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         .hero {
             background: linear-gradient(135deg, #fffdf8 0%, #fff4df 100%);
-            border: 1px solid #f0d3aa;
+            border: none;
             border-radius: 26px;
             padding: 26px 24px;
             box-shadow: var(--card-shadow);
@@ -183,13 +186,13 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         .hero-kicker {
             display: inline-block;
-            background: #121f2f;
+            background: #1e293b;
             color: #f7f4ee;
-            font-size: 11px;
+            font-size: 10px;
             letter-spacing: 0.08em;
             font-weight: 700;
             border-radius: 999px;
-            padding: 6px 10px;
+            padding: 5px 9px;
             text-transform: uppercase;
         }
 
@@ -205,8 +208,8 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             margin: 0;
             max-width: 860px;
             color: #2e3850;
-            font-size: 16px;
-            line-height: 1.52;
+            font-size: 15px;
+            line-height: 1.55;
         }
 
         .trust-row {
@@ -218,14 +221,15 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         .chip {
             border-radius: 999px;
-            padding: 8px 11px;
-            font-size: 12px;
-            font-weight: 700;
+            padding: 7px 10px;
+            font-size: 11px;
+            font-weight: 600;
             background: #fff;
-            border: 1px solid #e8d7bc;
-            color: #21314b;
+            border: 1px solid #e5e7eb;
+            color: #374151;
         }
 
+        /* Trust strip - simplified without heavy borders */
         .trust-strip {
             margin: 0 0 16px;
             display: grid;
@@ -234,13 +238,13 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         }
 
         .trust-box {
-            background: #fff;
-            border: 1px solid var(--line);
-            border-radius: 14px;
+            background: #f8f9fc;
+            border: none;
+            border-radius: 12px;
             padding: 10px 11px;
-            font-size: 12px;
-            color: #253650;
-            font-weight: 700;
+            font-size: 11px;
+            color: #374151;
+            font-weight: 600;
         }
 
         .section-title {
@@ -266,8 +270,8 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             border-radius: var(--radius);
             overflow: hidden;
             background: #fff;
-            border: 1px solid var(--line);
-            box-shadow: 0 10px 20px rgba(10, 20, 34, 0.08);
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             transform: translateY(12px);
             opacity: 0;
             animation: rise 520ms ease forwards;
@@ -282,7 +286,7 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             height: 200px;
             object-fit: cover;
             display: block;
-            background: linear-gradient(145deg, #e7ebf3 0%, #f4f6fa 100%);
+            background: linear-gradient(145deg, #f3f4f6 0%, #e5e7eb 100%);
         }
 
         .body {
@@ -295,19 +299,20 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             gap: 6px;
             padding: 5px 9px;
             border-radius: 999px;
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 700;
             letter-spacing: 0.04em;
             color: #0c2c41;
-            background: linear-gradient(120deg, #d9f8ff 0%, #c9ffe8 100%);
+            background: linear-gradient(120deg, #e0f2fe 0%, #d1fae5 100%);
             text-transform: uppercase;
         }
 
         .card h3 {
             margin: 10px 0 8px;
-            font-size: 19px;
+            font-size: 18px;
             line-height: 1.22;
             letter-spacing: -0.01em;
+            font-family: "Sora", sans-serif;
         }
 
         .card-copy {
@@ -327,32 +332,34 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         }
 
         .price {
-            font-size: 24px;
-            font-weight: 800;
+            font-size: 22px;
+            font-weight: 700;
             letter-spacing: -0.02em;
             color: #0f1c30;
         }
 
         .hint {
-            font-size: 12px;
-            color: #5f6b7d;
+            font-size: 11px;
+            color: #6b7280;
             font-weight: 600;
         }
 
+        /* Update freshness pills - subdued to not compete with CTA buttons */
         .update-pill {
             display: inline-block;
             border-radius: 999px;
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 700;
             letter-spacing: 0.03em;
-            padding: 4px 8px;
-            margin-bottom: 8px;
+            padding: 3px 7px;
+            margin-bottom: 6px;
             text-transform: uppercase;
+            opacity: 0.75;
         }
 
-        .fresh { background: #e4ffea; color: #176330; }
-        .aging { background: #fff5df; color: #85520e; }
-        .stale { background: #ffe7e7; color: #8a2323; }
+        .fresh { background: #e8f5e9; color: #2e7d32; }
+        .aging { background: #fff8e1; color: #f57f17; }
+        .stale { background: #ffebee; color: #c62828; }
 
         .btn, .card-cta {
             display: inline-flex;
@@ -367,12 +374,13 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             transition: transform 180ms ease, box-shadow 180ms ease;
         }
 
+        /* Primary CTA button - highest visual priority */
         .card-cta {
             width: 100%;
             background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
             color: #fff;
-            padding: 11px 12px;
-            box-shadow: 0 9px 18px rgba(255, 122, 26, 0.28);
+            padding: 12px 14px;
+            box-shadow: 0 9px 18px rgba(255, 122, 26, 0.35);
         }
 
         .card-cta:hover { transform: translateY(-2px); }
@@ -391,10 +399,10 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         .panel {
             background: #fff;
-            border: 1px solid var(--line);
+            border: none;
             border-radius: 24px;
-            padding: 18px;
-            box-shadow: 0 10px 22px rgba(10, 20, 34, 0.09);
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
             animation: rise 520ms ease both;
         }
 
@@ -412,28 +420,29 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             margin: 0 0 18px;
         }
 
+        /* Tier cards - simplified with subtle background instead of heavy borders */
         .tier-card {
-            background: #fff;
-            border: 1px solid var(--line);
+            background: #fafbfc;
+            border: 1px solid #eef2f6;
             border-radius: 16px;
-            padding: 12px;
-            box-shadow: 0 8px 16px rgba(10, 20, 34, 0.07);
+            padding: 14px;
+            box-shadow: none;
         }
 
         .tier-tag {
             display: inline-block;
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.04em;
             border-radius: 999px;
-            padding: 5px 8px;
+            padding: 4px 8px;
             margin-bottom: 8px;
         }
 
-        .tier-top { background: #dff7ff; color: #0a4960; }
-        .tier-budget { background: #e5ffe9; color: #1e5a2e; }
-        .tier-premium { background: #fff0dd; color: #6c3d08; }
+        .tier-top { background: #e3f2fd; color: #1565c0; }
+        .tier-budget { background: #e8f5e9; color: #2e7d32; }
+        .tier-premium { background: #fff3e0; color: #ef6c00; }
 
         .tier-card h4 {
             margin: 0 0 7px;
@@ -447,32 +456,34 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             font-size: 13px;
         }
 
+        /* Compare tables - cleaner with dividers only */
         .compare-table {
             margin-top: 16px;
-            border: 1px solid var(--line);
-            border-radius: 16px;
-            overflow: hidden;
-            background: #fff;
+            border: none;
+            border-radius: 0;
+            overflow: visible;
+            background: transparent;
         }
 
         .compare-row {
             display: grid;
             grid-template-columns: 170px 1fr;
-            border-bottom: 1px solid #e9edf2;
+            border-bottom: 1px solid #eef2f6;
+            padding: 8px 0;
         }
 
         .compare-row:last-child { border-bottom: 0; }
 
         .compare-label {
-            background: #f8f9fc;
-            padding: 11px 12px;
+            background: transparent;
+            padding: 11px 12px 11px 0;
             font-size: 12px;
             font-weight: 700;
-            color: #2c415f;
+            color: #6b7280;
         }
 
         .compare-value {
-            padding: 11px 12px;
+            padding: 11px 12px 11px 0;
             font-size: 14px;
             color: #1f2a3d;
         }
@@ -480,15 +491,16 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         .pill {
             display: inline-block;
             border-radius: 999px;
-            font-size: 11px;
-            font-weight: 800;
+            font-size: 10px;
+            font-weight: 700;
             letter-spacing: 0.04em;
             text-transform: uppercase;
-            padding: 4px 8px;
+            padding: 3px 7px;
+            margin-right: 6px;
         }
 
-        .pill.ok { background: #e6ffe9; color: #1b6d2e; }
-        .pill.warn { background: #fff3df; color: #8a4d09; }
+        .pill.ok { background: #dcfce7; color: #166534; }
+        .pill.warn { background: #fef3c7; color: #92400e; }
 
         .mobile-sticky-cta {
             display: none;
@@ -496,11 +508,11 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
         .notice {
             margin-top: 22px;
-            background: #eefdf6;
-            border: 1px solid #b7e8d2;
-            border-radius: 14px;
-            font-size: 12px;
-            color: #204634;
+            background: #f0fdf4;
+            border: none;
+            border-radius: 12px;
+            font-size: 11px;
+            color: #166534;
             padding: 10px 12px;
             font-weight: 600;
         }
@@ -521,6 +533,7 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             to { transform: translateY(0); opacity: 1; }
         }
 
+        /* Responsive fixes - proper menu wrapping without cutting */
         @media (max-width: 760px) {
             .hero { padding: 18px 16px; border-radius: 20px; }
             .hero h1, .hero h2 { font-size: clamp(26px, 9vw, 38px); }
@@ -530,12 +543,16 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             .brand-logo { width: 84px; height: 84px; }
             .brand-title { font-size: clamp(20px, 7vw, 26px); letter-spacing: 0.045em; }
             .brand-sub { font-size: 9px; letter-spacing: 0.14em; }
+            .tagline { font-size: 13px; }
+            nav { gap: 6px; }
+            nav a { padding: 7px 11px; font-size: 11px; }
             main { padding: 8px 14px 88px; }
             .card img { height: 188px; }
             .trust-strip { grid-template-columns: 1fr; }
             .tier-grid { grid-template-columns: 1fr; }
             .compare-row { grid-template-columns: 1fr; }
-            .compare-label { border-bottom: 1px solid #eef2f6; }
+            .compare-label { border-bottom: 1px solid #eef2f6; padding-left: 0; }
+            .compare-value { padding-left: 0; }
             .mobile-sticky-cta {
                 position: fixed;
                 left: 10px;

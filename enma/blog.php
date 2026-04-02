@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                     }
                     
-                    $flash = 'Blog post implemented successfully.';
+                    $flash = 'Blog post published successfully!';
                 } else {
                     // Create new post
                     $stmt = $pdo->prepare(
@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':published_at' => $publishedAt,
                     ]);
                     
-                    $flash = 'Blog post implemented successfully.';
+                    $flash = 'Blog post published successfully!';
                 }
                 
                 header('Location: ' . url('/enma/blog.php?tab=posts'));
