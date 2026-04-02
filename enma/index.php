@@ -75,6 +75,130 @@ function enma_handle_image_upload(string $fieldName, array &$errors): ?string
     return absolute_url('/assets/uploads/products/' . $name);
 }
 
+function enma_handle_blog_image_upload(string $fieldName, array &$errors): ?string
+{
+    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
+        return null;
+    }
+
+    $file = $_FILES[$fieldName];
+    $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($error === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+    if ($error !== UPLOAD_ERR_OK) {
+        $errors[] = 'Image upload failed.';
+        return null;
+    }
+
+    $size = (int) ($file['size'] ?? 0);
+    if ($size <= 0 || $size > 5 * 1024 * 1024) {
+        $errors[] = 'Image must be between 1 byte and 5MB.';
+        return null;
+    }
+
+    $tmp = (string) ($file['tmp_name'] ?? '');
+    if ($tmp === '' || !is_uploaded_file($tmp)) {
+        $errors[] = 'Invalid uploaded image.';
+        return null;
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = $finfo ? (string) finfo_file($finfo, $tmp) : '';
+    if ($finfo) {
+        finfo_close($finfo);
+    }
+
+    $map = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+    if (!isset($map[$mime])) {
+        $errors[] = 'Only JPG, PNG, WEBP, or GIF are allowed.';
+        return null;
+    }
+
+    $ext = $map[$mime];
+    $uploadDir = __DIR__ . '/../assets/uploads/blog';
+    if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+        $errors[] = 'Could not create upload directory.';
+        return null;
+    }
+
+    $name = 'b_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $target = $uploadDir . '/' . $name;
+    if (!move_uploaded_file($tmp, $target)) {
+        $errors[] = 'Could not move uploaded image.';
+        return null;
+    }
+
+    return absolute_url('/assets/uploads/blog/' . $name);
+}
+
+function enma_handle_guide_image_upload(string $fieldName, array &$errors): ?string
+{
+    if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
+        return null;
+    }
+
+    $file = $_FILES[$fieldName];
+    $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($error === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+    if ($error !== UPLOAD_ERR_OK) {
+        $errors[] = 'Image upload failed.';
+        return null;
+    }
+
+    $size = (int) ($file['size'] ?? 0);
+    if ($size <= 0 || $size > 5 * 1024 * 1024) {
+        $errors[] = 'Image must be between 1 byte and 5MB.';
+        return null;
+    }
+
+    $tmp = (string) ($file['tmp_name'] ?? '');
+    if ($tmp === '' || !is_uploaded_file($tmp)) {
+        $errors[] = 'Invalid uploaded image.';
+        return null;
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = $finfo ? (string) finfo_file($finfo, $tmp) : '';
+    if ($finfo) {
+        finfo_close($finfo);
+    }
+
+    $map = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+    if (!isset($map[$mime])) {
+        $errors[] = 'Only JPG, PNG, WEBP, or GIF are allowed.';
+        return null;
+    }
+
+    $ext = $map[$mime];
+    $uploadDir = __DIR__ . '/../assets/uploads/guides';
+    if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+        $errors[] = 'Could not create upload directory.';
+        return null;
+    }
+
+    $name = 'g_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $target = $uploadDir . '/' . $name;
+    if (!move_uploaded_file($tmp, $target)) {
+        $errors[] = 'Could not move uploaded image.';
+        return null;
+    }
+
+    return '/assets/uploads/guides/' . $name;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
@@ -393,6 +517,104 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 }
 
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'guides_crud') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $crudAction = $_POST['crud_action'] ?? '';
+        
+        if ($crudAction === 'create' || $crudAction === 'update') {
+            $slug = slugify(trim($_POST['slug'] ?? ''));
+            $title = trim($_POST['title'] ?? '');
+            $description = trim($_POST['description'] ?? '');
+            $summary = trim($_POST['summary'] ?? '');
+            $focus = trim($_POST['focus'] ?? 'telescopes');
+            $intro = trim($_POST['intro'] ?? '');
+            $finalRecommendation = trim($_POST['final_recommendation'] ?? '');
+            $ctaText = trim($_POST['cta_text'] ?? 'Check Price on Amazon');
+            $ctaNote = trim($_POST['cta_note'] ?? '');
+            $isPublished = isset($_POST['is_published']) ? 1 : 0;
+            $sortOrder = (int) ($_POST['sort_order'] ?? 0);
+            
+            if ($slug === '' || $title === '') {
+                $errors[] = 'Slug and title are required.';
+            }
+            
+            $imagePath = null;
+            if (isset($_FILES['image_path']) && $_FILES['image_path']['error'] !== UPLOAD_ERR_NO_FILE) {
+                $imagePath = enma_handle_guide_image_upload('image_path', $errors);
+            } elseif (!empty($_POST['existing_image'])) {
+                $imagePath = $_POST['existing_image'];
+            }
+            
+            if ($errors === []) {
+                try {
+                    if ($crudAction === 'create') {
+                        $stmt = $pdo->prepare(
+                            'INSERT INTO guides (slug, title, description, summary, focus, intro, final_recommendation, cta_text, cta_note, image_path, is_published, sort_order, created_at, updated_at)
+                             VALUES (:slug, :title, :description, :summary, :focus, :intro, :final_recommendation, :cta_text, :cta_note, :image_path, :is_published, :sort_order, NOW(), NOW())'
+                        );
+                        $stmt->execute([
+                            ':slug' => $slug,
+                            ':title' => $title,
+                            ':description' => $description ?: null,
+                            ':summary' => $summary ?: null,
+                            ':focus' => $focus,
+                            ':intro' => $intro ?: null,
+                            ':final_recommendation' => $finalRecommendation ?: null,
+                            ':cta_text' => $ctaText,
+                            ':cta_note' => $ctaNote ?: null,
+                            ':image_path' => $imagePath,
+                            ':is_published' => $isPublished,
+                            ':sort_order' => $sortOrder,
+                        ]);
+                        $flash = 'Guide created successfully.';
+                    } else {
+                        $guideId = (int) ($_POST['id'] ?? 0);
+                        $stmt = $pdo->prepare(
+                            'UPDATE guides SET slug=:slug, title=:title, description=:description, summary=:summary, focus=:focus, 
+                             intro=:intro, final_recommendation=:final_recommendation, cta_text=:cta_text, cta_note=:cta_note, 
+                             image_path=:image_path, is_published=:is_published, sort_order=:sort_order, updated_at=NOW()
+                             WHERE id=:id'
+                        );
+                        $stmt->execute([
+                            ':id' => $guideId,
+                            ':slug' => $slug,
+                            ':title' => $title,
+                            ':description' => $description ?: null,
+                            ':summary' => $summary ?: null,
+                            ':focus' => $focus,
+                            ':intro' => $intro ?: null,
+                            ':final_recommendation' => $finalRecommendation ?: null,
+                            ':cta_text' => $ctaText,
+                            ':cta_note' => $ctaNote ?: null,
+                            ':image_path' => $imagePath,
+                            ':is_published' => $isPublished,
+                            ':sort_order' => $sortOrder,
+                        ]);
+                        $flash = 'Guide updated successfully.';
+                    }
+                } catch (Throwable $e) {
+                    $errors[] = 'Database error: ' . $e->getMessage();
+                }
+            }
+        } elseif ($crudAction === 'delete') {
+            $guideId = (int) ($_POST['id'] ?? 0);
+            if ($guideId > 0) {
+                try {
+                    $stmt = $pdo->prepare('DELETE FROM guides WHERE id = :id');
+                    $stmt->execute([':id' => $guideId]);
+                    $flash = 'Guide deleted successfully.';
+                } catch (Throwable $e) {
+                    $errors[] = 'Delete failed: ' . $e->getMessage();
+                }
+            } else {
+                $errors[] = 'Invalid guide ID.';
+            }
+        }
+    }
+}
+
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
 if (!in_array($activeTab, ['overview', 'products', 'guides', 'views', 'maintenance'], true)) {
     $activeTab = 'overview';
@@ -450,6 +672,15 @@ if ($authenticated && $activeTab === 'maintenance') {
 }
 
 $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_overrides() : [];
+$allGuides = [];
+if ($authenticated && $activeTab === 'guides') {
+    try {
+        $stmt = $pdo->query('SELECT id, slug, title, description, summary, focus, intro, final_recommendation, cta_text, cta_note, image_path, is_published, sort_order, created_at, updated_at FROM guides ORDER BY sort_order ASC, id DESC');
+        $allGuides = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        // Table might not exist yet
+    }
+}
 
 ?>
 <!doctype html>
@@ -513,6 +744,7 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         <div class="tabs">
             <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Overview</a>
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
+            <a class="tab <?= $activeTab === 'blog' ? 'active' : '' ?>" href="<?= e(url('/enma/blog.php?tab=posts')) ?>">Blog</a>
             <a class="tab <?= $activeTab === 'guides' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=guides')) ?>">Guides</a>
             <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
@@ -598,7 +830,58 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         </section>
         <?php elseif ($activeTab === 'guides'): ?>
         <section class="box">
-            <h2>Guides Text Manager</h2>
+            <h2>Guides CRUD Manager</h2>
+            <p class="muted">Create, edit, and delete guides with image upload support.</p>
+            
+            <div style="margin-bottom: 20px;">
+                <button class="btn" onclick="openGuideModal()">+ New Guide</button>
+            </div>
+            
+            <?php if ($allGuides === []): ?>
+                <div class="empty">No guides found. Create your first guide!</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>ID</th>
+                        <th>Image</th>
+                        <th>Title</th>
+                        <th>Slug</th>
+                        <th>Focus</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($allGuides as $guide): ?>
+                    <tr>
+                        <td><?= (int) $guide['sort_order'] ?></td>
+                        <td><?= (int) $guide['id'] ?></td>
+                        <td>
+                            <?php if (!empty($guide['image_path'])): ?>
+                                <img src="<?= e(url($guide['image_path'])) ?>" alt="" style="width:50px;height:50px;object-fit:cover;border-radius:4px;">
+                            <?php else: ?>
+                                <span class="muted">No image</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= e($guide['title']) ?></td>
+                        <td><code><?= e($guide['slug']) ?></code></td>
+                        <td><?= e($guide['focus']) ?></td>
+                        <td><?= $guide['is_published'] ? '<span style="color:#16a34a;">Published</span>' : '<span style="color:#dc2626;">Draft</span>' ?></td>
+                        <td>
+                            <button class="btn" style="padding:4px 8px;font-size:12px;" onclick='editGuide(<?= json_encode($guide) ?>)'>Edit</button>
+                            <button class="btn" style="padding:4px 8px;font-size:12px;background:#dc2626;" onclick="deleteGuide(<?= (int) $guide['id'] ?>, '<?= e(addslashes($guide['title'])) ?>')">Delete</button>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+        
+        <section class="box">
+            <h2>Guides Text Overrides</h2>
             <p class="muted">Edit key conversion copy for the three main guides without touching code.</p>
             <form method="post">
                 <input type="hidden" name="action" value="save_guides_overrides">
@@ -638,6 +921,161 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                 <button class="btn" type="submit">Save Guide Text Overrides</button>
             </form>
         </section>
+        
+        <div id="guideModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;overflow:auto;">
+            <div style="background:#fff;margin:40px auto;max-width:800px;padding:24px;border-radius:10px;position:relative;">
+                <button onclick="closeGuideModal()" style="position:absolute;top:12px;right:12px;background:none;border:none;font-size:24px;cursor:pointer;">&times;</button>
+                <h2 id="modalTitle">Create/Edit Guide</h2>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="guides_crud">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="crud_action" id="crudAction" value="create">
+                    <input type="hidden" name="id" id="guideId" value="">
+                    <input type="hidden" name="existing_image" id="existingImage" value="">
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label>Title *</label>
+                            <input type="text" name="title" id="guideTitle" required>
+                        </div>
+                        <div>
+                            <label>Slug *</label>
+                            <input type="text" name="slug" id="guideSlug" required placeholder="best-beginner-telescopes">
+                        </div>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label>Focus</label>
+                            <select name="focus" id="guideFocus">
+                                <option value="telescopes">Telescopes</option>
+                                <option value="accessories">Accessories</option>
+                                <option value="budget">Budget</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Sort Order</label>
+                            <input type="number" name="sort_order" id="guideSortOrder" value="0">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label>Description</label>
+                        <textarea name="description" id="guideDescription" rows="3"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label>Summary</label>
+                        <textarea name="summary" id="guideSummary" rows="2"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label>Intro</label>
+                        <textarea name="intro" id="guideIntro" rows="4"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label>Final Recommendation</label>
+                        <textarea name="final_recommendation" id="guideFinalRecommendation" rows="4"></textarea>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label>CTA Text</label>
+                            <input type="text" name="cta_text" id="guideCtaText" value="Check Price on Amazon">
+                        </div>
+                        <div>
+                            <label>CTA Note</label>
+                            <input type="text" name="cta_note" id="guideCtaNote">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label>Guide Image</label>
+                        <div id="imagePreview" style="margin-bottom:8px;"></div>
+                        <input type="file" name="image_path" accept="image/*">
+                        <p class="muted" style="font-size:12px;">Upload new image or keep existing one.</p>
+                    </div>
+                    
+                    <div style="margin-top:12px;">
+                        <label style="display:flex;align-items:center;gap:8px;">
+                            <input type="checkbox" name="is_published" id="guideIsPublished" checked>
+                            Published
+                        </label>
+                    </div>
+                    
+                    <div style="margin-top:20px;display:flex;gap:10px;">
+                        <button class="btn" type="submit">Save Guide</button>
+                        <button type="button" class="btn" style="background:#6b7280;" onclick="closeGuideModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <script>
+        function openGuideModal() {
+            document.getElementById('modalTitle').textContent = 'Create Guide';
+            document.getElementById('crudAction').value = 'create';
+            document.getElementById('guideId').value = '';
+            document.getElementById('guideTitle').value = '';
+            document.getElementById('guideSlug').value = '';
+            document.getElementById('guideFocus').value = 'telescopes';
+            document.getElementById('guideSortOrder').value = '0';
+            document.getElementById('guideDescription').value = '';
+            document.getElementById('guideSummary').value = '';
+            document.getElementById('guideIntro').value = '';
+            document.getElementById('guideFinalRecommendation').value = '';
+            document.getElementById('guideCtaText').value = 'Check Price on Amazon';
+            document.getElementById('guideCtaNote').value = '';
+            document.getElementById('existingImage').value = '';
+            document.getElementById('imagePreview').innerHTML = '';
+            document.getElementById('guideIsPublished').checked = true;
+            document.getElementById('guideModal').style.display = 'block';
+        }
+        
+        function closeGuideModal() {
+            document.getElementById('guideModal').style.display = 'none';
+        }
+        
+        function editGuide(guide) {
+            document.getElementById('modalTitle').textContent = 'Edit Guide';
+            document.getElementById('crudAction').value = 'update';
+            document.getElementById('guideId').value = guide.id;
+            document.getElementById('guideTitle').value = guide.title;
+            document.getElementById('guideSlug').value = guide.slug;
+            document.getElementById('guideFocus').value = guide.focus || 'telescopes';
+            document.getElementById('guideSortOrder').value = guide.sort_order || 0;
+            document.getElementById('guideDescription').value = guide.description || '';
+            document.getElementById('guideSummary').value = guide.summary || '';
+            document.getElementById('guideIntro').value = guide.intro || '';
+            document.getElementById('guideFinalRecommendation').value = guide.final_recommendation || '';
+            document.getElementById('guideCtaText').value = guide.cta_text || 'Check Price on Amazon';
+            document.getElementById('guideCtaNote').value = guide.cta_note || '';
+            document.getElementById('existingImage').value = guide.image_path || '';
+            document.getElementById('guideIsPublished').checked = !!guide.is_published;
+            
+            if (guide.image_path) {
+                document.getElementById('imagePreview').innerHTML = '<img src="<?= url("") ?>' + guide.image_path + '" style="max-height:100px;border-radius:4px;">';
+            } else {
+                document.getElementById('imagePreview').innerHTML = '';
+            }
+            
+            document.getElementById('guideModal').style.display = 'block';
+        }
+        
+        function deleteGuide(id, title) {
+            if (confirm('Are you sure you want to delete the guide "' + title + '"? This action cannot be undone.')) {
+                var form = document.createElement('form');
+                form.method = 'post';
+                form.innerHTML = '<input type="hidden" name="action" value="guides_crud">' +
+                    '<input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">' +
+                    '<input type="hidden" name="crud_action" value="delete">' +
+                    '<input type="hidden" name="id" value="' + id + '">';
+                document.body.appendChild(form);
+                form.submit();
+            }
+        }
+        </script>
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
             <h2>Views Dashboard</h2>
