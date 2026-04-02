@@ -150,9 +150,7 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         if (!isset($taskMap[$task])) {
             $errors[] = 'Unknown advanced task.';
         }
-        if ($task === 'seed_more_products' && DB_DRIVER !== 'sqlite') {
-            $errors[] = 'seed_more_products supports sqlite only in current script version.';
-        }
+        
 
         if ($errors === []) {
             if (!defined('ENMA_ALLOW_WEB_RUN')) {
@@ -427,10 +425,8 @@ if ($authenticated && $activeTab === 'products') {
 
 $overviewStats = [];
 if ($authenticated && $activeTab === 'overview') {
-    $views30dSql = DB_DRIVER === 'mysql'
-        ? "SELECT COALESCE(SUM(views),0) FROM page_views WHERE view_date >= DATE_SUB(UTC_DATE(), INTERVAL 29 DAY)"
-        : "SELECT COALESCE(SUM(views),0) FROM page_views WHERE view_date >= date('now','-29 day')";
-    $overviewStats = [
+$views30dSql = "SELECT COALESCE(SUM(views),0) FROM page_views WHERE view_date >= DATE_SUB(UTC_DATE(), INTERVAL 29 DAY)";
+$overviewStats = [
         'products' => (int) $pdo->query('SELECT COUNT(*) FROM products')->fetchColumn(),
         'categories' => (int) $pdo->query('SELECT COUNT(DISTINCT category_slug) FROM products')->fetchColumn(),
         'missing_tags' => (int) $pdo->query("SELECT COUNT(*) FROM products WHERE affiliate_url NOT LIKE '%tag=%'")->fetchColumn(),
@@ -880,7 +876,7 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                 <select name="task" required>
                     <option value="refresh_sync_cli">Refresh Sync Labels (script)</option>
                     <option value="reseed_real_catalog">Reseed Real Catalog (can overwrite/rehydrate catalog)</option>
-                    <option value="seed_more_products">Seed More Products (sqlite only)</option>
+                    <option value="seed_more_products">Seed More Products</option>
                 </select>
 
                 <label>Advanced Key</label>

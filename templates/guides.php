@@ -17,8 +17,16 @@ $guides = $data['guides'] ?? [];
     <p class="muted">Start with the guide that matches your current purchase intent, then compare categories and product pages before checkout.</p>
     <div class="grid">
         <?php foreach ($guides as $guide): ?>
+            <?php
+            $guideImage = match ($guide['slug'] ?? '') {
+                'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
+                'best-telescope-accessories' => '/assets/img/optimized_2.webp',
+                'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
+                default => '/assets/img/product-placeholder.svg',
+            };
+            ?>
             <article class="card">
-                <img src="<?= e(url('/assets/logo/512.png')) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
                 <div class="body">
                     <span class="badge">Guide</span>
                     <h3><?= e($guide['title']) ?></h3>

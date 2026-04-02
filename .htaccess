@@ -1,3 +1,15 @@
+# Deny access to hidden files like .env, .git, .htaccess, etc.
+<FilesMatch "^\.">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
+# Extra explicit protection for sensitive files
+<FilesMatch "^(?:\.env|\.env\.example|composer\.(?:json|lock)|package(?:-lock)?\.json|database\.php|healthcheck\.php)$">
+  Order allow,deny
+  Deny from all
+</FilesMatch>
+
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteBase /
