@@ -1,5 +1,27 @@
 <?php
 $post = $data['post'];
+$postHtmlRaw = trim((string) ($post['content_html'] ?? ''));
+$postHtml = $postHtmlRaw;
+if ($postHtmlRaw !== '') {
+    if ((strpos($postHtmlRaw, '&lt;') !== false || strpos($postHtmlRaw, '&gt;') !== false) && strpos($postHtmlRaw, '<') === false) {
+        $decoded = html_entity_decode($postHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (trim($decoded) !== '') {
+            $postHtml = trim($decoded);
+        }
+    }
+    $postHtml = preg_replace('/<\s*(script|style|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $postHtml) ?? $postHtml;
+    $postHtml = preg_replace('/\son[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $postHtml) ?? $postHtml;
+    $postHtml = preg_replace('/\s(href|src)\s*=\s*([\"\'])\s*javascript:[^\"\']*\2/i', ' $1="#"', $postHtml) ?? $postHtml;
+    $postHtml = preg_replace_callback('/<iframe\b[^>]*\bsrc=(["\'])([^"\']+)\1[^>]*>\s*<\/iframe>/i', static function ($m) {
+        $src = trim((string) ($m[2] ?? ''));
+        if (!preg_match('#^https://(www\.)?(youtube\.com|youtube-nocookie\.com)/embed/#i', $src)) {
+            return '';
+        }
+        return '<iframe src="' . e($src) . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+    }, $postHtml) ?? $postHtml;
+    $postHtml = preg_replace('/<iframe\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/iframe>/i', '', $postHtml) ?? $postHtml;
+    $postHtml = preg_replace('/<iframe\b[^>]*\bsrc=(["\'])(?!https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/)[^"\']+\1[^>]*>\s*<\/iframe>/i', '', $postHtml) ?? $postHtml;
+}
 ?>
 <section class="hero">
     <span class="hero-kicker">Astronomy Article</span>
@@ -18,7 +40,7 @@ $post = $data['post'];
 
 <section class="panel article-content" style="margin-bottom: 18px;">
     <div class="muted" style="line-height: 1.6;">
-        <?= $post['content_html'] ?>
+        <?= $postHtml ?>
     </div>
 </section>
 

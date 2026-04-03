@@ -18,9 +18,18 @@ if ($fullGuideHtmlRaw !== '') {
     $candidate = (strpos($fullGuideHtmlRaw, '&lt;') !== false || strpos($fullGuideHtmlRaw, '&gt;') !== false)
         ? html_entity_decode($fullGuideHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8')
         : $fullGuideHtmlRaw;
-    $candidate = preg_replace('/<\s*(script|style|iframe|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
+    $candidate = preg_replace('/<\s*(script|style|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/\son[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/\s(href|src)\s*=\s*([\"\'])\s*javascript:[^\"\']*\2/i', ' $1="#"', $candidate) ?? $candidate;
+    $candidate = preg_replace_callback('/<iframe\b[^>]*\bsrc=(["\'])([^"\']+)\1[^>]*>\s*<\/iframe>/i', static function ($m) {
+        $src = trim((string) ($m[2] ?? ''));
+        if (!preg_match('#^https://(www\.)?(youtube\.com|youtube-nocookie\.com)/embed/#i', $src)) {
+            return '';
+        }
+        return '<iframe src="' . e($src) . '" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+    }, $candidate) ?? $candidate;
+    $candidate = preg_replace('/<iframe\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/iframe>/i', '', $candidate) ?? $candidate;
+    $candidate = preg_replace('/<iframe\b[^>]*\bsrc=(["\'])(?!https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/)[^"\']+\1[^>]*>\s*<\/iframe>/i', '', $candidate) ?? $candidate;
     $fullGuideHtml = trim($candidate);
 }
 ?>
