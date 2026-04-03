@@ -216,14 +216,19 @@ if ($segments === []) {
         $breadcrumbs[] = ['name' => 'Products', 'url' => absolute_url('/telescopes')];
         $breadcrumbs[] = ['name' => $product['title'], 'url' => absolute_url($canonicalPath)];
     }
-} elseif (
-    (count($segments) === 2 && $segments[0] === 'guides') ||
-    (count($segments) === 1 && ($guide = find_post_by_slug($pdo, slugify($segments[0]))) && $guide['post_type'] === 'guide')
-) {
-    $guideSlug = count($segments) === 2 ? slugify($segments[1]) : slugify($segments[0]);
-    if (!isset($guide)) {
-        $guide = find_post_by_slug($pdo, $guideSlug);
-    }
+} elseif (count($segments) === 1 && $segments[0] === 'guides') {
+    $viewPageType = 'guides';
+    $viewPageSlug = 'guides-hub';
+    $template = __DIR__ . '/templates/guides.php';
+    $data['guides'] = get_posts($pdo, 'guide', 10);
+    $pageTitle = 'Astronomy Buying Guides | ' . APP_NAME;
+    $meta['description'] = 'Browse telescope and astronomy buying guides covering beginner picks, accessories, and budget-friendly models.';
+    $meta['image'] = absolute_url('/assets/logo/1024.png');
+    $canonicalPath = '/guides';
+    $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
+} elseif (count($segments) === 2 && $segments[0] === 'guides') {
+    $guideSlug = slugify($segments[1]);
+    $guide = find_post_by_slug($pdo, $guideSlug);
 
     if ($guide === null || $guide['post_type'] !== 'guide') {
         http_response_code(404);
@@ -240,28 +245,52 @@ if ($segments === []) {
         $data['guide'] = $guide;
         $data['guideProducts'] = $guideProducts;
         $template = __DIR__ . '/templates/guide.php';
-        $pageTitle = $guide['title'] . ' | ' . APP_NAME;
-        $meta['description'] = $guide['description'] ?? site_meta_defaults()['description'];
-        $meta['image'] = !empty($guide['featured_image']) ? absolute_url($guide['featured_image']) : absolute_url('/assets/logo/1024.png');
+        $pageTitle = ($guide['title'] ?? 'Guide') . ' | ' . APP_NAME;
+        $meta['description'] = ($guide['description'] ?? $guide['excerpt'] ?? site_meta_defaults()['description']);
+        $guideImageUrl = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guideSlug) {
+            'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
+            'best-telescope-accessories' => '/assets/img/optimized_2.webp',
+            'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
+            default => '/assets/logo/1024.png',
+        };
+        $meta['image'] = absolute_url($guideImageUrl);
         $canonicalPath = '/' . $guideSlug;
-        $jsonLd[] = json_ld_for_itemlist($guideProducts, $guide['title']);
-        $jsonLd[] = json_ld_for_article($guide['title'], $guide['description'], absolute_url($canonicalPath), gmdate('c'));
+        $jsonLd[] = json_ld_for_itemlist($guideProducts, $guide['title'] ?? '');
+        $jsonLd[] = json_ld_for_article($guide['title'] ?? '', $guide['description'] ?? $guide['excerpt'] ?? '', absolute_url($canonicalPath), gmdate('c'));
         $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
-        $breadcrumbs[] = ['name' => $guide['title'], 'url' => absolute_url($canonicalPath)];
+        $breadcrumbs[] = ['name' => $guide['title'] ?? 'Guide', 'url' => absolute_url($canonicalPath)];
         if (!empty($guide['faq'])) {
             $jsonLd[] = json_ld_for_faq($guide['faq']);
         }
     }
-} elseif (count($segments) === 1 && $segments[0] === 'guides') {
-    $viewPageType = 'guides';
-    $viewPageSlug = 'guides-hub';
-    $template = __DIR__ . '/templates/guides.php';
-    $data['guides'] = get_posts($pdo, 'guide', 10);
-    $pageTitle = 'Astronomy Buying Guides | ' . APP_NAME;
-    $meta['description'] = 'Browse telescope and astronomy buying guides covering beginner picks, accessories, and budget-friendly models.';
-    $meta['image'] = absolute_url('/assets/logo/1024.png');
-    $canonicalPath = '/guides';
+} elseif (count($segments) === 1 && ($guide = find_post_by_slug($pdo, slugify($segments[0]))) && $guide['post_type'] === 'guide') {
+    $guideSlug = slugify($segments[0]);
+    $viewPageType = 'guide';
+    $viewPageSlug = $guideSlug;
+    $guideProducts = get_products_by_category($pdo, $guide['focus'] ?? 'telescopes', 6);
+    if ($guideProducts === []) {
+        $guideProducts = get_recent_products($pdo, 6);
+    }
+    $data['guide'] = $guide;
+    $data['guideProducts'] = $guideProducts;
+    $template = __DIR__ . '/templates/guide.php';
+    $pageTitle = ($guide['title'] ?? 'Guide') . ' | ' . APP_NAME;
+    $meta['description'] = ($guide['description'] ?? $guide['excerpt'] ?? site_meta_defaults()['description']);
+    $guideImageUrl = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guideSlug) {
+        'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
+        'best-telescope-accessories' => '/assets/img/optimized_2.webp',
+        'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
+        default => '/assets/logo/1024.png',
+    };
+    $meta['image'] = absolute_url($guideImageUrl);
+    $canonicalPath = '/' . $guideSlug;
+    $jsonLd[] = json_ld_for_itemlist($guideProducts, $guide['title'] ?? '');
+    $jsonLd[] = json_ld_for_article($guide['title'] ?? '', $guide['description'] ?? $guide['excerpt'] ?? '', absolute_url($canonicalPath), gmdate('c'));
     $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
+    $breadcrumbs[] = ['name' => $guide['title'] ?? 'Guide', 'url' => absolute_url($canonicalPath)];
+    if (!empty($guide['faq'])) {
+        $jsonLd[] = json_ld_for_faq($guide['faq']);
+    }
 } elseif (count($segments) === 1 && $segments[0] === 'blog') {
     $viewPageType = 'blog';
     $viewPageSlug = 'blog-index';
