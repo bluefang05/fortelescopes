@@ -84,6 +84,7 @@ if (count($segments) === 1 && $segments[0] === 'sitemap.xml') {
         ['loc' => absolute_url('/best-telescope-accessories'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/best-telescopes-under-500'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/guides'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/blog'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/about'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/affiliate-disclosure'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/contact'), 'lastmod' => $nowIso],
@@ -101,6 +102,13 @@ if (count($segments) === 1 && $segments[0] === 'sitemap.xml') {
         $urls[] = [
             'loc' => absolute_url('/product/' . $product['slug']),
             'lastmod' => (string) ($product['updated_at'] ?? $product['last_synced_at'] ?? $nowIso),
+        ];
+    }
+    // Add blog posts to sitemap
+    foreach (get_published_posts($pdo, 100) as $blogPost) {
+        $urls[] = [
+            'loc' => absolute_url('/blog/' . $blogPost['slug']),
+            'lastmod' => (string) ($blogPost['updated_at'] ?? $blogPost['published_at'] ?? $blogPost['created_at'] ?? $nowIso),
         ];
     }
 
@@ -568,6 +576,48 @@ if ($segments === []) {
     $meta['image'] = absolute_url('/assets/logo/1024.png');
     $canonicalPath = '/contact';
     $breadcrumbs[] = ['name' => 'Contact', 'url' => absolute_url($canonicalPath)];
+} elseif (count($segments) === 1 && $segments[0] === 'blog') {
+    // Blog listing page
+    $viewPageType = 'blog_listing';
+    $viewPageSlug = 'blog';
+    $posts = get_published_posts($pdo, 20);
+    $template = __DIR__ . '/templates/blog-listing.php';
+    $pageTitle = 'Blog | ' . APP_NAME;
+    $meta['description'] = 'Telescope guides, astronomy tips, and stargazing advice for beginners and enthusiasts.';
+    $meta['image'] = absolute_url('/assets/logo/1024.png');
+    $canonicalPath = '/blog';
+    $breadcrumbs[] = ['name' => 'Blog', 'url' => absolute_url($canonicalPath)];
+} elseif (count($segments) === 2 && $segments[0] === 'blog') {
+    // Single blog post
+    $postSlug = $segments[1];
+    $post = get_post_by_slug($pdo, $postSlug);
+    
+    if ($post) {
+        $viewPageType = 'blog_post';
+        $viewPageSlug = $postSlug;
+        $relatedProducts = get_related_products_for_post($pdo, $post['title'], $post['content_html'] ?? '', 4);
+        $template = __DIR__ . '/templates/blog-single.php';
+        $pageTitle = $post['meta_title'] ?: ($post['title'] . ' | ' . APP_NAME);
+        $meta['description'] = $post['meta_description'] ?: $post['excerpt'] ?: mb_substr(strip_tags($post['content_html'] ?? ''), 0, 160);
+        $meta['image'] = $post['featured_image'] ? absolute_url($post['featured_image']) : absolute_url('/assets/logo/1024.png');
+        $canonicalPath = '/blog/' . $postSlug;
+        $breadcrumbs[] = ['name' => 'Blog', 'url' => absolute_url('/blog')];
+        $breadcrumbs[] = ['name' => $post['title'], 'url' => absolute_url($canonicalPath)];
+        $jsonLd[] = json_ld_for_article(
+            $post['title'],
+            $meta['description'],
+            absolute_url($canonicalPath),
+            $post['updated_at']
+        );
+    } else {
+        http_response_code(404);
+        $viewPageType = 'not_found';
+        $viewPageSlug = 'blog/' . $postSlug;
+        $template = __DIR__ . '/templates/not-found.php';
+        $pageTitle = 'Post Not Found | ' . APP_NAME;
+        $meta['description'] = 'The requested blog post does not exist.';
+        $meta['robots'] = 'noindex,follow';
+    }
 } else {
     http_response_code(404);
     $viewPageType = 'not_found';

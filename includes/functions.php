@@ -1085,3 +1085,94 @@ function json_ld_for_website(): array
         'url' => absolute_url('/'),
     ];
 }
+
+/**
+ * Get published blog posts from database
+ */
+function get_published_posts(PDO $pdo, int $limit = 20): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT id, slug, title, excerpt, featured_image, created_at, published_at
+         FROM posts
+         WHERE status = "published"
+         ORDER BY published_at DESC, created_at DESC
+         LIMIT :limit'
+    );
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
+}
+
+/**
+ * Get a single post by slug
+ */
+function get_post_by_slug(PDO $pdo, string $slug): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT * FROM posts WHERE slug = :slug AND status = "published"'
+    );
+    $stmt->execute([':slug' => $slug]);
+    $result = $stmt->fetch();
+    return $result ?: null;
+}
+
+/**
+ * Get related products for a blog post based on keywords in title/content
+ */
+function get_related_products_for_post(PDO $pdo, string $postTitle, string $postContent, int $limit = 4): array
+{
+    // Extract potential keywords from title and content
+    $text = mb_strtolower($postTitle . ' ' . strip_tags($postContent));
+    
+    // Common telescope-related keywords to match against category names
+    $keywords = [];
+    if (strpos($text, 'beginner') !== false || strpos($text, 'first') !== false) {
+        $keywords[] = '%telescopes%';
+    }
+    if (strpos($text, 'accessor') !== false) {
+        $keywords[] = '%accessories%';
+    }
+    if (strpos($text, 'mount') !== false || strpos($text, 'tripod') !== false) {
+        $keywords[] = '%mounts%';
+        $keywords[] = '%tripods%';
+    }
+    if (strpos($text, 'eyepiece') !== false || strpos($text, 'lens') !== false) {
+        $keywords[] = '%eyepieces%';
+    }
+    
+    if ($keywords === []) {
+        // Default to recent products
+        return get_recent_products($pdo, $limit);
+    }
+    
+    // Build query with OR conditions for categories
+    $conditions = [];
+    $params = [];
+    foreach ($keywords as $i => $keyword) {
+        $conditions[] = "category_slug LIKE :kw$i";
+        $params[":kw$i"] = $keyword;
+    }
+    
+    $sql = 'SELECT id, slug, title, price_amount, image_url, affiliate_url 
+            FROM products 
+            WHERE status = "published" 
+              AND (' . implode(' OR ', $conditions) . ')
+            ORDER BY created_at DESC 
+            LIMIT :limit';
+    
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    
+    $products = $stmt->fetchAll();
+    
+    // If no matches, fall back to recent products
+    if ($products === []) {
+        return get_recent_products($pdo, $limit);
+    }
+    
+    return $products;
+}
