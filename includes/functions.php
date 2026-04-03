@@ -74,6 +74,24 @@ function unique_slug(PDO $pdo, string $base): string
     }
 }
 
+function unique_slug_for_posts(PDO $pdo, string $base): string
+{
+    $base = slugify($base);
+    $slug = $base;
+    $n = 2;
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM posts WHERE slug = :slug');
+    while (true) {
+        $stmt->execute([':slug' => $slug]);
+        if ((int) $stmt->fetchColumn() === 0) {
+            return $slug;
+        }
+
+        $slug = $base . '-' . $n;
+        $n++;
+    }
+}
+
 function now_iso(): string
 {
     return gmdate('c');
@@ -135,6 +153,52 @@ function find_product_by_slug(PDO $pdo, string $slug): ?array
     $row = $stmt->fetch();
 
     return $row ?: null;
+}
+
+function get_posts(PDO $pdo, string $type = 'post', int $limit = 10): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT * FROM posts 
+         WHERE post_type = :type AND status = "published" 
+         ORDER BY published_at DESC, id DESC 
+         LIMIT :limit'
+    );
+    $stmt->bindValue(':type', $type, PDO::PARAM_STR);
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    return array_map('format_post_row', $rows);
+}
+
+function find_post_by_slug(PDO $pdo, string $slug): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT * FROM posts 
+         WHERE slug = :slug AND status = "published" 
+         LIMIT 1'
+    );
+    $stmt->execute([':slug' => $slug]);
+    $row = $stmt->fetch();
+
+    if (!$row) {
+        return null;
+    }
+
+    return format_post_row($row);
+}
+
+function format_post_row(array $row): array
+{
+    if (isset($row['extra_data']) && is_string($row['extra_data']) && $row['extra_data'] !== '') {
+        $extra = json_decode($row['extra_data'], true);
+        if (is_array($extra)) {
+            // Row values (from DB columns) take precedence over extra_data
+            $row = array_merge($extra, $row);
+        }
+    }
+    unset($row['extra_data']);
+    return $row;
 }
 
 function money(?float $amount, string $currency = 'USD'): string
@@ -860,64 +924,6 @@ function track_outbound_click(PDO $pdo, string $targetUrl, int $productId = 0, s
         ':source_type' => $sourceType,
         ':referrer_host' => substr($referrerHost, 0, 255),
     ]);
-}
-
-function guides_overrides_path(): string
-{
-    return __DIR__ . '/../data/guides_overrides.json';
-}
-
-function load_guides_overrides(): array
-{
-    $path = guides_overrides_path();
-    if (!is_file($path)) {
-        return [];
-    }
-    $json = @file_get_contents($path);
-    if (!is_string($json) || trim($json) === '') {
-        return [];
-    }
-    $decoded = json_decode($json, true);
-    return is_array($decoded) ? $decoded : [];
-}
-
-function save_guides_overrides(array $overrides): bool
-{
-    $path = guides_overrides_path();
-    $dir = dirname($path);
-    if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
-        return false;
-    }
-    $json = json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    if (!is_string($json)) {
-        return false;
-    }
-    return @file_put_contents($path, $json . PHP_EOL, LOCK_EX) !== false;
-}
-
-function apply_guides_overrides(array $guides): array
-{
-    $overrides = load_guides_overrides();
-    if ($overrides === []) {
-        return $guides;
-    }
-
-    $allowed = ['title', 'description', 'intro', 'final_recommendation', 'cta_text', 'cta_note'];
-    foreach ($guides as $slug => $guide) {
-        if (!isset($overrides[$slug]) || !is_array($overrides[$slug])) {
-            continue;
-        }
-        foreach ($allowed as $key) {
-            if (isset($overrides[$slug][$key]) && is_string($overrides[$slug][$key])) {
-                $value = trim((string) $overrides[$slug][$key]);
-                if ($value !== '') {
-                    $guides[$slug][$key] = $value;
-                }
-            }
-        }
-    }
-
-    return $guides;
 }
 
 function editorial_stars(array $product): string

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 $guide = $data['guide'];
 $items = $data['guideProducts'] ?? [];
 $top = $items[0] ?? null;
@@ -10,11 +10,18 @@ $isAccessoriesGuide = $guideSlug === 'best-telescope-accessories';
 $isUnder500Guide = $guideSlug === 'best-telescopes-under-500';
 $showComparison = $isBeginnerGuide || $isAccessoriesGuide || $isUnder500Guide;
 $bestForMap = is_array($guide['best_for_map'] ?? null) ? $guide['best_for_map'] : [];
+$framework = is_array($guide['framework'] ?? null) ? $guide['framework'] : [];
+$mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
 ?>
 <section class="hero">
     <span class="hero-kicker">Buying Guide</span>
     <h1><?= e($guide['title']) ?></h1>
     <p><?= e($guide['description']) ?></p>
+    <?php if (!empty($guide['featured_image'])): ?>
+        <div style="margin-top: 15px; border-radius: 12px; overflow: hidden; max-height: 400px;">
+            <img src="<?= e(url($guide['featured_image'])) ?>" alt="<?= e($guide['title']) ?>" style="width: 100%; height: auto; display: block; object-fit: cover;">
+        </div>
+    <?php endif; ?>
     <div class="trust-row">
         <span class="chip">Updated product shortlist</span>
         <span class="chip">Decision-first framework</span>
@@ -36,15 +43,15 @@ $bestForMap = is_array($guide['best_for_map'] ?? null) ? $guide['best_for_map'] 
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Step 1</div>
-            <div class="compare-value"><?= e($guide['framework'][0] ?? 'Start with stability and compatibility first.') ?></div>
+            <div class="compare-value"><?= e($framework[0] ?? 'Start with stability and compatibility first.') ?></div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Step 2</div>
-            <div class="compare-value"><?= e($guide['framework'][1] ?? 'Choose products with immediate real-world usage.') ?></div>
+            <div class="compare-value"><?= e($framework[1] ?? 'Choose products with immediate real-world usage.') ?></div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Step 3</div>
-            <div class="compare-value"><?= e($guide['framework'][2] ?? 'Upgrade incrementally based on repeated bottlenecks.') ?></div>
+            <div class="compare-value"><?= e($framework[2] ?? 'Upgrade incrementally based on repeated bottlenecks.') ?></div>
         </div>
     </div>
 </section>
@@ -127,9 +134,9 @@ $bestForMap = is_array($guide['best_for_map'] ?? null) ? $guide['best_for_map'] 
 
 <section class="panel" style="margin-top: 18px;">
     <h2 class="section-title" style="margin-top:0;"><?= $isBeginnerGuide ? 'Common mistakes beginners make' : ($isAccessoriesGuide ? 'Accessory mistakes to avoid' : ($isUnder500Guide ? 'Common under-$500 buying mistakes' : 'Common beginner mistakes')) ?></h2>
-    <?php if (!empty($guide['mistakes']) && is_array($guide['mistakes'])): ?>
+    <?php if ($mistakes !== []): ?>
         <ul style="margin: 0 0 0 18px; color: #334155; line-height: 1.55;">
-            <?php foreach ($guide['mistakes'] as $mistake): ?>
+            <?php foreach ($mistakes as $mistake): ?>
                 <li style="margin-bottom: 8px;"><?= e((string) $mistake) ?></li>
             <?php endforeach; ?>
         </ul>

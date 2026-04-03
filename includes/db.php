@@ -170,16 +170,32 @@ function init_schema(PDO $pdo): void
             excerpt TEXT NULL,
             content_html MEDIUMTEXT NULL,
             featured_image TEXT NULL,
+            post_type VARCHAR(20) NOT NULL DEFAULT \'post\',
             status VARCHAR(20) NOT NULL DEFAULT \'draft\',
             meta_title VARCHAR(255) NULL,
             meta_description TEXT NULL,
+            extra_data JSON NULL,
             created_at VARCHAR(40) NOT NULL,
             updated_at VARCHAR(40) NOT NULL,
             published_at VARCHAR(40) NULL,
+            KEY idx_posts_type (post_type),
             KEY idx_posts_status (status),
             KEY idx_posts_published (published_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
+
+    $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'post_type\'');
+    $stmt->execute();
+    if (!$stmt->fetch()) {
+        $pdo->exec('ALTER TABLE posts ADD COLUMN post_type VARCHAR(20) NOT NULL DEFAULT \'post\' AFTER featured_image');
+        $pdo->exec('ALTER TABLE posts ADD INDEX idx_posts_type (post_type)');
+    }
+
+    $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'extra_data\'');
+    $stmt->execute();
+    if (!$stmt->fetch()) {
+        $pdo->exec('ALTER TABLE posts ADD COLUMN extra_data JSON NULL AFTER meta_description');
+    }
 
     $count = (int) $pdo->query('SELECT COUNT(*) FROM products')->fetchColumn();
     if ($count > 0) {

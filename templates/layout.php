@@ -572,9 +572,10 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
     <p class="tagline">Buy smarter telescope accessories with practical shortlists, clear comparisons, and direct links to proven gear.</p>
     <nav>
         <a href="<?= e(url('/')) ?>">Home</a>
+        <a href="<?= e(url('/guides')) ?>">Guides</a>
+        <a href="<?= e(url('/blog')) ?>">Blog</a>
         <a href="<?= e(url('/telescopes')) ?>">Telescopes</a>
         <a href="<?= e(url('/accessories')) ?>">Accessories</a>
-        <a href="<?= e(url('/guides')) ?>">Guides</a>
         <a href="<?= e(url('/about')) ?>">About</a>
         <a href="<?= e(url('/contact')) ?>">Contact</a>
     </nav>

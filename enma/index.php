@@ -13,7 +13,7 @@ $_SESSION['login_attempts'] = (int) ($_SESSION['login_attempts'] ?? 0);
 $_SESSION['login_locked_until'] = (int) ($_SESSION['login_locked_until'] ?? 0);
 $isLocked = ($_SESSION['login_locked_until'] > time());
 
-function enma_handle_image_upload(string $fieldName, array &$errors): ?string
+function enma_handle_image_upload(string $fieldName, array &$errors, string $subDir = 'products'): ?string
 {
     if (!isset($_FILES[$fieldName]) || !is_array($_FILES[$fieldName])) {
         return null;
@@ -59,20 +59,21 @@ function enma_handle_image_upload(string $fieldName, array &$errors): ?string
     }
 
     $ext = $map[$mime];
-    $uploadDir = __DIR__ . '/../assets/uploads/products';
+    $uploadDir = __DIR__ . '/../assets/uploads/' . $subDir;
     if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
         $errors[] = 'Could not create upload directory.';
         return null;
     }
 
-    $name = 'p_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+    $prefix = $subDir === 'posts' ? 'post_' : 'p_';
+    $name = $prefix . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
     $target = $uploadDir . '/' . $name;
     if (!move_uploaded_file($tmp, $target)) {
         $errors[] = 'Could not move uploaded image.';
         return null;
     }
 
-    return absolute_url('/assets/uploads/products/' . $name);
+    return absolute_url('/assets/uploads/' . $subDir . '/' . $name);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
@@ -122,6 +123,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
 $authenticated = !empty($_SESSION['admin_ok']);
 $maintenanceLog = [];
 $advancedEnabled = ENMA_ADVANCED_KEY !== '';
+$editingPost = null;
+$editingProduct = null;
+
+if ($authenticated && ($_GET['edit_post'] ?? '') !== '') {
+    $stmt = $pdo->prepare('SELECT * FROM posts WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => (int)$_GET['edit_post']]);
+    $editingPost = $stmt->fetch();
+    if ($editingPost) {
+        $editingPost = format_post_row($editingPost);
+    }
+}
+
+if ($authenticated && ($_GET['edit_product'] ?? '') !== '') {
+    $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => (int)$_GET['edit_product']]);
+    $editingProduct = $stmt->fetch();
+}
 
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_advanced_run') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -249,6 +267,28 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
                     $errors[] = 'DB schema updater failed: ' . $e->getMessage();
                 }
             }
+        } elseif ($task === 'migrate_guides_to_db') {
+            $scriptPath = realpath(__DIR__ . '/../scripts/migrate_guides_to_db.php');
+            if ($scriptPath === false) {
+                $errors[] = 'Migration script not found.';
+            } else {
+                ob_start();
+                try {
+                    require $scriptPath;
+                    $output = trim((string) ob_get_clean());
+                    $flash = 'Migration to DB completed.';
+                    if ($output !== '') {
+                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                            if (trim((string) $line) !== '') {
+                                $maintenanceLog[] = (string) $line;
+                            }
+                        }
+                    }
+                } catch (Throwable $e) {
+                    ob_end_clean();
+                    $errors[] = 'Migration failed: ' . $e->getMessage();
+                }
+            }
         } elseif ($task === 'refresh_sync_labels') {
             $threshold = gmdate('c', time() - (23 * 3600));
             $now = now_iso();
@@ -298,6 +338,128 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 }
 
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_post') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    }
+
+    $title = trim((string) ($_POST['title'] ?? ''));
+    $excerpt = trim((string) ($_POST['excerpt'] ?? ''));
+    $content = trim((string) ($_POST['content_html'] ?? ''));
+    $postType = trim((string) ($_POST['post_type'] ?? 'post'));
+    $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
+
+    $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
+    if ($uploaded !== null) {
+        $featuredImage = $uploaded;
+    }
+
+    if ($title === '' || $excerpt === '' || $content === '') {
+        $errors[] = 'Title, excerpt and content are required.';
+    }
+
+    if ($errors === []) {
+        $slug = unique_slug_for_posts($pdo, $title);
+        $now = now_iso();
+
+        try {
+            $stmt = $pdo->prepare(
+                'INSERT INTO posts (
+                    slug, title, excerpt, content_html, featured_image, post_type, status,
+                    created_at, updated_at, published_at
+                 ) VALUES (
+                    :slug, :title, :excerpt, :content_html, :featured_image, :post_type, :status,
+                    :created_at, :updated_at, :published_at
+                 )'
+            );
+
+            $stmt->execute([
+                ':slug' => $slug,
+                ':title' => $title,
+                ':excerpt' => $excerpt,
+                ':content_html' => $content,
+                ':featured_image' => $featuredImage,
+                ':post_type' => $postType,
+                ':status' => 'published',
+                ':created_at' => $now,
+                ':updated_at' => $now,
+                ':published_at' => $now,
+            ]);
+
+            $flash = ucfirst($postType) . ' created successfully.';
+        } catch (Throwable $e) {
+            $errors[] = 'Insert failed: ' . $e->getMessage();
+        }
+    }
+}
+
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_post') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    }
+
+    $id = (int)($_POST['id'] ?? 0);
+    $title = trim((string) ($_POST['title'] ?? ''));
+    $excerpt = trim((string) ($_POST['excerpt'] ?? ''));
+    $content = trim((string) ($_POST['content_html'] ?? ''));
+    $postType = trim((string) ($_POST['post_type'] ?? 'post'));
+    $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
+
+    $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
+    if ($uploaded !== null) {
+        $featuredImage = $uploaded;
+    }
+
+    if ($id <= 0 || $title === '' || $excerpt === '' || $content === '') {
+        $errors[] = 'Valid ID, title, excerpt and content are required.';
+    }
+
+    if ($errors === []) {
+        $now = now_iso();
+
+        try {
+            $stmt = $pdo->prepare(
+                'UPDATE posts SET 
+                    title = :title, 
+                    excerpt = :excerpt, 
+                    content_html = :content_html, 
+                    featured_image = :featured_image, 
+                    post_type = :post_type, 
+                    updated_at = :updated_at 
+                WHERE id = :id'
+            );
+
+            $stmt->execute([
+                ':title' => $title,
+                ':excerpt' => $excerpt,
+                ':content_html' => $content,
+                ':featured_image' => $featuredImage,
+                ':post_type' => $postType,
+                ':updated_at' => $now,
+                ':id' => $id
+            ]);
+
+            $flash = ucfirst($postType) . ' updated successfully.';
+            $editingPost = null; // Clear editing state after success
+        } catch (Throwable $e) {
+            $errors[] = 'Update failed: ' . $e->getMessage();
+        }
+    }
+}
+
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_post') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id > 0) {
+            $stmt = $pdo->prepare('DELETE FROM posts WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            $flash = 'Post deleted successfully.';
+        }
+    }
+}
+
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_product') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
@@ -310,6 +472,11 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
     $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
     $description = trim((string) ($_POST['description'] ?? ''));
+
+    $uploaded = enma_handle_image_upload('image_file', $errors, 'products');
+    if ($uploaded !== null) {
+        $imageUrl = $uploaded;
+    }
 
     if ($asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
         $errors[] = 'ASIN, title, category and affiliate URL are required.';
@@ -366,35 +533,84 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 }
 
-if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_guides_overrides') {
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_product') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    }
+
+    $id = (int)($_POST['id'] ?? 0);
+    $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
+    $title = trim((string) ($_POST['title'] ?? ''));
+    $categoryName = trim((string) ($_POST['category_name'] ?? ''));
+    $price = trim((string) ($_POST['price_amount'] ?? ''));
+    $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
+    $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
+    $description = trim((string) ($_POST['description'] ?? ''));
+
+    $uploaded = enma_handle_image_upload('image_file', $errors, 'products');
+    if ($uploaded !== null) {
+        $imageUrl = $uploaded;
+    }
+
+    if ($id <= 0 || $asin === '' || $title === '' || $categoryName === '' || $affiliateUrl === '') {
+        $errors[] = 'ID, ASIN, title, category and affiliate URL are required.';
+    }
+
+    if ($errors === []) {
+        $now = now_iso();
+        $categorySlug = slugify($categoryName);
+
+        try {
+            $stmt = $pdo->prepare(
+                'UPDATE products SET 
+                    asin = :asin, 
+                    title = :title, 
+                    description = :description, 
+                    category_slug = :category_slug, 
+                    category_name = :category_name, 
+                    price_amount = :price_amount, 
+                    image_url = :image_url, 
+                    affiliate_url = :affiliate_url, 
+                    updated_at = :updated_at 
+                WHERE id = :id'
+            );
+
+            $stmt->execute([
+                ':asin' => $asin,
+                ':title' => $title,
+                ':description' => $description,
+                ':category_slug' => $categorySlug,
+                ':category_name' => $categoryName,
+                ':price_amount' => is_numeric($price) ? (float) $price : null,
+                ':image_url' => $imageUrl,
+                ':affiliate_url' => $affiliateUrl,
+                ':updated_at' => $now,
+                ':id' => $id
+            ]);
+
+            $flash = 'Product updated successfully.';
+            $editingProduct = null;
+        } catch (Throwable $e) {
+            $errors[] = 'Update failed: ' . $e->getMessage();
+        }
+    }
+}
+
+if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_product') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
     } else {
-        $slugs = ['best-beginner-telescopes', 'best-telescope-accessories', 'best-telescopes-under-500'];
-        $fields = ['title', 'description', 'intro', 'final_recommendation', 'cta_text', 'cta_note'];
-        $payload = [];
-
-        foreach ($slugs as $slug) {
-            $payload[$slug] = [];
-            foreach ($fields as $field) {
-                $key = $slug . '__' . $field;
-                $value = trim((string) ($_POST[$key] ?? ''));
-                if ($value !== '') {
-                    $payload[$slug][$field] = $value;
-                }
-            }
-        }
-
-        if (!save_guides_overrides($payload)) {
-            $errors[] = 'Could not save guide overrides file.';
-        } else {
-            $flash = 'Guide text overrides saved.';
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id > 0) {
+            $stmt = $pdo->prepare('DELETE FROM products WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            $flash = 'Product deleted successfully.';
         }
     }
 }
 
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
-if (!in_array($activeTab, ['overview', 'products', 'guides', 'views', 'maintenance'], true)) {
+if (!in_array($activeTab, ['overview', 'products', 'posts', 'views', 'maintenance'], true)) {
     $activeTab = 'overview';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
@@ -449,8 +665,6 @@ if ($authenticated && $activeTab === 'maintenance') {
     }
 }
 
-$guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_overrides() : [];
-
 ?>
 <!doctype html>
 <html lang="en">
@@ -459,6 +673,27 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin | <?= e(APP_NAME) ?></title>
     <meta name="robots" content="noindex,nofollow">
+    <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+    <script>
+      $(document).ready(function() {
+        $('textarea[name="content_html"]').summernote({
+          placeholder: 'Write your content here...',
+          tabsize: 2,
+          height: 400,
+          toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'underline', 'clear']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link', 'picture', 'video']],
+            ['view', ['fullscreen', 'codeview', 'help']]
+          ]
+        });
+      });
+    </script>
     <style>
         body { margin: 0; font-family: Arial, sans-serif; background: #f2f5f8; }
         .wrap { max-width: 980px; margin: 20px auto; padding: 0 14px 28px; }
@@ -481,6 +716,7 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         .toolbar { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
         .toolbar .field { max-width:280px; }
         .empty { padding:14px; border:1px dashed #d8e2ee; border-radius:8px; color:#5d6f86; background:#f9fbfe; }
+        .note-editor { margin-bottom: 12px; }
     </style>
 </head>
 <body>
@@ -513,7 +749,7 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
         <div class="tabs">
             <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Overview</a>
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
-            <a class="tab <?= $activeTab === 'guides' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=guides')) ?>">Guides</a>
+            <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Posts</a>
             <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
         </div>
@@ -532,26 +768,95 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
             <p class="muted">Use tabs for product management, traffic analytics, and DB/scripts maintenance.</p>
         </section>
         <?php elseif ($activeTab === 'products'): ?>
+        <?php if ($editingProduct): ?>
+        <section class="box">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="margin:0;">Edit Product: <?= e($editingProduct['title']) ?></h2>
+                <a href="<?= e(url('/enma/?tab=products')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="update_product">
+                <input type="hidden" name="id" value="<?= (int)$editingProduct['id'] ?>">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>ASIN</label>
+                        <input type="text" name="asin" required value="<?= e($editingProduct['asin']) ?>">
+                    </div>
+                    <div>
+                        <label>Title</label>
+                        <input type="text" name="title" required value="<?= e($editingProduct['title']) ?>">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Category Name</label>
+                        <input type="text" name="category_name" required value="<?= e($editingProduct['category_name']) ?>">
+                    </div>
+                    <div>
+                        <label>Price (USD)</label>
+                        <input type="number" name="price_amount" step="0.01" min="0" value="<?= e((string)$editingProduct['price_amount']) ?>">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Image URL</label>
+                        <input type="url" name="image_url" value="<?= e($editingProduct['image_url'] ?? '') ?>">
+                    </div>
+                    <div>
+                        <label>Upload New Image</label>
+                        <input type="file" name="image_file" accept="image/*" style="padding: 6px;">
+                    </div>
+                </div>
+                <label>Affiliate URL</label>
+                <input type="url" name="affiliate_url" required value="<?= e($editingProduct['affiliate_url']) ?>">
+                <label>Description</label>
+                <textarea name="description" rows="4"><?= e($editingProduct['description'] ?? '') ?></textarea>
+                <button class="btn" type="submit">Update Product</button>
+            </form>
+        </section>
+        <?php endif; ?>
+
         <section class="box">
             <h2>Add Product</h2>
-            <form method="post">
+            <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="add_product">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <label>ASIN</label>
-                <input type="text" name="asin" required>
-                <label>Title</label>
-                <input type="text" name="title" required>
-                <label>Category Name</label>
-                <input type="text" name="category_name" required>
-                <label>Price (USD)</label>
-                <input type="number" name="price_amount" step="0.01" min="0">
-                <label>Image URL</label>
-                <input type="url" name="image_url" placeholder="https://...">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>ASIN</label>
+                        <input type="text" name="asin" required>
+                    </div>
+                    <div>
+                        <label>Title</label>
+                        <input type="text" name="title" required>
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Category Name</label>
+                        <input type="text" name="category_name" required>
+                    </div>
+                    <div>
+                        <label>Price (USD)</label>
+                        <input type="number" name="price_amount" step="0.01" min="0">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Image URL</label>
+                        <input type="url" name="image_url" placeholder="https://...">
+                    </div>
+                    <div>
+                        <label>Upload Image</label>
+                        <input type="file" name="image_file" accept="image/*" style="padding: 6px;">
+                    </div>
+                </div>
                 <label>Affiliate URL</label>
                 <input type="url" name="affiliate_url" required placeholder="https://www.amazon.com/dp/...?...">
                 <label>Description</label>
                 <textarea name="description" rows="4"></textarea>
-                <button class="btn" type="submit">Save</button>
+                <button class="btn" type="submit">Save Product</button>
             </form>
         </section>
 
@@ -577,7 +882,7 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                         <th>Category</th>
                         <th>Price</th>
                         <th>Tag</th>
-                        <th>Last Sync</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -589,54 +894,149 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                         <td><?= e($item['category_name']) ?></td>
                         <td><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, 'USD')) ?></td>
                         <td><?= amazon_tag_present((string) ($item['affiliate_url'] ?? '')) ? 'OK' : 'Missing' ?></td>
-                        <td><?= e((string) $item['last_synced_at']) ?></td>
+                        <td>
+                            <a href="<?= e(url('/enma/?tab=products&edit_product=' . $item['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
+                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete this product?');">
+                                <input type="hidden" name="action" value="delete_product">
+                                <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0;font-size:13px;">Delete</button>
+                            </form>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
             </table>
             <?php endif; ?>
         </section>
-        <?php elseif ($activeTab === 'guides'): ?>
+        <?php elseif ($activeTab === 'posts'): ?>
+        <?php if ($editingPost): ?>
         <section class="box">
-            <h2>Guides Text Manager</h2>
-            <p class="muted">Edit key conversion copy for the three main guides without touching code.</p>
-            <form method="post">
-                <input type="hidden" name="action" value="save_guides_overrides">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                <h2 style="margin:0;">Edit Post: <?= e($editingPost['title']) ?></h2>
+                <a href="<?= e(url('/enma/?tab=posts')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="update_post">
+                <input type="hidden" name="id" value="<?= (int)$editingPost['id'] ?>">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <?php
-                $guideMeta = [
-                    'best-beginner-telescopes' => 'Best Beginner Telescopes',
-                    'best-telescope-accessories' => 'Best Telescope Accessories',
-                    'best-telescopes-under-500' => 'Best Telescopes Under $500',
-                ];
-                $fields = [
-                    'title' => 'Title',
-                    'description' => 'Meta Description / Intro Description',
-                    'intro' => 'Quick Answer Intro',
-                    'final_recommendation' => 'Final Recommendation',
-                    'cta_text' => 'CTA Button Text',
-                    'cta_note' => 'CTA Note',
-                ];
-                ?>
-                <?php foreach ($guideMeta as $slug => $label): ?>
-                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:12px;background:#f9fbfe;">
-                        <h3 style="margin:0 0 10px;"><?= e($label) ?> <span class="muted">(<?= e($slug) ?>)</span></h3>
-                        <?php foreach ($fields as $fieldKey => $fieldLabel): ?>
-                            <label><?= e($fieldLabel) ?></label>
-                            <?php
-                            $name = $slug . '__' . $fieldKey;
-                            $val = (string) ($guideOverrides[$slug][$fieldKey] ?? '');
-                            ?>
-                            <?php if (in_array($fieldKey, ['description', 'intro', 'final_recommendation', 'cta_note'], true)): ?>
-                                <textarea name="<?= e($name) ?>" rows="3" placeholder="Leave empty to keep default"><?= e($val) ?></textarea>
-                            <?php else: ?>
-                                <input type="text" name="<?= e($name) ?>" value="<?= e($val) ?>" placeholder="Leave empty to keep default">
-                            <?php endif; ?>
-                        <?php endforeach; ?>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Title</label>
+                        <input type="text" name="title" required value="<?= e($editingPost['title']) ?>">
                     </div>
-                <?php endforeach; ?>
-                <button class="btn" type="submit">Save Guide Text Overrides</button>
+                    <div>
+                        <label>Post Type</label>
+                        <select name="post_type">
+                            <option value="post" <?= $editingPost['post_type'] === 'post' ? 'selected' : '' ?>>Standard Post</option>
+                            <option value="guide" <?= $editingPost['post_type'] === 'guide' ? 'selected' : '' ?>>Guide (Structured)</option>
+                        </select>
+                    </div>
+                </div>
+                <label>Excerpt (Short summary)</label>
+                <textarea name="excerpt" rows="2" required><?= e($editingPost['excerpt'] ?? '') ?></textarea>
+                <label>Content (HTML allowed)</label>
+                <textarea name="content_html" rows="10" required><?= e($editingPost['content_html'] ?? '') ?></textarea>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Featured Image URL</label>
+                        <input type="text" name="featured_image" value="<?= e($editingPost['featured_image'] ?? '') ?>">
+                    </div>
+                    <div>
+                        <label>Upload New Image (Replaces current)</label>
+                        <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
+                    </div>
+                </div>
+                <?php if (!empty($editingPost['featured_image'])): ?>
+                    <div style="margin-bottom:12px;">
+                        <span class="muted">Current Image:</span><br>
+                        <img src="<?= e(url($editingPost['featured_image'])) ?>" alt="Preview" style="max-width:100px;max-height:100px;border-radius:6px;margin-top:5px;border:1px solid #ddd;">
+                    </div>
+                <?php endif; ?>
+                <button class="btn" type="submit">Update Post</button>
             </form>
+        </section>
+        <?php endif; ?>
+
+        <section class="box">
+            <h2>Add New Post</h2>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="add_post">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Title</label>
+                        <input type="text" name="title" required placeholder="e.g. How to Clean Your Eyepieces">
+                    </div>
+                    <div>
+                        <label>Post Type</label>
+                        <select name="post_type">
+                            <option value="post">Standard Post</option>
+                            <option value="guide">Guide (Structured)</option>
+                        </select>
+                    </div>
+                </div>
+                <label>Excerpt (Short summary)</label>
+                <textarea name="excerpt" rows="2" required placeholder="A brief summary for listings..."></textarea>
+                <label>Content (HTML allowed)</label>
+                <textarea name="content_html" rows="10" required placeholder="<p>Full article content here...</p>"></textarea>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Featured Image URL (Optional)</label>
+                        <input type="text" name="featured_image" placeholder="https://...">
+                    </div>
+                    <div>
+                        <label>Upload Image (Optional)</label>
+                        <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
+                    </div>
+                </div>
+                <button class="btn" type="submit">Publish Post</button>
+            </form>
+        </section>
+
+        <section class="box">
+            <h2>Existing Posts</h2>
+            <?php
+            $stmt = $pdo->query('SELECT id, title, slug, post_type, status, published_at FROM posts ORDER BY published_at DESC');
+            $allPosts = $stmt->fetchAll();
+            ?>
+            <?php if ($allPosts === []): ?>
+                <div class="empty">No posts or guides found in database.</div>
+            <?php else: ?>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($allPosts as $p): ?>
+                        <tr>
+                            <td>
+                                <strong><?= e($p['title']) ?></strong><br>
+                                <span class="muted"><?= e($p['slug']) ?></span>
+                            </td>
+                            <td><span class="badge" style="background:#eef2f7;padding:2px 6px;border-radius:4px;font-size:11px;"><?= e(strtoupper($p['post_type'])) ?></span></td>
+                            <td><?= e($p['status']) ?></td>
+                            <td><?= e(substr((string)$p['published_at'], 0, 10)) ?></td>
+                            <td>
+                                <a href="<?= e(url('/enma/?tab=posts&edit_post=' . $p['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
+                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this post?');">
+                                    <input type="hidden" name="action" value="delete_post">
+                                    <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0;font-size:13px;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
@@ -813,6 +1213,13 @@ $guideOverrides = ($authenticated && $activeTab === 'guides') ? load_guides_over
                 <input type="hidden" name="task" value="update_db_schema">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <button class="btn" type="submit">Update DB Schema (safe)</button>
+            </form>
+
+            <form method="post" style="margin-bottom: 10px;">
+                <input type="hidden" name="action" value="maintenance_run">
+                <input type="hidden" name="task" value="migrate_guides_to_db">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <button class="btn" type="submit">Migrate Guides to DB</button>
             </form>
 
             <form method="post" style="margin-bottom: 10px;">
