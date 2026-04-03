@@ -10,16 +10,16 @@ $serverName = $_SERVER['SERVER_NAME'] ?? 'localhost';
 | Credenciales simples por entorno
 |--------------------------------------------------------------------------
 |
-| Edita el bloque "hosting" antes de subir a produccion si no quieres usar
-| config/credentials.php ni variables de entorno. El codigo sigue aceptando
-| overrides externos, pero ya no depende de ellos para funcionar.
+| LOCAL: Usa root sin contraseña (XAMPP por defecto). DB: fortelescopes
+| HOSTING: Usa las credenciales de ifastnet.
+| El codigo intenta primero hosting (si hay internet) y si falla, usa local.
 |
 */
 $inlineLocalDatabaseConfig = [
     'host' => '127.0.0.1',
-    'name' => 'aspierd1_fortelescopes',
-    'user' => 'aspierd1_admin',
-    'pass' => 'UnoDosTresCuatroCinco12345...',
+    'name' => 'fortelescopes',
+    'user' => 'root',
+    'pass' => '',
 ];
 
 $inlineHostingDatabaseConfig = [
