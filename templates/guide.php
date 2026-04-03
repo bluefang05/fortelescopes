@@ -16,10 +16,18 @@ $mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
 <section class="hero">
     <span class="hero-kicker">Buying Guide</span>
     <h1><?= e($guide['title']) ?></h1>
-    <p><?= e($guide['description']) ?></p>
-    <?php if (!empty($guide['featured_image'])): ?>
+    <p><?= e($guide['description'] ?? $guide['excerpt'] ?? '') ?></p>
+    <?php 
+    $guideImageUrl = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guide['slug'] ?? '') {
+        'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
+        'best-telescope-accessories' => '/assets/img/optimized_2.webp',
+        'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
+        default => null,
+    };
+    ?>
+    <?php if (!empty($guideImageUrl)): ?>
         <div style="margin-top: 15px; border-radius: 12px; overflow: hidden; max-height: 400px;">
-            <img src="<?= e(url($guide['featured_image'])) ?>" alt="<?= e($guide['title']) ?>" style="width: 100%; height: auto; display: block; object-fit: cover;">
+            <img src="<?= e(url($guideImageUrl)) ?>" alt="<?= e($guide['title']) ?>" style="width: 100%; height: auto; display: block; object-fit: cover;" onerror="this.onerror=null;this.src='<?= e(url('/assets/img/product-placeholder.svg')) ?>';">
         </div>
     <?php endif; ?>
     <div class="trust-row">

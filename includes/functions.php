@@ -193,8 +193,21 @@ function format_post_row(array $row): array
     if (isset($row['extra_data']) && is_string($row['extra_data']) && $row['extra_data'] !== '') {
         $extra = json_decode($row['extra_data'], true);
         if (is_array($extra)) {
-            // Row values (from DB columns) take precedence over extra_data
-            $row = array_merge($extra, $row);
+            // For guide posts, preserve DB column values for title/description/featured_image
+            // but merge other fields from extra_data
+            if (($row['post_type'] ?? '') === 'guide') {
+                // Keep DB columns for key fields, merge other extra_data fields
+                $preserveKeys = ['title', 'excerpt', 'featured_image', 'description', 'slug', 'post_type', 'status'];
+                foreach ($preserveKeys as $key) {
+                    if (array_key_exists($key, $row)) {
+                        $extra[$key] = $row[$key];
+                    }
+                }
+                $row = $extra;
+            } else {
+                // Row values (from DB columns) take precedence over extra_data
+                $row = array_merge($extra, $row);
+            }
         }
     }
     unset($row['extra_data']);

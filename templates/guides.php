@@ -18,7 +18,7 @@ $guides = $data['guides'] ?? [];
     <div class="grid">
         <?php foreach ($guides as $guide): ?>
             <?php
-            $guideImage = $guide['featured_image'] ?: match ($guide['slug'] ?? '') {
+            $guideImage = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
                 'best-telescope-accessories' => '/assets/img/optimized_2.webp',
                 'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
@@ -26,10 +26,12 @@ $guides = $data['guides'] ?? [];
             };
             ?>
             <article class="card">
-                <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                <a href="<?= e(url('/' . $guide['slug'])) ?>" style="display: block;">
+                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy" onerror="this.onerror=null;this.src='<?= e(url('/assets/img/product-placeholder.svg')) ?>';">
+                </a>
                 <div class="body">
                     <span class="badge">Guide</span>
-                    <h3><?= e($guide['title']) ?></h3>
+                    <h3><a href="<?= e(url('/' . $guide['slug'])) ?>" style="text-decoration: none; color: inherit;"><?= e($guide['title']) ?></a></h3>
                     <p class="card-copy"><?= e($guide['excerpt'] ?? '') ?></p>
                     <a class="card-cta" href="<?= e(url('/' . $guide['slug'])) ?>">Open guide</a>
                 </div>
