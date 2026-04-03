@@ -18,7 +18,7 @@ $guides = $data['guides'] ?? [];
     <div class="grid">
         <?php foreach ($guides as $guide): ?>
             <?php
-            $guideImage = $guide['featured_image'] ?: match ($guide['slug'] ?? '') {
+            $guideImage = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
                 'best-telescope-accessories' => '/assets/img/optimized_2.webp',
                 'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
@@ -26,7 +26,11 @@ $guides = $data['guides'] ?? [];
             };
             ?>
             <article class="card">
-                <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                <?php if ($guideImage): ?>
+                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                <?php else: ?>
+                    <div style="height: 200px; background: #0f1c30; display: flex; align-items: center; justify-content: center; color: #fff;">No Image</div>
+                <?php endif; ?>
                 <div class="body">
                     <span class="badge">Guide</span>
                     <h3><?= e($guide['title']) ?></h3>

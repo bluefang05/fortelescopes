@@ -13,19 +13,19 @@ $posts = $data['posts'] ?? [];
     <?php else: ?>
         <div class="grid">
             <?php foreach ($posts as $post): ?>
-                <article class="card">
-                    <?php if ($post['featured_image']): ?>
-                        <img src="<?= e(url($post['featured_image'])) ?>" alt="<?= e($post['title']) ?>" loading="lazy">
-                    <?php else: ?>
-                        <img src="<?= e(url('/assets/img/product-placeholder.svg')) ?>" alt="<?= e($post['title']) ?>" loading="lazy">
-                    <?php endif; ?>
-                    <div class="body">
-                        <span class="badge">Article</span>
-                        <h3><?= e($post['title']) ?></h3>
-                        <p class="card-copy"><?= e($post['excerpt']) ?></p>
-                        <a class="card-cta" href="<?= e(url('/blog/' . $post['slug'])) ?>">Read article</a>
-                    </div>
-                </article>
+            <article class="card">
+                <?php if ($post['featured_image']): ?>
+                    <img src="<?= e(url($post['featured_image'])) ?>" alt="<?= e($post['title']) ?>" loading="lazy" style="aspect-ratio: 2 / 3; object-fit: cover; width: 100%; height: auto;">
+                <?php else: ?>
+                    <img src="<?= e(url('/assets/img/product-placeholder.svg')) ?>" alt="<?= e($post['title']) ?>" loading="lazy" style="aspect-ratio: 2 / 3; object-fit: cover; width: 100%; height: auto;">
+                <?php endif; ?>
+                <div class="body">
+                    <span class="badge">Article</span>
+                    <h3><?= e($post['title']) ?></h3>
+                    <p class="card-copy"><?= e($post['excerpt']) ?></p>
+                    <a class="card-cta" href="<?= e(url('/blog/' . $post['slug'])) ?>">Read article</a>
+                </div>
+            </article>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>

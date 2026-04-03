@@ -27,6 +27,14 @@ function app_prefix(): string
 
 function url(string $path = '/'): string
 {
+    $path = trim($path);
+    if ($path !== '' && preg_match('/^[a-z][a-z0-9+\-.]*:/i', $path)) {
+        return $path;
+    }
+    if (str_starts_with($path, '//')) {
+        return $path;
+    }
+
     $prefix = app_prefix();
     $path = '/' . ltrim($path, '/');
 
@@ -44,6 +52,14 @@ function base_url(): string
 
 function absolute_url(string $path = '/'): string
 {
+    $path = trim($path);
+    if ($path !== '' && preg_match('/^[a-z][a-z0-9+\-.]*:/i', $path)) {
+        return $path;
+    }
+    if (str_starts_with($path, '//')) {
+        return $path;
+    }
+
     return base_url() . url($path);
 }
 

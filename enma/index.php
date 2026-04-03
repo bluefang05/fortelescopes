@@ -25,13 +25,22 @@ function enma_handle_image_upload(string $fieldName, array &$errors, string $sub
         return null;
     }
     if ($error !== UPLOAD_ERR_OK) {
-        $errors[] = 'Image upload failed.';
+        $msg = match($error) {
+            UPLOAD_ERR_INI_SIZE => 'The uploaded file exceeds the upload_max_filesize directive in php.ini.',
+            UPLOAD_ERR_FORM_SIZE => 'The uploaded file exceeds the MAX_FILE_SIZE directive that was specified in the HTML form.',
+            UPLOAD_ERR_PARTIAL => 'The uploaded file was only partially uploaded.',
+            UPLOAD_ERR_NO_TMP_DIR => 'Missing a temporary folder.',
+            UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk.',
+            UPLOAD_ERR_EXTENSION => 'A PHP extension stopped the file upload.',
+            default => 'Unknown upload error.'
+        };
+        $errors[] = 'Image upload failed: ' . $msg;
         return null;
     }
 
     $size = (int) ($file['size'] ?? 0);
-    if ($size <= 0 || $size > 4 * 1024 * 1024) {
-        $errors[] = 'Image must be between 1 byte and 4MB.';
+    if ($size <= 0 || $size > 10 * 1024 * 1024) { // Increased to 10MB just in case
+        $errors[] = 'Image must be between 1 byte and 10MB.';
         return null;
     }
 
@@ -74,6 +83,23 @@ function enma_handle_image_upload(string $fieldName, array &$errors, string $sub
     }
 
     return absolute_url('/assets/uploads/' . $subDir . '/' . $name);
+}
+
+function enma_normalize_editor_html(string $html): string
+{
+    $html = trim($html);
+    if ($html === '') {
+        return '';
+    }
+
+    if ((strpos($html, '&lt;') !== false || strpos($html, '&gt;') !== false) && strpos($html, '<') === false) {
+        $decoded = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (trim($decoded) !== '') {
+            return trim($decoded);
+        }
+    }
+
+    return $html;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
@@ -125,21 +151,6 @@ $maintenanceLog = [];
 $advancedEnabled = ENMA_ADVANCED_KEY !== '';
 $editingPost = null;
 $editingProduct = null;
-
-if ($authenticated && ($_GET['edit_post'] ?? '') !== '') {
-    $stmt = $pdo->prepare('SELECT * FROM posts WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => (int)$_GET['edit_post']]);
-    $editingPost = $stmt->fetch();
-    if ($editingPost) {
-        $editingPost = format_post_row($editingPost);
-    }
-}
-
-if ($authenticated && ($_GET['edit_product'] ?? '') !== '') {
-    $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id LIMIT 1');
-    $stmt->execute([':id' => (int)$_GET['edit_product']]);
-    $editingProduct = $stmt->fetch();
-}
 
 if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_advanced_run') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -345,7 +356,7 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
 
     $title = trim((string) ($_POST['title'] ?? ''));
     $excerpt = trim((string) ($_POST['excerpt'] ?? ''));
-    $content = trim((string) ($_POST['content_html'] ?? ''));
+    $content = enma_normalize_editor_html((string) ($_POST['content_html'] ?? ''));
     $postType = trim((string) ($_POST['post_type'] ?? 'post'));
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
 
@@ -401,7 +412,7 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     $id = (int)($_POST['id'] ?? 0);
     $title = trim((string) ($_POST['title'] ?? ''));
     $excerpt = trim((string) ($_POST['excerpt'] ?? ''));
-    $content = trim((string) ($_POST['content_html'] ?? ''));
+    $content = enma_normalize_editor_html((string) ($_POST['content_html'] ?? ''));
     $postType = trim((string) ($_POST['post_type'] ?? 'post'));
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
 
@@ -410,8 +421,19 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
         $featuredImage = $uploaded;
     }
 
-    if ($id <= 0 || $title === '' || $excerpt === '' || $content === '') {
-        $errors[] = 'Valid ID, title, excerpt and content are required.';
+    if ($id <= 0 || $title === '' || $excerpt === '') {
+        $errors[] = 'Valid ID, title and excerpt are required.';
+    }
+
+    if ($errors === [] && $content === '') {
+        $stmt = $pdo->prepare('SELECT content_html FROM posts WHERE id = :id LIMIT 1');
+        $stmt->execute([':id' => $id]);
+        $existingContent = (string) ($stmt->fetchColumn() ?: '');
+        if ($existingContent !== '') {
+            $content = $existingContent;
+        } else {
+            $errors[] = 'Content is required.';
+        }
     }
 
     if ($errors === []) {
@@ -609,6 +631,21 @@ if ($authenticated && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action']
     }
 }
 
+if ($authenticated && ($_GET['edit_post'] ?? '') !== '') {
+    $stmt = $pdo->prepare('SELECT * FROM posts WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => (int)$_GET['edit_post']]);
+    $editingPost = $stmt->fetch();
+    if ($editingPost) {
+        $editingPost = format_post_row($editingPost);
+    }
+}
+
+if ($authenticated && ($_GET['edit_product'] ?? '') !== '') {
+    $stmt = $pdo->prepare('SELECT * FROM products WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => (int)$_GET['edit_product']]);
+    $editingProduct = $stmt->fetch();
+}
+
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
 if (!in_array($activeTab, ['overview', 'products', 'posts', 'views', 'maintenance'], true)) {
     $activeTab = 'overview';
@@ -678,7 +715,9 @@ if ($authenticated && $activeTab === 'maintenance') {
     <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
     <script>
       $(document).ready(function() {
-        $('textarea[name="content_html"]').summernote({
+        var $addContent = $('#add_post_content_html');
+        if ($addContent.length) {
+          $addContent.summernote({
           placeholder: 'Write your content here...',
           tabsize: 2,
           height: 400,
@@ -691,6 +730,38 @@ if ($authenticated && $activeTab === 'maintenance') {
             ['insert', ['link', 'picture', 'video']],
             ['view', ['fullscreen', 'codeview', 'help']]
           ]
+          });
+        }
+
+        // Force plain textarea in Edit Post, even if Summernote was initialized by cache/old script.
+        var $editContent = $('#edit_post_content_html');
+        if ($editContent.length) {
+          if ($editContent.next('.note-editor').length && typeof $editContent.summernote === 'function') {
+            $editContent.summernote('destroy');
+          }
+          $editContent.show();
+        }
+
+        // Keep hidden textarea in sync with Summernote before submit.
+        $('form').on('submit', function () {
+          var $form = $(this);
+          var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
+          if (action !== 'add_post' && action !== 'update_post') {
+            return;
+          }
+
+          var $content = $form.find('textarea[name="content_html"]');
+          if ($content.length === 0) {
+            return;
+          }
+
+          var html = '';
+          if (typeof $content.summernote === 'function' && $content.next('.note-editor').length) {
+            html = $content.summernote('code') || '';
+          } else {
+            html = $content.val() || '';
+          }
+          $content.val(html);
         });
       });
     </script>
@@ -936,7 +1007,7 @@ if ($authenticated && $activeTab === 'maintenance') {
                 <label>Excerpt (Short summary)</label>
                 <textarea name="excerpt" rows="2" required><?= e($editingPost['excerpt'] ?? '') ?></textarea>
                 <label>Content (HTML allowed)</label>
-                <textarea name="content_html" rows="10" required><?= e($editingPost['content_html'] ?? '') ?></textarea>
+                <textarea id="edit_post_content_html" name="content_html" rows="16" style="font-family: Consolas, 'Courier New', monospace; line-height: 1.45;"><?= e($editingPost['content_html'] ?? '') ?></textarea>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Featured Image URL</label>
@@ -979,7 +1050,7 @@ if ($authenticated && $activeTab === 'maintenance') {
                 <label>Excerpt (Short summary)</label>
                 <textarea name="excerpt" rows="2" required placeholder="A brief summary for listings..."></textarea>
                 <label>Content (HTML allowed)</label>
-                <textarea name="content_html" rows="10" required placeholder="<p>Full article content here...</p>"></textarea>
+                <textarea id="add_post_content_html" name="content_html" rows="10" placeholder="<p>Full article content here...</p>"></textarea>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Featured Image URL (Optional)</label>

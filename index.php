@@ -239,6 +239,9 @@ if ($segments === []) {
         }
         $data['guide'] = $guide;
         $data['guideProducts'] = $guideProducts;
+        $data['otherGuides'] = array_filter(get_posts($pdo, 'guide', 4), function($g) use ($guideSlug) {
+            return $g['slug'] !== $guideSlug;
+        });
         $template = __DIR__ . '/templates/guide.php';
         $pageTitle = $guide['title'] . ' | ' . APP_NAME;
         $meta['description'] = $guide['description'] ?? site_meta_defaults()['description'];
@@ -285,6 +288,7 @@ if ($segments === []) {
         $viewPageType = 'post';
         $viewPageSlug = $postSlug;
         $data['post'] = $post;
+        $data['otherGuides'] = get_posts($pdo, 'guide', 3);
         $template = __DIR__ . '/templates/post.php';
         $pageTitle = $post['title'] . ' | ' . APP_NAME;
         $meta['description'] = $post['meta_description'] ?: $post['excerpt'];

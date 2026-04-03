@@ -12,14 +12,28 @@ $showComparison = $isBeginnerGuide || $isAccessoriesGuide || $isUnder500Guide;
 $bestForMap = is_array($guide['best_for_map'] ?? null) ? $guide['best_for_map'] : [];
 $framework = is_array($guide['framework'] ?? null) ? $guide['framework'] : [];
 $mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
+$fullGuideHtmlRaw = trim((string) ($guide['content_html'] ?? ''));
+$fullGuideHtml = '';
+if ($fullGuideHtmlRaw !== '') {
+    $candidate = (strpos($fullGuideHtmlRaw, '&lt;') !== false || strpos($fullGuideHtmlRaw, '&gt;') !== false)
+        ? html_entity_decode($fullGuideHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8')
+        : $fullGuideHtmlRaw;
+    $candidate = preg_replace('/<\s*(script|style|iframe|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
+    $candidate = preg_replace('/\son[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $candidate) ?? $candidate;
+    $candidate = preg_replace('/\s(href|src)\s*=\s*([\"\'])\s*javascript:[^\"\']*\2/i', ' $1="#"', $candidate) ?? $candidate;
+    $fullGuideHtml = trim($candidate);
+}
 ?>
 <section class="hero">
     <span class="hero-kicker">Buying Guide</span>
     <h1><?= e($guide['title']) ?></h1>
     <p><?= e($guide['description']) ?></p>
     <?php if (!empty($guide['featured_image'])): ?>
-        <div style="margin-top: 15px; border-radius: 12px; overflow: hidden; max-height: 400px;">
-            <img src="<?= e(url($guide['featured_image'])) ?>" alt="<?= e($guide['title']) ?>" style="width: 100%; height: auto; display: block; object-fit: cover;">
+        <div style="margin-top: 15px; border-radius: 12px; overflow: hidden; height: 400px; position: relative; background: #0b1f3a; display: flex; align-items: center; justify-content: center; box-shadow: var(--card-shadow); border: 1px solid #2d3e50;">
+            <!-- Blurred background echo -->
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: url('<?= e(url($guide['featured_image'])) ?>'); background-size: cover; background-position: center; filter: blur(20px) brightness(0.6); transform: scale(1.1);"></div>
+            <!-- Main image -->
+            <img src="<?= e(url($guide['featured_image'])) ?>" alt="<?= e($guide['title']) ?>" style="position: relative; z-index: 1; max-width: 100%; height: 100%; object-fit: contain; display: block;">
         </div>
     <?php endif; ?>
     <div class="trust-row">
@@ -55,6 +69,13 @@ $mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
         </div>
     </div>
 </section>
+
+<?php if ($fullGuideHtml !== ''): ?>
+<section class="panel" style="margin-bottom: 18px;">
+    <h2 class="section-title" style="margin-top:0;">Full guide</h2>
+    <div class="guide-prose"><?= $fullGuideHtml ?></div>
+</section>
+<?php endif; ?>
 
 <?php if (!empty($guide['key_factors']) && is_array($guide['key_factors'])): ?>
 <section class="panel" style="margin-bottom: 18px;">
@@ -254,5 +275,33 @@ $mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
             <p class="muted" style="margin: 8px 0 0;"><?= e($faq['a']) ?></p>
         </details>
     <?php endforeach; ?>
+</section>
+<?php endif; ?>
+
+<?php if (!empty($data['otherGuides'])): ?>
+<section class="panel" style="margin-top: 18px;">
+    <h2 class="section-title" style="margin-top:0;">More astronomy buying guides</h2>
+    <div class="grid">
+        <?php foreach ($data['otherGuides'] as $otherGuide): ?>
+            <?php
+            $guideImage = !empty($otherGuide['featured_image']) ? $otherGuide['featured_image'] : match ($otherGuide['slug'] ?? '') {
+                'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
+                'best-telescope-accessories' => '/assets/img/optimized_2.webp',
+                'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
+                default => '/assets/img/product-placeholder.svg',
+            };
+            ?>
+            <article class="card">
+                <?php if ($guideImage): ?>
+                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($otherGuide['title']) ?>" loading="lazy">
+                <?php endif; ?>
+                <div class="body">
+                    <span class="badge">Guide</span>
+                    <h3><?= e($otherGuide['title']) ?></h3>
+                    <a class="card-cta" href="<?= e(url('/' . $otherGuide['slug'])) ?>">Open guide</a>
+                </div>
+            </article>
+        <?php endforeach; ?>
+    </div>
 </section>
 <?php endif; ?>
