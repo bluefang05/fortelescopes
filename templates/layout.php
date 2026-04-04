@@ -553,6 +553,87 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
                 font-weight: 800;
                 box-shadow: 0 16px 24px rgba(255, 92, 0, 0.35);
             }
+            
+            /* YouTube Lazy Load - Mobile */
+            .youtube-lazy-wrapper {
+                position: relative;
+                width: 100%;
+                max-width: 100%;
+                aspect-ratio: 16 / 9;
+                margin: 18px 0;
+                border-radius: 12px;
+                overflow: hidden;
+                background: #000;
+                cursor: pointer;
+            }
+            .youtube-thumbnail {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-size: cover;
+                background-position: center;
+                background-repeat: no-repeat;
+            }
+            .youtube-play-button {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 68px;
+                height: 48px;
+                transition: transform 200ms ease;
+            }
+            .youtube-lazy-wrapper:hover .youtube-play-button {
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+        }
+        
+        /* YouTube Lazy Load Styles - Desktop & Mobile */
+        .youtube-lazy-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            aspect-ratio: 16 / 9;
+            margin: 18px 0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+        .youtube-thumbnail {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        .youtube-play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 68px;
+            height: 48px;
+            transition: transform 200ms ease;
+            opacity: 0.9;
+        }
+        .youtube-lazy-wrapper:hover .youtube-play-button {
+            transform: translate(-50%, -50%) scale(1.1);
+            opacity: 1;
+        }
+        .youtube-lazy-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
         }
     </style>
 </head>
@@ -619,6 +700,62 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
     if (img.complete && (!img.naturalWidth || img.naturalWidth < 2)) {
       applyFallback();
     }
+  });
+})();
+
+/**
+ * YouTube Lazy Load - Intersection Observer + Click to Load
+ * Automatically loads iframe when user clicks or when element enters viewport
+ */
+(function () {
+  var wrappers = document.querySelectorAll('.youtube-lazy-wrapper');
+  
+  if (!wrappers.length) return;
+  
+  // Function to load the actual iframe
+  function loadIframe(wrapper) {
+    var placeholder = wrapper.querySelector('.youtube-iframe-placeholder');
+    if (!placeholder) return;
+    
+    var src = placeholder.getAttribute('data-src');
+    if (!src) return;
+    
+    var iframe = document.createElement('iframe');
+    iframe.src = src;
+    iframe.setAttribute('loading', 'lazy');
+    iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
+    iframe.setAttribute('allowfullscreen', 'true');
+    
+    wrapper.innerHTML = '';
+    wrapper.appendChild(iframe);
+    wrapper.classList.add('loaded');
+  }
+  
+  // Set up Intersection Observer for auto-loading when in viewport
+  var observerOptions = {
+    root: null,
+    rootMargin: '200px',
+    threshold: 0.1
+  };
+  
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        loadIframe(entry.target);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, observerOptions);
+  
+  wrappers.forEach(function (wrapper) {
+    // Add click handler
+    wrapper.addEventListener('click', function () {
+      loadIframe(wrapper);
+    });
+    
+    // Also observe for viewport entry
+    observer.observe(wrapper);
   });
 })();
 </script>
