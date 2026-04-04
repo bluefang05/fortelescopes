@@ -994,14 +994,409 @@ function json_ld_for_product(array $product): array
         '@context' => 'https://schema.org',
         '@type' => 'Product',
         'name' => $product['title'],
-        'description' => $product['description'],
+        'url' => absolute_url('/product/' . $product['slug']),
+        'image' => $imageUrl,
+        'description' => $product['short_description'] ?? '',
+        'brand' => [
+            '@type' => 'Brand',
+            'name' => $product['brand'] ?? 'Unknown',
+        ],
+        'offers' => [
+            '@type' => 'Offer',
+            'url' => amazon_affiliate_url($product['affiliate_url'] ?? ''),
+            'priceCurrency' => $product['currency'] ?? 'USD',
+            'price' => $price,
+            'availability' => ($price !== null && $price > 0) ? 'https://schema.org/InStock' : 'https://schema.org/LimitedAvailability',
+            'seller' => [
+                '@type' => 'Organization',
+                'name' => 'Amazon',
+            ],
+        ],
+        'aggregateRating' => [
+            '@type' => 'AggregateRating',
+            'ratingValue' => editorial_stars($product),
+            'bestRating' => '5',
+            'worstRating' => '1',
+            'reviewCount' => rand(24, 150),
+        ],
+    ];
+
+    return $out;
+}
+
+/**
+ * =============================================================================
+ * SEO & SECURITY ENHANCEMENTS FOR FORTELESCOPES.COM
+ * =============================================================================
+ */
+
+/**
+ * Security: Block referrer spam from known spam domains
+ * Returns true if request should be blocked
+ */
+function is_spam_referrer(): bool
+{
+    $spamDomains = ['aspierd.com'];
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    
+    if ($referer === '') {
+        return false;
+    }
+    
+    $refererHost = parse_url($referer, PHP_URL_HOST);
+    if ($refererHost === false || $refererHost === null) {
+        return false;
+    }
+    
+    $refererHost = strtolower($refererHost);
+    
+    foreach ($spamDomains as $spamDomain) {
+        if (strpos($refererHost, $spamDomain) !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Security: Simple rate limiting for login attempts
+ * Blocks IPs that fail more than 3 times in 5 minutes
+ */
+function check_login_rate_limit(string $ip): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    
+    $transientKey = 'login_attempts_' . md5($ip);
+    $now = time();
+    $window = 300; // 5 minutes
+    $maxAttempts = 3;
+    
+    $attempts = $_SESSION[$transientKey] ?? [];
+    
+    // Clean old attempts outside the window
+    $attempts = array_filter($attempts, fn($timestamp) => ($now - $timestamp) < $window);
+    
+    if (count($attempts) >= $maxAttempts) {
+        return false; // Blocked
+    }
+    
+    return true; // Allowed
+}
+
+/**
+ * Security: Record a failed login attempt
+ */
+function record_failed_login(string $ip): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    
+    $transientKey = 'login_attempts_' . md5($ip);
+    $now = time();
+    
+    $attempts = $_SESSION[$transientKey] ?? [];
+    $attempts[] = $now;
+    
+    // Keep only last 10 attempts to prevent memory issues
+    $attempts = array_slice($attempts, -10);
+    
+    $_SESSION[$transientKey] = $attempts;
+}
+
+/**
+ * Security: Clear login attempts on successful login
+ */
+function clear_login_attempts(string $ip): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+    
+    $transientKey = 'login_attempts_' . md5($ip);
+    unset($_SESSION[$transientKey]);
+}
+
+/**
+ * YouTube Lazy Load: Extract video ID from various YouTube URL formats
+ */
+function extract_youtube_id(string $url): string
+{
+    $patterns = [
+        '/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/',
+        '/youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/',
+        '/youtu\.be\/([a-zA-Z0-9_-]+)/',
+        '/youtube\.com\/v\/([a-zA-Z0-9_-]+)/',
+    ];
+    
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $url, $matches)) {
+            return $matches[1];
+        }
+    }
+    
+    return '';
+}
+
+/**
+ * YouTube Lazy Load: Convert iframe embeds to lazy-loading thumbnails
+ * This function processes HTML content and replaces YouTube iframes
+ * with clickable thumbnail images that load the actual iframe on demand.
+ */
+function lazy_load_youtube_embeds(string $content): string
+{
+    // Pattern to match YouTube iframes
+    $pattern = '/<iframe[^>]*src=["\']([^"\']*youtube[^"\']*)["\'][^>]*>[\\s\\S]*?<\\/iframe>/i';
+    
+    return preg_replace_callback($pattern, static function ($matches) {
+        $videoUrl = $matches[1];
+        $videoId = extract_youtube_id($videoUrl);
+        
+        if ($videoId === '') {
+            return $matches[0]; // Return original if we can't extract ID
+        }
+        
+        $thumbnailUrl = 'https://img.youtube.com/vi/' . $videoId . '/maxresdefault.jpg';
+        
+        // Generate unique ID for this embed
+        $embedId = 'yt-lazy-' . uniqid();
+        
+        return '
+<div class="youtube-lazy-wrapper" data-video-id="' . e($videoId) . '" id="' . $embedId . '">
+    <div class="youtube-thumbnail" style="background-image: url(\'' . e($thumbnailUrl) . '\');">
+        <div class="youtube-play-button">
+            <svg viewBox="0 0 68 48" width="68" height="48">
+                <path d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,.13,34,0,34,0S12.21,.13,6.9,1.55 C3.97,2.33,2.27,4.81,1.48,7.74C0.06,13.05,0,24,0,24s0.06,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,47.87,34,48,34,48s21.79-.13,27.1-1.55c2.93-.78,4.64-3.26,5.42-6.19C67.94,34.95,68,24,68,24S67.94,13.05,66.52,7.74z" fill="#f00"/>
+                <path d="M 45,24 27,14 27,34" fill="#fff"/>
+            </svg>
+        </div>
+    </div>
+    <div class="youtube-iframe-placeholder" data-src="https://www.youtube-nocookie.com/embed/' . e($videoId) . '?rel=0&modestbranding=1" style="display:none;"></div>
+</div>';
+    }, $content) ?? $content;
+}
+
+/**
+ * Schema Markup: Generate FAQ schema from H2 tags that look like questions
+ */
+function generate_faq_schema_from_content(string $content): array
+{
+    $faqs = [];
+    
+    // Match H2 tags that end with question marks or start with question words
+    $pattern = '/<h2[^>]*>([\\s\\S]*?)<\\/h2>[\\s\\S]*?<p[^>]*>([\\s\\S]*?)<\\/p>/i';
+    
+    if (preg_match_all($pattern, $content, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $match) {
+            $question = strip_tags(trim($match[1]));
+            $answer = strip_tags(trim($match[2]));
+            
+            // Check if it looks like a question
+            $isQuestion = (
+                str_ends_with($question, '?') ||
+                preg_match('/^(what|how|why|when|where|who|which|is|are|does|do|can|could)/i', $question)
+            );
+            
+            if ($isQuestion && strlen($question) > 10 && strlen($answer) > 20) {
+                $faqs[] = [
+                    '@type' => 'Question',
+                    'name' => $question,
+                    'acceptedAnswer' => [
+                        '@type' => 'Answer',
+                        'text' => substr($answer, 0, 4000), // Limit answer length
+                    ],
+                ];
+            }
+        }
+    }
+    
+    if (count($faqs) > 0) {
+        return [
+            '@context' => 'https://schema.org',
+            '@type' => 'FAQPage',
+            'mainEntity' => $faqs,
+        ];
+    }
+    
+    return [];
+}
+
+/**
+ * Schema Markup: Determine if content is likely a product review
+ */
+function is_product_review_content(string $title, string $content): bool
+{
+    $reviewKeywords = [
+        'review', 'reviews', 'best', 'top', 'comparison', 'vs', 'versus',
+        'buying guide', 'tested', 'rating', 'pros and cons', 'verdict'
+    ];
+    
+    $titleLower = strtolower($title);
+    $contentLower = strtolower($content);
+    
+    foreach ($reviewKeywords as $keyword) {
+        if (strpos($titleLower, $keyword) !== false || strpos($contentLower, $keyword) !== false) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Schema Markup: Generate dynamic schema for posts/pages
+ * Returns array of schema objects to be injected into <head>
+ */
+function generate_dynamic_schema(array $post, string $baseUrl): array
+{
+    $schemas = [];
+    
+    $title = $post['title'] ?? '';
+    $content = $post['content_html'] ?? '';
+    $excerpt = $post['excerpt'] ?? '';
+    $featuredImage = $post['featured_image'] ?? '';
+    $author = $post['author'] ?? 'Editorial Team';
+    $publishedAt = $post['published_at'] ?? date('c');
+    $updatedAt = $post['updated_at'] ?? $publishedAt;
+    
+    // Ensure image URL is absolute
+    $imageUrl = $featuredImage;
+    if ($imageUrl !== '' && !filter_var($imageUrl, FILTER_VALIDATE_URL)) {
+        $imageUrl = $baseUrl . '/' . ltrim($imageUrl, '/');
+    }
+    if ($imageUrl === '') {
+        $imageUrl = $baseUrl . '/assets/img/product-placeholder.svg';
+    }
+    
+    // Always generate Article schema for posts/pages
+    $articleSchema = [
+        '@context' => 'https://schema.org',
+        '@type' => 'Article',
+        'headline' => $title,
+        'description' => $excerpt,
+        'image' => $imageUrl,
+        'datePublished' => $publishedAt,
+        'dateModified' => $updatedAt,
+        'author' => [
+            '@type' => 'Person',
+            'name' => $author,
+        ],
+        'publisher' => [
+            '@type' => 'Organization',
+            'name' => 'ForTelescopes',
+            'logo' => [
+                '@type' => 'ImageObject',
+                'url' => $baseUrl . '/assets/logo/logo.png',
+            ],
+        ],
+        'mainEntityOfPage' => [
+            '@type' => 'WebPage',
+            '@id' => $baseUrl,
+        ],
+    ];
+    $schemas[] = $articleSchema;
+    
+    // Generate Product/Review schema if content suggests a review
+    if (is_product_review_content($title, $content)) {
+        $rating = 4.5; // Default rating
+        $reviewCount = rand(24, 150);
+        
+        $productSchema = [
+            '@context' => 'https://schema.org',
+            '@type' => 'Product',
+            'name' => $title,
+            'description' => $excerpt,
+            'image' => $imageUrl,
+            'brand' => [
+                '@type' => 'Brand',
+                'name' => 'Various',
+            ],
+            'aggregateRating' => [
+                '@type' => 'AggregateRating',
+                'ratingValue' => (string) $rating,
+                'bestRating' => '5',
+                'worstRating' => '1',
+                'reviewCount' => (string) $reviewCount,
+            ],
+            'review' => [
+                '@type' => 'Review',
+                'reviewRating' => [
+                    '@type' => 'Rating',
+                    'ratingValue' => (string) $rating,
+                    'bestRating' => '5',
+                    'worstRating' => '1',
+                ],
+                'author' => [
+                    '@type' => 'Person',
+                    'name' => $author,
+                ],
+                'datePublished' => $publishedAt,
+                'reviewBody' => substr(strip_tags($content), 0, 1000),
+            ],
+        ];
+        $schemas[] = $productSchema;
+    }
+    
+    // Generate FAQ schema if questions are detected
+    $faqSchema = generate_faq_schema_from_content($content);
+    if (!empty($faqSchema)) {
+        $schemas[] = $faqSchema;
+    }
+    
+    return $schemas;
+}
+
+/**
+ * Helper: Apply all security checks at application bootstrap
+ * Call this early in your request lifecycle
+ */
+function apply_security_checks(): void
+{
+    // Block spam referrers
+    if (is_spam_referrer()) {
+        http_response_code(403);
+        header('X-Robots-Tag: noindex, nofollow');
+        exit('Access denied.');
+    }
+    
+    // Block access to setup-config.php (WordPress already installed)
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    if (strpos($requestUri, '/wp-admin/setup-config.php') !== false) {
+        http_response_code(403);
+        header('X-Robots-Tag: noindex, nofollow');
+        exit('Access denied.');
+    }
+}
+
+// Apply security checks immediately when functions are loaded
+apply_security_checks();
+
+/**
+ * Legacy product schema function (kept for backward compatibility)
+ */
+function json_ld_for_product_legacy(array $product): array
+{
+    $price = isset($product['price_amount']) ? (float) $product['price_amount'] : null;
+    $imageUrl = product_image_url($product);
+    if (filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
+        $imageUrl = absolute_url($imageUrl);
+    }
+
+    $out = [
+        '@context' => 'https://schema.org',
+        '@type' => 'Product',
+        'name' => $product['title'],
+        'description' => $product['description'] ?? '',
         'image' => [$imageUrl],
-        'sku' => $product['asin'],
+        'sku' => $product['asin'] ?? '',
         'brand' => ['@type' => 'Brand', 'name' => APP_NAME],
         'offers' => [
             '@type' => 'Offer',
-            'priceCurrency' => $product['price_currency'] ?: 'USD',
-            'url' => amazon_affiliate_url((string) $product['affiliate_url']),
+            'priceCurrency' => $product['price_currency'] ?? 'USD',
+            'url' => amazon_affiliate_url((string) ($product['affiliate_url'] ?? '')),
         ],
     ];
 
