@@ -204,6 +204,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                     $errors[] = 'Image fix failed: ' . $e->getMessage();
                 }
             }
+        } elseif ($task === 'export_db_schema') {
+            $scriptPath = realpath(__DIR__ . '/../scripts/export_db_schema.php');
+            $scriptsRoot = realpath(__DIR__ . '/../scripts');
+
+            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
+                $errors[] = 'Invalid script path.';
+            } else {
+                ob_start();
+                try {
+                    require $scriptPath;
+                    $output = trim((string) ob_get_clean());
+                    $flash = 'Database schema exported successfully.';
+                    if ($output !== '') {
+                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                            if (trim((string) $line) !== '') {
+                                $maintenanceLog[] = (string) $line;
+                            }
+                        }
+                    }
+                    $maintenanceLog[] = 'Task: export_db_schema';
+                    $maintenanceLog[] = 'Output: /workspace/db_schema.sql';
+                } catch (Throwable $e) {
+                    ob_end_clean();
+                    $errors[] = 'Schema export failed: ' . $e->getMessage();
+                }
+            }
+        } elseif ($task === 'generate_migration') {
+            $scriptPath = realpath(__DIR__ . '/../scripts/generate_migration.php');
+            $scriptsRoot = realpath(__DIR__ . '/../scripts');
+
+            if ($scriptPath === false || $scriptsRoot === false || strpos($scriptPath, $scriptsRoot) !== 0) {
+                $errors[] = 'Invalid script path.';
+            } else {
+                ob_start();
+                try {
+                    require $scriptPath;
+                    $output = trim((string) ob_get_clean());
+                    $flash = 'Migration script generated. Check scripts folder for the new file.';
+                    if ($output !== '') {
+                        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                            if (trim((string) $line) !== '') {
+                                $maintenanceLog[] = (string) $line;
+                            }
+                        }
+                    }
+                    $maintenanceLog[] = 'Task: generate_migration';
+                    $maintenanceLog[] = 'Compares DB with db_schema.sql and creates migration file';
+                } catch (Throwable $e) {
+                    ob_end_clean();
+                    $errors[] = 'Migration generation failed: ' . $e->getMessage();
+                }
+            }
         } else {
             $errors[] = 'Unknown maintenance task.';
         }
