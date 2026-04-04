@@ -1,0 +1,78 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Authentication handler for ENMA admin panel
+ * Handles login, logout and session management
+ */
+
+// Logout handler
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $_SESSION = [];
+        session_destroy();
+        header('Location: ' . url('/enma/'));
+        exit;
+    }
+}
+
+// Login handler
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    }
+
+    if ($isLocked) {
+        $errors[] = 'Too many login attempts. Try again in a few minutes.';
+    }
+
+    $user = trim((string) ($_POST['user'] ?? ''));
+    $pass = (string) ($_POST['pass'] ?? '');
+
+    // Authenticate against database users table
+    if ($errors === [] && $user !== '' && $pass !== '') {
+        try {
+            $stmt = $pdo->prepare('SELECT id, username, password_hash, role, status FROM users WHERE username = :username OR email = :email LIMIT 1');
+            $stmt->execute([':username' => $user, ':email' => $user]);
+            $row = $stmt->fetch();
+            
+            if ($row && password_verify($pass, $row['password_hash'])) {
+                if ($row['status'] !== 'active') {
+                    $errors[] = 'Your account is not active.';
+                } elseif ($row['role'] !== 'admin') {
+                    $errors[] = 'Access denied. Admin privileges required.';
+                } else {
+                    session_regenerate_id(true);
+                    $_SESSION['admin_ok'] = true;
+                    $_SESSION['admin_user_id'] = (int) $row['id'];
+                    $_SESSION['admin_username'] = $row['username'];
+                    $_SESSION['login_attempts'] = 0;
+                    $_SESSION['login_locked_until'] = 0;
+                    
+                    // Update last login time
+                    $updateStmt = $pdo->prepare('UPDATE users SET last_login_at = :now WHERE id = :id');
+                    $updateStmt->execute([':now' => now_iso(), ':id' => $row['id']]);
+                    
+                    header('Location: ' . url('/enma/'));
+                    exit;
+                }
+            } else {
+                $errors[] = 'Invalid credentials.';
+            }
+        } catch (Throwable $e) {
+            $errors[] = 'Login failed: ' . $e->getMessage();
+        }
+    }
+
+    if ($errors === [] && !isset($_SESSION['admin_ok'])) {
+        $_SESSION['login_attempts']++;
+        if ($_SESSION['login_attempts'] >= $maxLoginAttempts) {
+            $_SESSION['login_locked_until'] = time() + $lockSeconds;
+            $_SESSION['login_attempts'] = 0;
+            $errors[] = 'Too many login attempts. Try again in 10 minutes.';
+        }
+    }
+}
