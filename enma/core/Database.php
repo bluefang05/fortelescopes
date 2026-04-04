@@ -10,10 +10,30 @@ class Database {
 
     private function __construct() {
         try {
-            $host = 'localhost';
-            $db   = 'fortlescopes';
-            $user = 'root';
-            $pass = ''; // Ajustar si tienes contraseña
+            // Use same credentials as the main application (includes/config.php)
+            $serverName = strtolower((string) ($_SERVER['SERVER_NAME'] ?? ''));
+            $httpHost   = strtolower((string) ($_SERVER['HTTP_HOST'] ?? ''));
+            $isCli      = PHP_SAPI === 'cli';
+            
+            // Detección mejorada de entorno local
+            $isLocal = $isCli 
+                       || in_array($serverName, ['localhost', '127.0.0.1', '::1'], true)
+                       || in_array($httpHost,   ['localhost', '127.0.0.1', '::1'], true)
+                       || str_contains($serverName, 'local')
+                       || str_contains($httpHost, 'local');
+            
+            if ($isLocal) {
+                $host = '127.0.0.1';
+                $db   = 'fortelescopes';
+                $user = 'root';
+                $pass = '';
+            } else {
+                // Production hosting credentials
+                $host = 'localhost';
+                $db   = 'aspierd1_fortelescopes';
+                $user = 'aspierd1_admin';
+                $pass = 'UnoDosTresCuatroCinco12345...';
+            }
             
             $dsn = "mysql:host=$host;dbname=$db;charset=utf8mb4";
             $options = [
