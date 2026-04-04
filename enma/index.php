@@ -13,8 +13,16 @@ spl_autoload_register(function ($class) {
     }
     
     $relative_class = substr($class, $len);
-    $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
-    
+    $relative_path = str_replace('\\', '/', $relative_class);
+
+    // ENMA keeps top-level MVC folders in lowercase on disk.
+    // On Linux, class namespace segment case must be mapped explicitly.
+    $parts = explode('/', $relative_path);
+    if (!empty($parts[0])) {
+        $parts[0] = strtolower($parts[0]);
+    }
+
+    $file = $base_dir . implode('/', $parts) . '.php';
     if (file_exists($file)) {
         require $file;
     }

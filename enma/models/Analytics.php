@@ -5,105 +5,283 @@ use Enma\Core\Database;
 
 class Analytics {
     private $db;
+    private $tableCache = [];
+    private $columnCache = [];
 
     public function __construct() {
         $this->db = Database::getInstance()->getConnection();
     }
 
-    /**
-     * Obtiene estadísticas generales y de seguridad
-     */
-    public function getDashboardStats() {
-        $stats = [];
-        
-        // Totales básicos
-        $stats['total_views'] = $this->db->query("SELECT COUNT(*) FROM page_views")->fetchColumn();
-        $stats['total_clicks'] = $this->db->query("SELECT COUNT(*) FROM outbound_clicks")->fetchColumn();
-        $stats['unique_ips'] = $this->db->query("SELECT COUNT(DISTINCT ip_address) FROM page_views")->fetchColumn();
+    private function tableExists(string $table): bool {
+        if (array_key_exists($table, $this->tableCache)) {
+            return $this->tableCache[$table];
+        }
 
-        // Detección de Bots y Ataques (Lógica heurística sobre datos existentes)
-        $stats['suspected_bots'] = $this->countSuspectedBots();
-        $stats['suspected_attacks'] = $this->countSuspectedAttacks();
+        $stmt = $this->db->prepare(
+            'SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = DATABASE() AND table_name = :table
+             LIMIT 1'
+        );
+        $stmt->execute([':table' => $table]);
+        $this->tableCache[$table] = (bool) $stmt->fetchColumn();
+
+        return $this->tableCache[$table];
+    }
+
+    private function columnExists(string $table, string $column): bool {
+        $cacheKey = $table . '.' . $column;
+        if (array_key_exists($cacheKey, $this->columnCache)) {
+            return $this->columnCache[$cacheKey];
+        }
+
+        if (!$this->tableExists($table)) {
+            $this->columnCache[$cacheKey] = false;
+            return false;
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT 1
+             FROM information_schema.columns
+             WHERE table_schema = DATABASE()
+               AND table_name = :table
+               AND column_name = :column
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':table' => $table,
+            ':column' => $column,
+        ]);
+        $this->columnCache[$cacheKey] = (bool) $stmt->fetchColumn();
+
+        return $this->columnCache[$cacheKey];
+    }
+
+    private function analyticsTable(): string {
+        if ($this->tableExists('page_view_hits')) {
+            return 'page_view_hits';
+        }
+
+        return 'page_views';
+    }
+
+    private function urlColumn(string $table): ?string {
+        if ($this->columnExists($table, 'url')) {
+            return 'url';
+        }
+        if ($this->columnExists($table, 'path')) {
+            return 'path';
+        }
+
+        return null;
+    }
+
+    private function ipColumn(string $table): ?string {
+        if ($this->columnExists($table, 'ip_address')) {
+            return 'ip_address';
+        }
+        if ($this->columnExists($table, 'ip_hash')) {
+            return 'ip_hash';
+        }
+
+        return null;
+    }
+
+    private function userAgentColumn(string $table): ?string {
+        return $this->columnExists($table, 'user_agent') ? 'user_agent' : null;
+    }
+
+    private function createdAtColumn(string $table): ?string {
+        if ($this->columnExists($table, 'created_at')) {
+            return 'created_at';
+        }
+        if ($this->columnExists($table, 'viewed_at')) {
+            return 'viewed_at';
+        }
+        if ($this->columnExists($table, 'last_viewed_at')) {
+            return 'last_viewed_at';
+        }
+
+        return null;
+    }
+
+    /**
+     * Obtiene estadisticas generales y de seguridad.
+     */
+    public function getDashboardStats(): array {
+        $stats = [];
+        $table = $this->analyticsTable();
+        $ipCol = $this->ipColumn($table);
+
+        if ($table === 'page_views' && $this->columnExists('page_views', 'views')) {
+            $stats['total_views'] = (int) $this->db->query('SELECT COALESCE(SUM(views), 0) FROM page_views')->fetchColumn();
+        } else {
+            $stats['total_views'] = (int) $this->db->query("SELECT COUNT(*) FROM `$table`")->fetchColumn();
+        }
+
+        $stats['total_clicks'] = (int) $this->db->query('SELECT COUNT(*) FROM outbound_clicks')->fetchColumn();
+        $stats['unique_ips'] = $ipCol !== null
+            ? (int) $this->db->query("SELECT COUNT(DISTINCT `$ipCol`) FROM `$table`")->fetchColumn()
+            : 0;
+
+        $stats['suspected_bots'] = (int) $this->countSuspectedBots();
+        $stats['suspected_attacks'] = (int) $this->countSuspectedAttacks();
         $stats['human_traffic'] = max(0, $stats['total_views'] - $stats['suspected_bots'] - $stats['suspected_attacks']);
-        
+
         return $stats;
     }
 
     /**
-     * Detecta bots basándose en User Agent
+     * Detecta bots basandose en User Agent.
      */
-    private function countSuspectedBots() {
-        $sql = "SELECT COUNT(*) FROM page_views WHERE 
-                user_agent LIKE '%bot%' OR 
-                user_agent LIKE '%crawler%' OR 
-                user_agent LIKE '%spider%' OR 
-                user_agent LIKE '%googlebot%' OR 
-                user_agent LIKE '%bingbot%' OR 
-                user_agent LIKE '%slurp%' OR 
-                user_agent LIKE '%duckduck%' OR 
-                user_agent LIKE '%baidu%'";
-        return $this->db->query($sql)->fetchColumn();
+    private function countSuspectedBots(): int {
+        $table = $this->analyticsTable();
+        $uaCol = $this->userAgentColumn($table);
+        if ($uaCol === null) {
+            return 0;
+        }
+
+        $sql = "SELECT COUNT(*) FROM `$table` WHERE
+                `$uaCol` LIKE '%bot%' OR
+                `$uaCol` LIKE '%crawler%' OR
+                `$uaCol` LIKE '%spider%' OR
+                `$uaCol` LIKE '%googlebot%' OR
+                `$uaCol` LIKE '%bingbot%' OR
+                `$uaCol` LIKE '%slurp%' OR
+                `$uaCol` LIKE '%duckduck%' OR
+                `$uaCol` LIKE '%baidu%'";
+
+        return (int) $this->db->query($sql)->fetchColumn();
     }
 
     /**
-     * Detecta posibles ataques (SQLi, XSS, Scanners) en URLs y User Agents
+     * Detecta posibles ataques (SQLi, XSS, scanners) en URL y User Agent.
      */
-    private function countSuspectedAttacks() {
-        $sql = "SELECT COUNT(*) FROM page_views WHERE 
-                url LIKE '%union%' OR 
-                url LIKE '%select%' OR 
-                url LIKE '%drop%' OR 
-                url LIKE '%<script%' OR 
-                url LIKE '%../%' OR 
-                url LIKE '%etc/passwd%' OR 
-                user_agent LIKE '%sqlmap%' OR 
-                user_agent LIKE '%nikto%' OR 
-                user_agent LIKE '%nmap%' OR 
-                user_agent LIKE '%masscan%'";
-        return $this->db->query($sql)->fetchColumn();
+    private function countSuspectedAttacks(): int {
+        $table = $this->analyticsTable();
+        $urlCol = $this->urlColumn($table);
+        $uaCol = $this->userAgentColumn($table);
+
+        $conditions = [];
+
+        if ($urlCol !== null) {
+            $conditions[] = "`$urlCol` LIKE '%union%'";
+            $conditions[] = "`$urlCol` LIKE '%select%'";
+            $conditions[] = "`$urlCol` LIKE '%drop%'";
+            $conditions[] = "`$urlCol` LIKE '%<script%'";
+            $conditions[] = "`$urlCol` LIKE '%../%'";
+            $conditions[] = "`$urlCol` LIKE '%etc/passwd%'";
+        }
+
+        if ($uaCol !== null) {
+            $conditions[] = "`$uaCol` LIKE '%sqlmap%'";
+            $conditions[] = "`$uaCol` LIKE '%nikto%'";
+            $conditions[] = "`$uaCol` LIKE '%nmap%'";
+            $conditions[] = "`$uaCol` LIKE '%masscan%'";
+        }
+
+        if ($conditions === []) {
+            return 0;
+        }
+
+        $sql = "SELECT COUNT(*) FROM `$table` WHERE " . implode(' OR ', $conditions);
+
+        return (int) $this->db->query($sql)->fetchColumn();
     }
 
     /**
-     * Datos para gráfico de tráfico (últimos 7 días)
+     * Datos para grafico de trafico (ultimos 7 dias).
      */
-    public function getTrafficChartData() {
-        $sql = "SELECT DATE(created_at) as date, COUNT(*) as count 
-                FROM page_views 
-                GROUP BY DATE(created_at) 
-                ORDER BY date DESC LIMIT 7";
+    public function getTrafficChartData(): array {
+        $table = $this->analyticsTable();
+        $dateCol = $this->columnExists($table, 'view_date') ? 'view_date' : $this->createdAtColumn($table);
+
+        if ($dateCol === null) {
+            return [];
+        }
+
+        $sql = "SELECT DATE(`$dateCol`) AS date, COUNT(*) AS count
+                FROM `$table`
+                GROUP BY DATE(`$dateCol`)
+                ORDER BY date DESC
+                LIMIT 7";
+
         $results = $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
+
         return array_reverse($results);
     }
 
     /**
-     * Top User Agents
+     * Top User Agents.
      */
-    public function getTopUserAgents($limit = 5) {
-        $sql = "SELECT user_agent, COUNT(*) as count 
-                FROM page_views 
-                GROUP BY user_agent 
-                ORDER BY count DESC LIMIT $limit";
+    public function getTopUserAgents($limit = 5): array {
+        $table = $this->analyticsTable();
+        $uaCol = $this->userAgentColumn($table);
+        if ($uaCol === null) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $sql = "SELECT `$uaCol` AS user_agent, COUNT(*) AS count
+                FROM `$table`
+                GROUP BY `$uaCol`
+                ORDER BY count DESC
+                LIMIT $limit";
+
         return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
     }
 
     /**
-     * Últimos registros crudos para exportación
+     * Ultimos registros crudos para exportacion.
      */
-    public function getRecentLogs($limit = 50) {
-        $sql = "SELECT * FROM page_views ORDER BY created_at DESC LIMIT $limit";
+    public function getRecentLogs($limit = 50): array {
+        $table = $this->analyticsTable();
+        $urlCol = $this->urlColumn($table);
+        $ipCol = $this->ipColumn($table);
+        $uaCol = $this->userAgentColumn($table);
+        $createdCol = $this->createdAtColumn($table);
+
+        if ($createdCol === null) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $urlExpr = $urlCol !== null ? "`$urlCol`" : "''";
+        $ipExpr = $ipCol !== null ? "`$ipCol`" : "''";
+        $uaExpr = $uaCol !== null ? "`$uaCol`" : "''";
+
+        $sql = "SELECT
+                    `id`,
+                    `$createdCol` AS created_at,
+                    $urlExpr AS url,
+                    $ipExpr AS ip_address,
+                    $uaExpr AS user_agent
+                FROM `$table`
+                ORDER BY `$createdCol` DESC
+                LIMIT $limit";
+
         return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
     }
-    
+
     /**
-     * Lista de IPs sospechosas
+     * Lista de IPs sospechosas.
      */
-    public function getSuspiciousIPs() {
-        $sql = "SELECT ip_address, COUNT(*) as attempts, MAX(user_agent) as last_agent
-                FROM page_views 
-                WHERE user_agent LIKE '%bot%' OR user_agent LIKE '%sqlmap%' OR user_agent LIKE '%nikto%'
-                GROUP BY ip_address
+    public function getSuspiciousIPs(): array {
+        $table = $this->analyticsTable();
+        $ipCol = $this->ipColumn($table);
+        $uaCol = $this->userAgentColumn($table);
+
+        if ($ipCol === null || $uaCol === null) {
+            return [];
+        }
+
+        $sql = "SELECT `$ipCol` AS ip_address, COUNT(*) AS attempts, MAX(`$uaCol`) AS last_agent
+                FROM `$table`
+                WHERE `$uaCol` LIKE '%bot%' OR `$uaCol` LIKE '%sqlmap%' OR `$uaCol` LIKE '%nikto%'
+                GROUP BY `$ipCol`
                 ORDER BY attempts DESC
                 LIMIT 10";
+
         return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
     }
 }
