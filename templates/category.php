@@ -58,7 +58,7 @@ $tiers = pick_tier_products($products);
                     <span class="price"><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, $item['price_currency'])) ?></span>
                     <span class="hint">Check availability on Amazon</span>
                 </div>
-                <a class="card-cta" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">
+                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">
                     <?= $idx === 0 ? 'Check price on Amazon' : 'See details on Amazon' ?>
                 </a>
                 <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>

@@ -18,7 +18,8 @@ if ($fullGuideHtmlRaw !== '') {
     $candidate = (strpos($fullGuideHtmlRaw, '&lt;') !== false || strpos($fullGuideHtmlRaw, '&gt;') !== false)
         ? html_entity_decode($fullGuideHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8')
         : $fullGuideHtmlRaw;
-    $candidate = preg_replace('/<\s*(script|style|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
+    // Keep <style> blocks from trusted guide content so scoped guide CSS can render.
+    $candidate = preg_replace('/<\s*(script|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/\son[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/\s(href|src)\s*=\s*([\"\'])\s*javascript:[^\"\']*\2/i', ' $1="#"', $candidate) ?? $candidate;
     $candidate = preg_replace_callback('/<iframe\b[^>]*\bsrc=(["\'])([^"\']+)\1[^>]*>\s*<\/iframe>/i', static function ($m) {
@@ -155,7 +156,7 @@ if ($fullGuideHtmlRaw !== '') {
                     <span class="price"><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, $item['price_currency'])) ?></span>
                     <span class="hint">Check availability on Amazon</span>
                 </div>
-                <a class="card-cta" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= $idx === 0 ? 'Check price on Amazon' : 'View on Amazon' ?></a>
+                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= $idx === 0 ? 'Check price on Amazon' : 'View on Amazon' ?></a>
                 <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
         </article>
@@ -249,7 +250,7 @@ if ($fullGuideHtmlRaw !== '') {
         <?= e((string) ($guide['final_recommendation'] ?? 'For most first-time stargazers, start with a simple and stable model that you can use consistently from week one. If you are still comparing options, open the top pick first and check current price and availability on Amazon.')) ?>
     </p>
     <?php if ($top !== null): ?>
-        <a class="btn" href="<?= e(outbound_url((string) $top['affiliate_url'], (int) ($top['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= e((string) ($guide['cta_text'] ?? 'Check current price on Amazon')) ?></a>
+        <a class="btn amazon-btn" href="<?= e(outbound_url((string) $top['affiliate_url'], (int) ($top['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= e((string) ($guide['cta_text'] ?? 'Check current price on Amazon')) ?></a>
         <?php if (!empty($guide['cta_note'])): ?>
             <p class="muted" style="margin-top: 8px; font-size: 13px;"><?= e((string) $guide['cta_note']) ?></p>
         <?php endif; ?>

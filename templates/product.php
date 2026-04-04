@@ -50,7 +50,7 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
             <div class="trust-box">Checking now helps avoid stale price assumptions</div>
         </div>
         <p style="margin: 0 0 12px;">
-            <a class="btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price on Amazon</a>
+            <a class="btn amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price on Amazon</a>
         </p>
         <p class="muted" style="font-size: 13px; margin: 0;">ASIN: <?= e($product['asin']) ?> | External merchant checkout applies.</p>
     </div>
@@ -80,5 +80,5 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
     </div>
 </section>
 
-<a class="mobile-sticky-cta" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price Now - <?= e(money($product['price_amount'] !== null ? (float) $product['price_amount'] : null, $product['price_currency'])) ?> - <?= e($relativeUpdate) ?></a>
+<a class="mobile-sticky-cta amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price Now - <?= e(money($product['price_amount'] !== null ? (float) $product['price_amount'] : null, $product['price_currency'])) ?> - <?= e($relativeUpdate) ?></a>
 

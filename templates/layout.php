@@ -389,6 +389,18 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             box-shadow: 0 14px 24px rgba(255, 122, 26, 0.4);
         }
 
+        .amazon-btn {
+            background: linear-gradient(140deg, #ffd814 0%, #f7ca00 100%) !important;
+            color: #111 !important;
+            font-weight: 900;
+            border: 1px solid #f2c200;
+            box-shadow: 0 10px 18px rgba(242, 194, 0, 0.35);
+        }
+
+        .amazon-btn:hover {
+            box-shadow: 0 14px 24px rgba(242, 194, 0, 0.45);
+        }
+
         .panel {
             background: #fff;
             border: 1px solid var(--line);
