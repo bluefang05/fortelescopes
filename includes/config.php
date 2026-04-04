@@ -54,8 +54,6 @@ if ($isLocal) {
 // ======================
 // Otras configuraciones
 // ======================
-define('ADMIN_USER', 'admin');
-define('ADMIN_PASS', 'change-this-now');
 define('AMAZON_ASSOCIATE_TAG', 'fortelescopes-20');
 define('ENMA_ADVANCED_KEY', '');
 

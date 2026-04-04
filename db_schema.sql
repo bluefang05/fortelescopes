@@ -113,4 +113,41 @@ CREATE TABLE IF NOT EXISTS `posts` (
     KEY `idx_posts_published` (`published_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ----------------------------
+-- Table structure for users
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `users` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    `email` VARCHAR(255) NOT NULL UNIQUE,
+    `username` VARCHAR(100) NOT NULL UNIQUE,
+    `password_hash` VARCHAR(255) NOT NULL,
+    `display_name` VARCHAR(100) NULL,
+    `avatar_url` TEXT NULL,
+    `role` VARCHAR(20) NOT NULL DEFAULT 'user',
+    `status` VARCHAR(20) NOT NULL DEFAULT 'active',
+    `last_login_at` VARCHAR(40) NULL,
+    `created_at` VARCHAR(40) NOT NULL,
+    `updated_at` VARCHAR(40) NOT NULL,
+    KEY `idx_users_email` (`email`),
+    KEY `idx_users_username` (`username`),
+    KEY `idx_users_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ----------------------------
+-- Records for users
+-- ----------------------------
+-- Default admin user: username=admin, password=polilla05
+-- Password hash generated with bcrypt (cost factor 10)
+INSERT INTO `users` (`email`, `username`, `password_hash`, `display_name`, `role`, `status`, `created_at`, `updated_at`) 
+VALUES (
+    'admin@fortlescopes.com',
+    'admin',
+    '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+    'Administrator',
+    'admin',
+    'active',
+    UTC_TIMESTAMP(),
+    UTC_TIMESTAMP()
+);
