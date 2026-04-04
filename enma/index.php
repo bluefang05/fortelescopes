@@ -35,12 +35,12 @@ $action = $_GET['action'] ?? '';
 
 // Handle MVC actions
 if ($action === 'analytics') {
-    $controller = new \Enma\Controllers\AnalyticsController();
-    $controller->index();
+    // Keep a single ENMA shell/theme: analytics is rendered as a normal tab.
+    header('Location: ?tab=analytics');
     exit;
 }
 
-// Si no es una acción MVC, continuar con el legacy
+// Si no es una accion MVC, continuar con el legacy
 require_once __DIR__ . '/../includes/bootstrap.php';
 
 $errors = [];
@@ -54,20 +54,24 @@ $isLocked = ($_SESSION['login_locked_until'] > time());
 // Include helpers first (provides enma_handle_image_upload and enma_normalize_editor_html)
 require_once __DIR__ . '/helpers.php';
 
-// Include handlers
-require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/posts_handler.php';
-require_once __DIR__ . '/products_handler.php';
-require_once __DIR__ . '/maintenance.php';
-
+// Runtime state used/updated by handlers
 $authenticated = !empty($_SESSION['admin_ok']);
 $maintenanceLog = [];
 $advancedEnabled = ENMA_ADVANCED_KEY !== '';
 $editingPost = null;
 $editingProduct = null;
 
+// Include handlers
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/posts_handler.php';
+require_once __DIR__ . '/products_handler.php';
+require_once __DIR__ . '/maintenance.php';
+
+// Refresh auth state in case auth.php changed the session
+$authenticated = !empty($_SESSION['admin_ok']);
+
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
-if (!in_array($activeTab, ['overview', 'products', 'posts', 'views', 'maintenance'], true)) {
+if (!in_array($activeTab, ['overview', 'products', 'posts', 'views', 'analytics', 'maintenance'], true)) {
     $activeTab = 'overview';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
@@ -107,6 +111,29 @@ $overviewStats = [
         'views_30d' => (int) $pdo->query($views30dSql)->fetchColumn(),
         'posts' => (int) $pdo->query('SELECT COUNT(*) FROM posts')->fetchColumn(),
     ];
+}
+
+$analyticsDashboard = [];
+if ($authenticated && $activeTab === 'analytics') {
+    try {
+        $analytics = new \Enma\Models\Analytics();
+        $analyticsDashboard = [
+            'stats' => $analytics->getDashboardStats(),
+            'chart_data' => $analytics->getTrafficChartData(),
+            'top_agents' => $analytics->getTopUserAgents(),
+            'suspicious_ips' => $analytics->getSuspiciousIPs(),
+            'recent_logs' => $analytics->getRecentLogs(50),
+        ];
+    } catch (Throwable $e) {
+        $errors[] = 'Analytics load failed: ' . $e->getMessage();
+        $analyticsDashboard = [
+            'stats' => [],
+            'chart_data' => [],
+            'top_agents' => [],
+            'suspicious_ips' => [],
+            'recent_logs' => [],
+        ];
+    }
 }
 
 $dbTables = [];
@@ -186,24 +213,84 @@ if ($authenticated && $activeTab === 'maintenance') {
       });
     </script>
     <style>
-        body { margin: 0; font-family: Arial, sans-serif; background: #f2f5f8; }
-        .wrap { max-width: 980px; margin: 20px auto; padding: 0 14px 28px; }
-        .box { background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.08); padding: 16px; margin-bottom: 16px; }
-        input, textarea, select { width: 100%; box-sizing: border-box; margin: 6px 0 12px; padding: 10px; }
-        .btn { background: #0b1f3a; color: #fff; border: 0; padding: 10px 14px; border-radius: 6px; cursor: pointer; }
+        :root {
+            --bg: #edf3fb;
+            --panel: #ffffff;
+            --text: #162235;
+            --muted: #5d6b81;
+            --line: #d7e0ed;
+            --brand: #0e2a57;
+            --brand-2: #144488;
+        }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text);
+            background:
+                radial-gradient(1200px 500px at 90% -10%, #d9e8ff 0%, transparent 60%),
+                radial-gradient(700px 350px at -10% -15%, #d6fff0 0%, transparent 55%),
+                var(--bg);
+        }
+        .wrap { max-width: 1180px; margin: 26px auto; padding: 0 14px 28px; }
+        .box {
+            background: var(--panel);
+            border-radius: 14px;
+            border: 1px solid #e4ebf5;
+            box-shadow: 0 10px 30px rgba(8, 29, 66, 0.08);
+            padding: 18px;
+            margin-bottom: 16px;
+        }
+        input, textarea, select {
+            width: 100%;
+            box-sizing: border-box;
+            margin: 6px 0 12px;
+            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #fdfefe;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #6ea1ee;
+            box-shadow: 0 0 0 3px rgba(73, 132, 221, 0.15);
+        }
+        .btn {
+            background: linear-gradient(180deg, var(--brand-2), var(--brand));
+            color: #fff;
+            border: 0;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700;
+        }
         table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; border-bottom: 1px solid #e8edf3; padding: 10px 8px; font-size: 14px; }
+        th, td { text-align: left; border-bottom: 1px solid #e9eef6; padding: 10px 8px; font-size: 14px; }
+        th { color: #2c3e57; background: #f6f9fd; }
         .error { background: #ffe5e5; color: #8a1f1f; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
         .ok { background: #e4f8ea; color: #165f2b; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-        .toplink { display: inline-block; margin-bottom: 12px; }
+        .toplink { display: inline-block; margin-bottom: 12px; color: var(--brand); font-weight: 700; text-decoration: none; }
         .tabs { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
-        .tab { display:inline-block; text-decoration:none; padding:8px 12px; border-radius:999px; border:1px solid #d5deea; background:#fff; color:#1d3556; font-weight:700; font-size:13px; }
-        .tab.active { background:#0b1f3a; color:#fff; border-color:#0b1f3a; }
-        .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:14px; }
-        .stat { background:#f6f9fc; border:1px solid #e2e8f0; border-radius:10px; padding:10px; }
+        .tab {
+            display:inline-block;
+            text-decoration:none;
+            padding:10px 14px;
+            border-radius:999px;
+            border:1px solid var(--line);
+            background:#fff;
+            color:#1c365d;
+            font-weight:700;
+            font-size:13px;
+        }
+        .tab.active {
+            background: linear-gradient(180deg, var(--brand-2), var(--brand));
+            color:#fff;
+            border-color:var(--brand);
+        }
+        .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:14px; }
+        .stat { background:#f7faff; border:1px solid #dce6f3; border-radius:10px; padding:10px; }
         .stat-k { font-size:12px; color:#4a5b73; margin-bottom:4px; }
         .stat-v { font-size:24px; font-weight:800; color:#0b1f3a; }
-        .muted { color:#55647a; font-size:13px; }
+        .muted { color: var(--muted); font-size:13px; }
         .toolbar { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
         .toolbar .field { max-width:280px; }
         .empty { padding:14px; border:1px dashed #d8e2ee; border-radius:8px; color:#5d6f86; background:#f9fbfe; }
@@ -237,77 +324,12 @@ if ($authenticated && $activeTab === 'maintenance') {
             <p>Default local credentials: <strong>admin</strong> / <strong>change-this-now</strong></p>
         </section>
     <?php else: ?>
-        <!-- Using new layout with sidebar -->
-        <?php 
-        $pageTitle = 'ENMA Admin';
-        $activePage = $activeTab === 'views' ? 'analytics' : $activeTab;
-        $user = ['username' => $_SESSION['admin_username'] ?? 'Admin'];
-        ob_start(); 
-        ?>
-        
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2><i class="fas fa-tachometer-alt"></i> Panel de Control</h2>
-            <span class="badge bg-primary"><?= htmlspecialchars($user['username'] ?? 'Admin') ?></span>
-        </div>
-
-        <?php if ($activeTab === 'overview'): ?>
-        <!-- KPI Cards -->
-        <div class="kpi-grid">
-            <div class="kpi-card success">
-                <div class="kpi-label">Productos</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['products'] ?? 0)) ?></div>
-                <small class="text-muted">Total en catálogo</small>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-label">Categorías</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['categories'] ?? 0)) ?></div>
-                <small class="text-muted">Categorías únicas</small>
-            </div>
-            <div class="kpi-card warning">
-                <div class="kpi-label">Vistas (30d)</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['views_30d'] ?? 0)) ?></div>
-                <small class="text-muted">Últimos 30 días</small>
-            </div>
-            <div class="kpi-card danger">
-                <div class="kpi-label">Faltan Tags</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['missing_tags'] ?? 0)) ?></div>
-                <small class="text-muted">Productos sin tag afiliado</small>
-            </div>
-            <div class="kpi-card danger">
-                <div class="kpi-label">Faltan Imágenes</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['missing_images'] ?? 0)) ?></div>
-                <small class="text-muted">Productos sin imagen</small>
-            </div>
-            <div class="kpi-card success">
-                <div class="kpi-label">Posts</div>
-                <div class="kpi-value"><?= number_format((int) ($overviewStats['posts'] ?? 0)) ?></div>
-                <small class="text-muted">Publicaciones activas</small>
-            </div>
-        </div>
-
-        <div class="box">
-            <h4 class="mb-3"><i class="fas fa-info-circle"></i> Bienvenido al Panel ENMA</h4>
-            <p class="text-muted">Utiliza el menú lateral para navegar entre las diferentes secciones del panel de administración:</p>
-            <ul class="list-group list-group-flush">
-                <li class="list-group-item"><i class="fas fa-box text-primary me-2"></i> <strong>Productos:</strong> Gestiona tu catálogo de productos Amazon</li>
-                <li class="list-group-item"><i class="fas fa-newspaper text-success me-2"></i> <strong>Posts:</strong> Crea y edita contenido para tu sitio</li>
-                <li class="list-group-item"><i class="fas fa-chart-line text-info me-2"></i> <strong>Analytics & Seguridad:</strong> Monitoriza tráfico y detecta amenazas</li>
-                <li class="list-group-item"><i class="fas fa-tools text-warning me-2"></i> <strong>Mantenimiento:</strong> Herramientas de base de datos y exportación</li>
-            </ul>
-        </div>
-        <?php endif; ?>
-        
-        <?php $content = ob_get_clean(); ?>
-        <?php require __DIR__ . '/views/layouts/main.php'; ?>
-        <?php exit; ?>
-        
-        <!-- Old layout kept for reference - remove after testing -->
         <div class="tabs">
             <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Overview</a>
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
             <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Posts</a>
             <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
-            <a class="tab" href="<?= e(url('/enma/?action=analytics')) ?>">Analytics & Seguridad</a>
+            <a class="tab <?= $activeTab === 'analytics' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=analytics')) ?>">Analytics & Seguridad</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
         </div>
 
@@ -595,6 +617,65 @@ if ($authenticated && $activeTab === 'maintenance') {
                 </table>
             <?php endif; ?>
         </section>
+        <?php elseif ($activeTab === 'analytics'): ?>
+        <section class="box">
+            <h2>Analytics & Seguridad</h2>
+            <div class="stats">
+                <div class="stat"><div class="stat-k">Total Views</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['total_views'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Unique Visitors</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['unique_ips'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Outbound Clicks</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['total_clicks'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Human Traffic</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['human_traffic'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Suspected Bots</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['suspected_bots'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Suspected Attacks</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['suspected_attacks'] ?? 0)) ?></div></div>
+            </div>
+            <p class="muted">This analytics panel now runs inside the same ENMA layout to avoid theme/page jumps.</p>
+        </section>
+
+        <section class="box">
+            <h2>Top User Agents</h2>
+            <?php if (($analyticsDashboard['top_agents'] ?? []) === []): ?>
+                <div class="empty">No traffic data yet.</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>User Agent</th><th>Hits</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($analyticsDashboard['top_agents'] as $agent): ?>
+                    <tr>
+                        <td><?= e((string) ($agent['user_agent'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($agent['count'] ?? 0)) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="box">
+            <h2>Recent Logs</h2>
+            <?php if (($analyticsDashboard['recent_logs'] ?? []) === []): ?>
+                <div class="empty">No recent logs found.</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>ID</th><th>Date</th><th>URL</th><th>IP/Hash</th><th>User Agent</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($analyticsDashboard['recent_logs'] as $log): ?>
+                    <tr>
+                        <td><?= (int) ($log['id'] ?? 0) ?></td>
+                        <td><?= e((string) ($log['created_at'] ?? '')) ?></td>
+                        <td><code><?= e((string) ($log['url'] ?? '')) ?></code></td>
+                        <td><?= e((string) ($log['ip_address'] ?? '')) ?></td>
+                        <td><?= e((string) ($log['user_agent'] ?? '')) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
             <h2>Views Dashboard</h2>
