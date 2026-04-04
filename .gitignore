@@ -1,1 +1,68 @@
-Nothing should be ignored in this case, as the changes consist only of PHP source files (.php) which are legitimate project files that should be tracked in version control.
+```
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+*.class
+*.exe
+*.dll
+*.so
+*.a
+*.out
+
+# Dependencies
+vendor/
+composer.lock
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Distribution / build artifacts
+dist/
+build/
+target/
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Python specific
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+.Python
+*.egg-info/
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+instance/
+.webassets-cache
+.sass-cache/
+celerybeat-schedule
+celerybeat.pid
+
+# System files
+.DS_Store
+Thumbs.db
+```
