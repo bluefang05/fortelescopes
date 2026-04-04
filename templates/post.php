@@ -21,7 +21,13 @@ if ($postHtmlRaw !== '') {
     }, $postHtml) ?? $postHtml;
     $postHtml = preg_replace('/<iframe\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/iframe>/i', '', $postHtml) ?? $postHtml;
     $postHtml = preg_replace('/<iframe\b[^>]*\bsrc=(["\'])(?!https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/)[^"\']+\1[^>]*>\s*<\/iframe>/i', '', $postHtml) ?? $postHtml;
+    
+    // Apply YouTube lazy loading transformation
+    $postHtml = lazy_load_youtube_embeds($postHtml);
 }
+
+// Generate dynamic schema for this post
+$jsonLd = generate_dynamic_schema($post, base_url());
 ?>
 <section class="hero">
     <span class="hero-kicker">Astronomy Article</span>
