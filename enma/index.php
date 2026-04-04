@@ -693,6 +693,20 @@ if ($authenticated && $activeTab === 'maintenance') {
 
             <form method="post" style="margin-bottom: 10px;">
                 <input type="hidden" name="action" value="maintenance_run">
+                <input type="hidden" name="task" value="export_db_schema">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <button class="btn" type="submit">Export Current DB Schema (updates db_schema.sql)</button>
+            </form>
+
+            <form method="post" style="margin-bottom: 10px;">
+                <input type="hidden" name="action" value="maintenance_run">
+                <input type="hidden" name="task" value="generate_migration">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <button class="btn" type="submit">Generate Migration Script (DB vs Schema)</button>
+            </form>
+
+            <form method="post" style="margin-bottom: 10px;">
+                <input type="hidden" name="action" value="maintenance_run">
                 <input type="hidden" name="task" value="update_db_schema">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <button class="btn" type="submit">Update DB Schema (safe)</button>
