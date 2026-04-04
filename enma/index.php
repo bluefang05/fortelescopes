@@ -2,7 +2,36 @@
 
 declare(strict_types=1);
 
+// Autoloader simple para MVC
+spl_autoload_register(function ($class) {
+    $prefix = 'Enma\\';
+    $base_dir = __DIR__ . '/';
+    
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) {
+        return;
+    }
+    
+    $relative_class = substr($class, $len);
+    $file = $base_dir . str_replace('\\', '/', $relative_class) . '.php';
+    
+    if (file_exists($file)) {
+        require $file;
+    }
+});
+
 session_start();
+
+// Router simple: si viene ?action=analytics, usar el controlador MVC
+$action = $_GET['action'] ?? 'login';
+
+if ($action === 'analytics') {
+    $controller = new \Enma\Controllers\AnalyticsController();
+    $controller->index();
+    exit;
+}
+
+// Si no es una acción MVC, continuar con el legacy
 require_once __DIR__ . '/../includes/bootstrap.php';
 
 $errors = [];
@@ -204,6 +233,7 @@ if ($authenticated && $activeTab === 'maintenance') {
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
             <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Posts</a>
             <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
+            <a class="tab" href="<?= e(url('/enma/?action=analytics')) ?>">Analytics & Seguridad</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
         </div>
 
