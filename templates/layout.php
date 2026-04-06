@@ -262,6 +262,11 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             gap: 16px;
         }
 
+        .blog-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            align-items: start;
+        }
+
         .card {
             border-radius: var(--radius);
             overflow: hidden;
@@ -415,6 +420,212 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             border-radius: 16px;
             max-height: 520px;
             object-fit: cover;
+        }
+
+        .article-prose {
+            color: #1c2940;
+            font-size: 16px;
+            line-height: 1.75;
+        }
+
+        .article-prose > *:first-child { margin-top: 0; }
+        .article-prose > *:last-child { margin-bottom: 0; }
+
+        .article-prose h2,
+        .article-prose h3,
+        .article-prose h4 {
+            color: #13233a;
+            line-height: 1.25;
+            letter-spacing: -0.01em;
+        }
+
+        .article-prose h2 {
+            margin: 26px 0 12px;
+            font-size: clamp(24px, 4vw, 34px);
+            font-family: "Spectral", Georgia, serif;
+        }
+
+        .article-prose h3 {
+            margin: 22px 0 10px;
+            font-size: clamp(20px, 3vw, 28px);
+            font-family: "Spectral", Georgia, serif;
+        }
+
+        .article-prose h4 {
+            margin: 16px 0 8px;
+            font-size: 19px;
+            font-weight: 700;
+        }
+
+        .article-prose p,
+        .article-prose ul,
+        .article-prose ol,
+        .article-prose blockquote {
+            margin: 0 0 14px;
+        }
+
+        .article-prose ul,
+        .article-prose ol {
+            padding-left: 20px;
+        }
+
+        .article-prose li {
+            margin-bottom: 6px;
+        }
+
+        .article-prose blockquote {
+            border-left: 4px solid #ceddf6;
+            background: #f6f9ff;
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #2b3c57;
+        }
+
+        .article-prose .blog-post > header {
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid #e7edf5;
+        }
+
+        .article-prose .blog-post > header h1 {
+            margin: 0 0 10px;
+            font-family: "Spectral", Georgia, serif;
+            font-size: clamp(28px, 4vw, 42px);
+            line-height: 1.08;
+            color: #13233a;
+        }
+
+        .article-prose .post-meta {
+            margin: 0;
+            color: #52627a;
+            font-size: 16px;
+        }
+
+        .article-prose .post-content {
+            color: inherit;
+        }
+
+        .article-prose .telescope-cta-section {
+            margin: 34px 0;
+            padding: 36px 28px;
+            border-radius: 18px;
+            text-align: center;
+            background: linear-gradient(135deg, #1d3f7a 0%, #254f94 100%);
+            box-shadow: 0 16px 32px rgba(21, 43, 87, 0.28);
+            color: #e8eefb;
+        }
+
+        .article-prose .telescope-cta-section h3 {
+            margin: 0 0 12px;
+            color: #fff;
+            font-family: "Spectral", Georgia, serif;
+            font-size: clamp(24px, 4vw, 36px);
+        }
+
+        .article-prose .telescope-cta-section .product-name {
+            margin: 0 0 18px;
+            color: #ffd65a;
+            font-size: clamp(20px, 3vw, 28px);
+            font-weight: 800;
+        }
+
+        .article-prose .telescope-cta-section .features-list {
+            list-style: none;
+            max-width: 560px;
+            margin: 20px auto;
+            padding: 0;
+            color: #eff4ff;
+        }
+
+        .article-prose .telescope-cta-section .features-list li {
+            margin: 0;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .article-prose .telescope-cta-section .features-list li::before {
+            content: "✓";
+            display: inline-block;
+            margin-right: 10px;
+            color: #67f0a6;
+            font-weight: 800;
+        }
+
+        .article-prose .telescope-cta-section .price-note {
+            margin: 14px 0 20px;
+            color: #c9d6ef;
+            font-size: 14px;
+        }
+
+        .article-prose .telescope-cta-section a[href*="amazon.com"] {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin: 10px 0 0;
+            padding: 14px 30px;
+            min-width: 240px;
+            border-radius: 999px;
+            border: 1px solid #f0c14b;
+            background: linear-gradient(180deg, #ffd814 0%, #f7ca00 100%);
+            color: #111827;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            box-shadow: 0 10px 20px rgba(247, 202, 0, 0.3);
+            transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+        }
+
+        .article-prose .telescope-cta-section a[href*="amazon.com"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 24px rgba(247, 202, 0, 0.38);
+            filter: brightness(1.02);
+        }
+
+        .article-prose .telescope-cta-section .amazon-disclaimer {
+            margin-top: 18px;
+            color: #c8d3e6;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .article-prose .telescope-cta-section .amazon-disclaimer a {
+            color: #fff2b2;
+        }
+
+        .article-prose .discussion-reference {
+            margin: 34px 0;
+            padding: 24px;
+            border-radius: 14px;
+            border-left: 4px solid #2a5298;
+            background: #f5f8fd;
+        }
+
+        .article-prose .discussion-reference h3 {
+            margin-top: 0;
+            color: #1d3968;
+        }
+
+        .article-prose .discussion-reference a {
+            font-weight: 700;
+        }
+
+        .article-prose .post-tags {
+            margin: 30px 0 0;
+            padding-top: 18px;
+            border-top: 1px solid #e0e7f0;
+        }
+
+        .article-prose .post-tags span {
+            display: inline-block;
+            margin: 4px 6px 4px 0;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: #eaf4ff;
+            color: #2a5298;
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .tier-grid {
@@ -599,6 +810,16 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             }
             .youtube-lazy-wrapper:hover .youtube-play-button {
                 transform: translate(-50%, -50%) scale(1.1);
+            }
+
+            .blog-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 1060px) and (min-width: 761px) {
+            .blog-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
         }
         

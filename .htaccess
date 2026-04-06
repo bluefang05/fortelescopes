@@ -24,6 +24,14 @@ RewriteRule ^ https://fortelescopes.com%{REQUEST_URI} [R=301,L,NE]
 RewriteRule ^(?:includes|scripts|data|templates)/ - [F,L,NC]
 RewriteRule ^(?:\.env|\.env\.example|database\.php|healthcheck\.php)$ - [F,L,NC]
 
+# Block common WordPress probing paths (this is not a WordPress install)
+RewriteRule ^wp-admin/setup-config\.php$ - [F,L,NC]
+RewriteRule ^wp-login\.php$ - [F,L,NC]
+
+# Block known spam referrer at edge
+RewriteCond %{HTTP_REFERER} aspierd\.com [NC]
+RewriteRule ^ - [F,L]
+
 # Keep existing files/directories accessible
 RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d

@@ -187,6 +187,39 @@ function get_posts(PDO $pdo, string $type = 'post', int $limit = 10): array
     return array_map('format_post_row', $rows);
 }
 
+function get_posts_by_types(PDO $pdo, array $types, int $limit = 10): array
+{
+    $cleanTypes = array_values(array_filter(array_map(static fn($t): string => trim((string) $t), $types)));
+    if ($cleanTypes === []) {
+        return [];
+    }
+
+    $placeholders = [];
+    $params = [':limit' => $limit];
+    foreach ($cleanTypes as $idx => $type) {
+        $key = ':type' . $idx;
+        $placeholders[] = $key;
+        $params[$key] = $type;
+    }
+
+    $sql = 'SELECT * FROM posts
+            WHERE post_type IN (' . implode(', ', $placeholders) . ') AND status = "published"
+            ORDER BY published_at DESC, id DESC
+            LIMIT :limit';
+    $stmt = $pdo->prepare($sql);
+    foreach ($params as $key => $value) {
+        if ($key === ':limit') {
+            $stmt->bindValue($key, (int) $value, PDO::PARAM_INT);
+        } else {
+            $stmt->bindValue($key, (string) $value, PDO::PARAM_STR);
+        }
+    }
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    return array_map('format_post_row', $rows);
+}
+
 function find_post_by_slug(PDO $pdo, string $slug): ?array
 {
     $stmt = $pdo->prepare(
@@ -1365,6 +1398,13 @@ function apply_security_checks(): void
     // Block access to setup-config.php (WordPress already installed)
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
     if (strpos($requestUri, '/wp-admin/setup-config.php') !== false) {
+        http_response_code(403);
+        header('X-Robots-Tag: noindex, nofollow');
+        exit('Access denied.');
+    }
+
+    // Block direct wp-login probing on non-WordPress stack
+    if (strpos($requestUri, '/wp-login.php') !== false) {
         http_response_code(403);
         header('X-Robots-Tag: noindex, nofollow');
         exit('Access denied.');

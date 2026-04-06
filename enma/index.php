@@ -149,6 +149,33 @@ if ($authenticated && $activeTab === 'maintenance') {
     }
 }
 
+if (!function_exists('enma_human_last_run')) {
+    function enma_human_last_run(?string $isoDate): string
+    {
+        if ($isoDate === null || trim($isoDate) === '') {
+            return 'Never';
+        }
+
+        $ts = strtotime($isoDate);
+        if ($ts === false) {
+            return $isoDate;
+        }
+
+        $diff = time() - $ts;
+        if ($diff < 60) {
+            return 'Just now';
+        }
+        if ($diff < 3600) {
+            return floor($diff / 60) . 'm ago';
+        }
+        if ($diff < 86400) {
+            return floor($diff / 3600) . 'h ago';
+        }
+
+        return floor($diff / 86400) . 'd ago';
+    }
+}
+
 ?>
 <!doctype html>
 <html lang="en">
@@ -295,6 +322,54 @@ if ($authenticated && $activeTab === 'maintenance') {
         .toolbar .field { max-width:280px; }
         .empty { padding:14px; border:1px dashed #d8e2ee; border-radius:8px; color:#5d6f86; background:#f9fbfe; }
         .note-editor { margin-bottom: 12px; }
+        .maintenance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .maintenance-card {
+            border: 1px solid #d9e6f7;
+            border-radius: 12px;
+            background: #f8fbff;
+            padding: 12px;
+        }
+        .maintenance-card h4 {
+            margin: 0 0 6px;
+            font-size: 15px;
+        }
+        .maintenance-meta {
+            margin: 0 0 8px;
+            font-size: 12px;
+            color: #395377;
+        }
+        .maintenance-desc {
+            margin: 0 0 10px;
+            font-size: 13px;
+            color: #395377;
+        }
+        .maintenance-last {
+            margin: 0 0 10px;
+            font-size: 12px;
+            color: #5d6f86;
+        }
+        .maintenance-last strong.ok { color: #1e6a31; background: transparent; padding: 0; }
+        .maintenance-last strong.fail { color: #9b1c1c; background: transparent; padding: 0; }
+        .maintenance-badge {
+            display: inline-block;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid #b8ccec;
+            color: #20426f;
+            background: #edf4ff;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .btn[disabled] {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
@@ -844,56 +919,67 @@ if ($authenticated && $activeTab === 'maintenance') {
         <?php else: ?>
         <section class="box">
             <h2>Maintenance Tools</h2>
-            <p class="muted" style="margin: 0 0 12px;">Run safe tasks behind login. All schema tasks are idempotent.</p>
-
-            <form method="post" style="margin-bottom: 10px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="export_db_schema">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Export Current DB Schema (updates db_schema.sql)</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 10px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="generate_migration">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Generate Migration Script (DB vs Schema)</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 10px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="update_db_schema">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Update DB Schema (safe)</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 10px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="migrate_guides_to_db">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Migrate Guides to DB</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 10px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="normalize_affiliate_urls">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Normalize Amazon Affiliate URLs</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 12px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="refresh_sync_labels">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Refresh Sync Labels (23h)</button>
-            </form>
-
-            <form method="post" style="margin-bottom: 12px;">
-                <input type="hidden" name="action" value="maintenance_run">
-                <input type="hidden" name="task" value="fix_product_images">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Fix Product Images (ASIN-based)</button>
-            </form>
+            <p class="muted" style="margin: 0 0 10px;">Only available/working tasks are shown. Last usage is tracked automatically.</p>
+            <?php
+            $maintenanceGroups = [
+                'daily' => 'Daily',
+                'weekly' => 'Weekly',
+                'as_needed' => 'As Needed',
+            ];
+            $availableMaintenanceTasks = $availableMaintenanceTasks ?? [];
+            $maintenanceUsageMap = $maintenanceUsageMap ?? [];
+            ?>
+            <?php foreach ($maintenanceGroups as $groupKey => $groupLabel): ?>
+                <?php
+                $groupTasks = array_filter(
+                    $availableMaintenanceTasks,
+                    static fn(array $meta): bool => (($meta['group'] ?? '') === $groupKey)
+                );
+                ?>
+                <?php if ($groupTasks !== []): ?>
+                <div class="box" style="margin-top:12px; margin-bottom:0;">
+                    <h3 style="margin:0 0 6px;"><?= e($groupLabel) ?></h3>
+                    <div class="maintenance-grid">
+                        <?php foreach ($groupTasks as $taskKey => $taskMeta): ?>
+                            <?php
+                            $usage = $maintenanceUsageMap[$taskKey] ?? null;
+                            $lastRunAt = is_array($usage) ? (string) ($usage['last_run_at'] ?? '') : '';
+                            $lastStatus = strtolower((string) (is_array($usage) ? ($usage['last_status'] ?? '') : ''));
+                            $statusClass = $lastStatus === 'ok' ? 'ok' : ($lastStatus === 'fail' ? 'fail' : '');
+                            $runCount = (int) (is_array($usage) ? ($usage['run_count'] ?? 0) : 0);
+                            $isSingleUse = !empty($taskMeta['single_use']);
+                            $singleUseConsumed = $isSingleUse && $runCount > 0;
+                            ?>
+                            <article class="maintenance-card">
+                                <h4>
+                                    <?= e((string) ($taskMeta['label'] ?? $taskKey)) ?>
+                                    <?php if ($isSingleUse): ?>
+                                        <span class="maintenance-badge">Single use<?= $singleUseConsumed ? ' used' : '' ?></span>
+                                    <?php endif; ?>
+                                </h4>
+                                <p class="maintenance-meta">Frequency: <?= e((string) ($taskMeta['frequency'] ?? 'As needed')) ?></p>
+                                <p class="maintenance-desc"><?= e((string) ($taskMeta['description'] ?? '')) ?></p>
+                                <p class="maintenance-last">
+                                    Last run: <?= e(enma_human_last_run($lastRunAt !== '' ? $lastRunAt : null)) ?>
+                                    <?php if ($statusClass !== ''): ?>
+                                        | <strong class="<?= e($statusClass) ?>"><?= e(strtoupper($lastStatus)) ?></strong>
+                                    <?php endif; ?>
+                                    | Runs: <?= number_format($runCount) ?>
+                                </p>
+                                <form method="post" style="margin:0;">
+                                    <input type="hidden" name="action" value="maintenance_run">
+                                    <input type="hidden" name="task" value="<?= e((string) $taskKey) ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <button class="btn" type="submit" <?= $singleUseConsumed ? 'disabled' : '' ?>>
+                                        <?= $singleUseConsumed ? 'Already used' : e((string) ($taskMeta['label'] ?? 'Run task')) ?>
+                                    </button>
+                                </form>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+            <?php endforeach; ?>
 
             <?php if ($maintenanceLog !== []): ?>
                 <div style="background:#f6f9fc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
@@ -927,28 +1013,87 @@ if ($authenticated && $activeTab === 'maintenance') {
             <p style="margin: 0 0 12px; font-size: 14px; color: #8a1f1f;">
                 High-impact tasks. Use only if you understand the effect on catalog data.
             </p>
-            <form method="post">
-                <input type="hidden" name="action" value="maintenance_advanced_run">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+            <?php $availableAdvancedTasks = $availableAdvancedTasks ?? []; ?>
+            <?php if ($availableAdvancedTasks === []): ?>
+                <div class="empty">No advanced scripts are currently available on this host.</div>
+            <?php else: ?>
+                <?php
+                $runnableAdvancedTasks = array_filter(
+                    $availableAdvancedTasks,
+                    static function (array $taskMeta, string $taskKey) use ($maintenanceUsageMap): bool {
+                        $runCount = (int) (($maintenanceUsageMap[$taskKey]['run_count'] ?? 0));
+                        if (!empty($taskMeta['single_use']) && $runCount > 0) {
+                            return false;
+                        }
+                        return true;
+                    },
+                    ARRAY_FILTER_USE_BOTH
+                );
+                ?>
+                <div class="maintenance-grid" style="margin-bottom:12px;">
+                    <?php foreach ($availableAdvancedTasks as $taskKey => $taskMeta): ?>
+                        <?php
+                        $usage = ($maintenanceUsageMap ?? [])[$taskKey] ?? null;
+                        $lastRunAt = is_array($usage) ? (string) ($usage['last_run_at'] ?? '') : '';
+                        $lastStatus = strtolower((string) (is_array($usage) ? ($usage['last_status'] ?? '') : ''));
+                        $statusClass = $lastStatus === 'ok' ? 'ok' : ($lastStatus === 'fail' ? 'fail' : '');
+                        $runCount = (int) (is_array($usage) ? ($usage['run_count'] ?? 0) : 0);
+                        $isSingleUse = !empty($taskMeta['single_use']);
+                        $singleUseConsumed = $isSingleUse && $runCount > 0;
+                        ?>
+                        <article class="maintenance-card">
+                            <h4>
+                                <?= e((string) ($taskMeta['label'] ?? $taskKey)) ?>
+                                <?php if ($isSingleUse): ?>
+                                    <span class="maintenance-badge">Single use<?= $singleUseConsumed ? ' used' : '' ?></span>
+                                <?php endif; ?>
+                            </h4>
+                            <p class="maintenance-meta">Frequency: <?= e((string) ($taskMeta['frequency'] ?? 'Rare / supervised')) ?></p>
+                            <p class="maintenance-desc"><?= e((string) ($taskMeta['description'] ?? '')) ?></p>
+                            <p class="maintenance-last">
+                                Last run: <?= e(enma_human_last_run($lastRunAt !== '' ? $lastRunAt : null)) ?>
+                                <?php if ($statusClass !== ''): ?>
+                                    | <strong class="<?= e($statusClass) ?>"><?= e(strtoupper($lastStatus)) ?></strong>
+                                <?php endif; ?>
+                                | Runs: <?= number_format($runCount) ?>
+                            </p>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
 
-                <label>Task</label>
-                <select name="task" required>
-                    <option value="refresh_sync_cli">Refresh Sync Labels (script)</option>
-                    <option value="reseed_real_catalog">Reseed Real Catalog (can overwrite/rehydrate catalog)</option>
-                    <option value="seed_more_products">Seed More Products</option>
-                </select>
+                <form method="post">
+                    <input type="hidden" name="action" value="maintenance_advanced_run">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
 
-                <label>Advanced Key</label>
-                <input type="password" name="advanced_key" required>
+                    <label>Task</label>
+                    <select name="task" required>
+                        <?php foreach ($availableAdvancedTasks as $taskKey => $taskMeta): ?>
+                            <?php
+                            $usage = ($maintenanceUsageMap ?? [])[$taskKey] ?? null;
+                            $runCount = (int) (is_array($usage) ? ($usage['run_count'] ?? 0) : 0);
+                            $singleUseConsumed = !empty($taskMeta['single_use']) && $runCount > 0;
+                            ?>
+                            <option value="<?= e((string) $taskKey) ?>" <?= $singleUseConsumed ? 'disabled' : '' ?>>
+                                <?= e((string) ($taskMeta['label'] ?? $taskKey)) ?><?= $singleUseConsumed ? ' (already used)' : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
 
-                <label>Confirmation Text</label>
-                <input type="text" name="confirm_text" required placeholder="RUN TASK_NAME">
+                    <label>Advanced Key</label>
+                    <input type="password" name="advanced_key" required <?= $runnableAdvancedTasks === [] ? 'disabled' : '' ?>>
 
-                <button class="btn" type="submit">Run Advanced Task</button>
-            </form>
-            <p style="margin: 10px 0 0; font-size: 12px; color: #555;">
-                Confirmation must match: <code>RUN &lt;task_value&gt;</code> in uppercase.
-            </p>
+                    <label>Confirmation Text</label>
+                    <input type="text" name="confirm_text" required placeholder="RUN TASK_NAME" <?= $runnableAdvancedTasks === [] ? 'disabled' : '' ?>>
+
+                    <button class="btn" type="submit" <?= $runnableAdvancedTasks === [] ? 'disabled' : '' ?>>Run Advanced Task</button>
+                </form>
+                <?php if ($runnableAdvancedTasks === []): ?>
+                    <p class="muted" style="margin:8px 0 0;">All available advanced tasks are already consumed or unavailable.</p>
+                <?php endif; ?>
+                <p style="margin: 10px 0 0; font-size: 12px; color: #555;">
+                    Confirmation must match: <code>RUN &lt;task_value&gt;</code> in uppercase.
+                </p>
+            <?php endif; ?>
         </section>
         <?php endif; ?>
         <?php endif; ?>

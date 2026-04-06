@@ -279,7 +279,7 @@ if ($segments === []) {
     $postSlug = slugify($segments[1]);
     $post = find_post_by_slug($pdo, $postSlug);
 
-    if ($post === null || $post['post_type'] !== 'post') {
+    if ($post === null || ($post['post_type'] ?? 'post') !== 'post') {
         http_response_code(404);
         $template = __DIR__ . '/templates/not-found.php';
         $pageTitle = 'Post Not Found | ' . APP_NAME;
@@ -294,7 +294,10 @@ if ($segments === []) {
         $meta['description'] = $post['meta_description'] ?: $post['excerpt'];
         $meta['image'] = $post['featured_image'] ?: absolute_url('/assets/logo/1024.png');
         $canonicalPath = '/blog/' . $postSlug;
-        $jsonLd[] = json_ld_for_article($post['title'], $meta['description'], absolute_url($canonicalPath), $post['published_at'] ?: $post['created_at']);
+        $dynamicSchemas = generate_dynamic_schema($post, base_url());
+        foreach ($dynamicSchemas as $schemaObj) {
+            $jsonLd[] = $schemaObj;
+        }
         $breadcrumbs[] = ['name' => 'Blog', 'url' => absolute_url('/blog')];
         $breadcrumbs[] = ['name' => $post['title'], 'url' => absolute_url($canonicalPath)];
     }

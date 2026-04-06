@@ -31,6 +31,7 @@ if ($fullGuideHtmlRaw !== '') {
     }, $candidate) ?? $candidate;
     $candidate = preg_replace('/<iframe\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/iframe>/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/<iframe\b[^>]*\bsrc=(["\'])(?!https:\/\/(www\.)?(youtube\.com|youtube-nocookie\.com)\/embed\/)[^"\']+\1[^>]*>\s*<\/iframe>/i', '', $candidate) ?? $candidate;
+    $candidate = lazy_load_youtube_embeds($candidate);
     $fullGuideHtml = trim($candidate);
 }
 ?>
@@ -38,14 +39,11 @@ if ($fullGuideHtmlRaw !== '') {
     <span class="hero-kicker">Buying Guide</span>
     <h1><?= e($guide['title']) ?></h1>
     <p><?= e($guide['description']) ?></p>
-    <?php if (!empty($guide['featured_image'])): ?>
-        <div style="margin-top: 15px; border-radius: 12px; overflow: hidden; height: 400px; position: relative; background: #0b1f3a; display: flex; align-items: center; justify-content: center; box-shadow: var(--card-shadow); border: 1px solid #2d3e50;">
-            <!-- Blurred background echo -->
-            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: url('<?= e(url($guide['featured_image'])) ?>'); background-size: cover; background-position: center; filter: blur(20px) brightness(0.6); transform: scale(1.1);"></div>
-            <!-- Main image -->
-            <img src="<?= e(url($guide['featured_image'])) ?>" alt="<?= e($guide['title']) ?>" style="position: relative; z-index: 1; max-width: 100%; height: 100%; object-fit: contain; display: block;">
-        </div>
-    <?php endif; ?>
+    <?php
+    $heroImage = (string) ($guide['featured_image'] ?? '');
+    $heroTitle = (string) ($guide['title'] ?? '');
+    require __DIR__ . '/partials/hero-media.php';
+    ?>
     <div class="trust-row">
         <span class="chip">Updated product shortlist</span>
         <span class="chip">Decision-first framework</span>
