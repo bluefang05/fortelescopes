@@ -129,6 +129,13 @@ $maintenanceTaskMeta = [
         'group' => 'seo',
         'script' => 'scripts/generate_sitemap.php',
     ],
+    'export_products_sql' => [
+        'label' => 'Export Products SQL',
+        'description' => 'Exporta products a SQL bulk insert reutilizable para una DB futura.',
+        'frequency' => 'As needed',
+        'group' => 'as_needed',
+        'script' => 'scripts/export_products_sql.php',
+    ],
     'generate_migration' => [
         'label' => 'Generate Migration Script',
         'description' => 'Compara DB vs schema y crea script de migracion.',
@@ -469,6 +476,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             } catch (Throwable $e) {
                 ob_end_clean();
                 $taskRunMessage = 'Sitemap generation failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'export_products_sql') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Products SQL exported successfully.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: export_products_sql';
+                $maintenanceLog[] = 'Output: /workspace/products_export.sql';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Products export failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_migration') {

@@ -1215,14 +1215,24 @@ function json_ld_for_itemlist(array $products, string $listName): array
 
 function json_ld_for_product(array $product): array
 {
-    $price = isset($product['price_amount']) && is_numeric((string) $product['price_amount'])
-        ? (float) $product['price_amount']
-        : null;
-
     $imageUrl = product_image_url($product);
     if (filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
         $imageUrl = absolute_url($imageUrl);
     }
+
+    $description = trim((string) ($product['description'] ?? ''));
+    if ($description === '') {
+        $description = product_best_for($product);
+    }
+
+    $reviewBodyParts = [$description];
+    foreach (product_pros($product) as $pro) {
+        $reviewBodyParts[] = $pro;
+    }
+    foreach (product_cons($product) as $con) {
+        $reviewBodyParts[] = $con;
+    }
+    $reviewBody = trim(implode(' ', array_filter($reviewBodyParts)));
 
     $out = [
         '@context' => 'https://schema.org',
@@ -1230,28 +1240,25 @@ function json_ld_for_product(array $product): array
         'name' => $product['title'],
         'url' => absolute_url('/product/' . $product['slug']),
         'image' => $imageUrl,
-        'description' => $product['short_description'] ?? '',
+        'description' => $description,
+        'sku' => (string) ($product['asin'] ?? ''),
         'brand' => [
             '@type' => 'Brand',
-            'name' => $product['brand'] ?? 'Unknown',
+            'name' => APP_NAME,
         ],
-        'offers' => [
-            '@type' => 'Offer',
-            'url' => amazon_affiliate_url($product['affiliate_url'] ?? ''),
-            'priceCurrency' => $product['currency'] ?? 'USD',
-            'price' => $price,
-            'availability' => ($price !== null && $price > 0) ? 'https://schema.org/InStock' : 'https://schema.org/LimitedAvailability',
-            'seller' => [
+        'review' => [
+            '@type' => 'Review',
+            'author' => [
                 '@type' => 'Organization',
-                'name' => 'Amazon',
+                'name' => APP_NAME,
             ],
-        ],
-        'aggregateRating' => [
-            '@type' => 'AggregateRating',
-            'ratingValue' => editorial_stars($product),
-            'bestRating' => '5',
-            'worstRating' => '1',
-            'reviewCount' => rand(24, 150),
+            'reviewRating' => [
+                '@type' => 'Rating',
+                'ratingValue' => editorial_stars($product),
+                'bestRating' => '5',
+                'worstRating' => '1',
+            ],
+            'reviewBody' => mb_substr($reviewBody, 0, 1000),
         ],
     ];
 

@@ -63,37 +63,7 @@ foreach ($tables as $tableName) {
     }
 }
 
-// Add seed data for users table if it exists
-if (in_array('users', $tables, true)) {
-    $sqlOutput .= "SET FOREIGN_KEY_CHECKS = 1;\n\n";
-    $sqlOutput .= "-- ----------------------------\n";
-    $sqlOutput .= "-- Records for users\n";
-    $sqlOutput .= "-- ----------------------------\n";
-    $sqlOutput .= "-- Default admin user: username=admin, password=polilla05\n";
-    $sqlOutput .= "-- Password hash generated with bcrypt (cost factor 10)\n";
-    
-    // Check if admin user exists
-    $stmt = $pdo->query("SELECT COUNT(*) FROM users WHERE username = 'admin'");
-    $adminExists = (int) $stmt->fetchColumn() > 0;
-    
-    if (!$adminExists) {
-        $sqlOutput .= "INSERT INTO `users` (`email`, `username`, `password_hash`, `display_name`, `role`, `status`, `created_at`, `updated_at`) \n";
-        $sqlOutput .= "VALUES (\n";
-        $sqlOutput .= "    'admin@fortlescopes.com',\n";
-        $sqlOutput .= "    'admin',\n";
-        $sqlOutput .= "    '\$2y\$10\$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',\n";
-        $sqlOutput .= "    'Administrator',\n";
-        $sqlOutput .= "    'admin',\n";
-        $sqlOutput .= "    'active',\n";
-        $sqlOutput .= "    UTC_TIMESTAMP(),\n";
-        $sqlOutput .= "    UTC_TIMESTAMP()\n";
-        $sqlOutput .= ");\n";
-    } else {
-        $sqlOutput .= "-- Admin user already exists (skipped insert)\n";
-    }
-} else {
-    $sqlOutput .= "SET FOREIGN_KEY_CHECKS = 1;\n";
-}
+$sqlOutput .= "SET FOREIGN_KEY_CHECKS = 1;\n";
 
 // Write to file
 $bytesWritten = file_put_contents($schemaPath, $sqlOutput);

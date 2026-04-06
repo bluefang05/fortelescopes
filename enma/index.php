@@ -79,26 +79,98 @@ if (!in_array($activeTab, ['overview', 'products', 'posts', 'users', 'views', 'a
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
 $viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
 
+if (!function_exists('enma_page_value')) {
+    function enma_page_value(string $key): int
+    {
+        return max(1, (int) ($_GET[$key] ?? 1));
+    }
+}
+
+if (!function_exists('enma_total_pages')) {
+    function enma_total_pages(int $totalRows, int $perPage): int
+    {
+        return max(1, (int) ceil(max(0, $totalRows) / max(1, $perPage)));
+    }
+}
+
+if (!function_exists('enma_render_pagination')) {
+    function enma_render_pagination(string $tab, string $pageParam, int $currentPage, int $totalPages, array $extra = []): string
+    {
+        if ($totalPages <= 1) {
+            return '';
+        }
+
+        $html = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;">';
+        $buildUrl = static function (int $page) use ($tab, $pageParam, $extra): string {
+            $params = array_merge(['tab' => $tab, $pageParam => $page], $extra);
+            return url('/enma/?' . http_build_query($params));
+        };
+
+        if ($currentPage > 1) {
+            $html .= '<a class="tab" href="' . e($buildUrl($currentPage - 1)) . '">Prev</a>';
+        }
+
+        $start = max(1, $currentPage - 2);
+        $end = min($totalPages, $currentPage + 2);
+        for ($page = $start; $page <= $end; $page++) {
+            $class = $page === $currentPage ? 'tab active' : 'tab';
+            $html .= '<a class="' . $class . '" href="' . e($buildUrl($page)) . '">' . $page . '</a>';
+        }
+
+        if ($currentPage < $totalPages) {
+            $html .= '<a class="tab" href="' . e($buildUrl($currentPage + 1)) . '">Next</a>';
+        }
+
+        $html .= '<span class="muted">Page ' . $currentPage . ' of ' . $totalPages . '</span>';
+        $html .= '</div>';
+
+        return $html;
+    }
+}
+
 $productQuery = $authenticated ? trim((string) ($_GET['q'] ?? '')) : '';
 $allProducts = [];
+$productsPage = $authenticated ? enma_page_value('products_page') : 1;
+$productsPerPage = 25;
+$productsTotal = 0;
+$productsTotalPages = 1;
 if ($authenticated && $activeTab === 'products') {
     if ($productQuery !== '') {
+        $countStmt = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM products
+             WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q'
+        );
+        $countStmt->execute([':q' => '%' . $productQuery . '%']);
+        $productsTotal = (int) $countStmt->fetchColumn();
+        $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
+        $productsPage = min($productsPage, $productsTotalPages);
         $stmt = $pdo->prepare(
             'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
              FROM products
              WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q
              ORDER BY id DESC
-             LIMIT 500'
+             LIMIT :limit OFFSET :offset'
         );
-        $stmt->execute([':q' => '%' . $productQuery . '%']);
+        $stmt->bindValue(':q', '%' . $productQuery . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $productsPerPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', ($productsPage - 1) * $productsPerPage, PDO::PARAM_INT);
+        $stmt->execute();
         $allProducts = $stmt->fetchAll();
     } else {
-        $allProducts = $pdo->query(
+        $productsTotal = (int) $pdo->query('SELECT COUNT(*) FROM products')->fetchColumn();
+        $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
+        $productsPage = min($productsPage, $productsTotalPages);
+        $stmt = $pdo->prepare(
             'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
              FROM products
              ORDER BY id DESC
-             LIMIT 500'
-        )->fetchAll();
+             LIMIT :limit OFFSET :offset'
+        );
+        $stmt->bindValue(':limit', $productsPerPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', ($productsPage - 1) * $productsPerPage, PDO::PARAM_INT);
+        $stmt->execute();
+        $allProducts = $stmt->fetchAll();
     }
 }
 
@@ -118,32 +190,88 @@ $overviewStats = [
 
 $allUsers = [];
 $recentAdminActivity = [];
+$activityPage = $authenticated ? enma_page_value('activity_page') : 1;
+$activityPerPage = 20;
+$activityTotal = 0;
+$activityTotalPages = 1;
 if ($authenticated && ($activeTab === 'users' || $activeTab === 'overview')) {
-    $activityStmt = $pdo->query(
+    $activityTotal = (int) $pdo->query('SELECT COUNT(*) FROM admin_activity_log')->fetchColumn();
+    $activityTotalPages = enma_total_pages($activityTotal, $activityPerPage);
+    $activityPage = min($activityPage, $activityTotalPages);
+    $activityStmt = $pdo->prepare(
         'SELECT id, admin_username, action_key, entity_type, entity_id, details_json, created_at
          FROM admin_activity_log
          ORDER BY id DESC
-         LIMIT 100'
+         LIMIT :limit OFFSET :offset'
     );
+    $activityStmt->bindValue(':limit', $activityPerPage, PDO::PARAM_INT);
+    $activityStmt->bindValue(':offset', ($activityPage - 1) * $activityPerPage, PDO::PARAM_INT);
+    $activityStmt->execute();
     $recentAdminActivity = $activityStmt->fetchAll();
 }
+$usersPage = $authenticated ? enma_page_value('users_page') : 1;
+$usersPerPage = 20;
+$usersTotal = 0;
+$usersTotalPages = 1;
 if ($authenticated && $activeTab === 'users') {
     if ($userSearch !== '') {
+        $countStmt = $pdo->prepare(
+            'SELECT COUNT(*)
+             FROM users
+             WHERE email LIKE :q OR username LIKE :q OR display_name LIKE :q'
+        );
+        $countStmt->execute([':q' => '%' . $userSearch . '%']);
+        $usersTotal = (int) $countStmt->fetchColumn();
+        $usersTotalPages = enma_total_pages($usersTotal, $usersPerPage);
+        $usersPage = min($usersPage, $usersTotalPages);
         $stmt = $pdo->prepare(
             'SELECT id, email, username, display_name, role, status, last_login_at, created_at, updated_at
              FROM users
              WHERE email LIKE :q OR username LIKE :q OR display_name LIKE :q
-             ORDER BY id DESC'
+             ORDER BY id DESC
+             LIMIT :limit OFFSET :offset'
         );
-        $stmt->execute([':q' => '%' . $userSearch . '%']);
+        $stmt->bindValue(':q', '%' . $userSearch . '%', PDO::PARAM_STR);
+        $stmt->bindValue(':limit', $usersPerPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', ($usersPage - 1) * $usersPerPage, PDO::PARAM_INT);
+        $stmt->execute();
         $allUsers = $stmt->fetchAll();
     } else {
-        $allUsers = $pdo->query(
+        $usersTotal = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+        $usersTotalPages = enma_total_pages($usersTotal, $usersPerPage);
+        $usersPage = min($usersPage, $usersTotalPages);
+        $stmt = $pdo->prepare(
             'SELECT id, email, username, display_name, role, status, last_login_at, created_at, updated_at
              FROM users
-             ORDER BY id DESC'
-        )->fetchAll();
+             ORDER BY id DESC
+             LIMIT :limit OFFSET :offset'
+        );
+        $stmt->bindValue(':limit', $usersPerPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', ($usersPage - 1) * $usersPerPage, PDO::PARAM_INT);
+        $stmt->execute();
+        $allUsers = $stmt->fetchAll();
     }
+}
+
+$postsPage = $authenticated ? enma_page_value('posts_page') : 1;
+$postsPerPage = 20;
+$postsTotal = 0;
+$postsTotalPages = 1;
+$allPosts = [];
+if ($authenticated && $activeTab === 'posts') {
+    $postsTotal = (int) $pdo->query('SELECT COUNT(*) FROM posts')->fetchColumn();
+    $postsTotalPages = enma_total_pages($postsTotal, $postsPerPage);
+    $postsPage = min($postsPage, $postsTotalPages);
+    $stmt = $pdo->prepare(
+        'SELECT id, title, slug, post_type, status, published_at
+         FROM posts
+         ORDER BY published_at DESC, id DESC
+         LIMIT :limit OFFSET :offset'
+    );
+    $stmt->bindValue(':limit', $postsPerPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', ($postsPage - 1) * $postsPerPage, PDO::PARAM_INT);
+    $stmt->execute();
+    $allPosts = $stmt->fetchAll();
 }
 
 $analyticsDashboard = [];
@@ -208,6 +336,19 @@ if (!function_exists('enma_human_last_run')) {
         return floor($diff / 86400) . 'd ago';
     }
 }
+
+$productsPagination = $authenticated && $activeTab === 'products'
+    ? enma_render_pagination('products', 'products_page', $productsPage, $productsTotalPages, $productQuery !== '' ? ['q' => $productQuery] : [])
+    : '';
+$postsPagination = $authenticated && $activeTab === 'posts'
+    ? enma_render_pagination('posts', 'posts_page', $postsPage, $postsTotalPages)
+    : '';
+$usersPagination = $authenticated && $activeTab === 'users'
+    ? enma_render_pagination('users', 'users_page', $usersPage, $usersTotalPages, $userSearch !== '' ? ['user_q' => $userSearch] : [])
+    : '';
+$activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
+    ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
+    : '';
 
 ?>
 <!doctype html>
@@ -616,6 +757,7 @@ if (!function_exists('enma_human_last_run')) {
             <?php if ($recentAdminActivity === []): ?>
                 <div class="empty">No admin activity recorded yet.</div>
             <?php else: ?>
+                <p class="muted">Showing <?= number_format(count($recentAdminActivity)) ?> of <?= number_format($activityTotal) ?> records.</p>
                 <table>
                     <thead>
                         <tr>
@@ -626,7 +768,7 @@ if (!function_exists('enma_human_last_run')) {
                         </tr>
                     </thead>
                     <tbody>
-                    <?php foreach (array_slice($recentAdminActivity, 0, 12) as $activity): ?>
+                    <?php foreach ($recentAdminActivity as $activity): ?>
                         <tr>
                             <td><?= e((string) ($activity['created_at'] ?? '')) ?></td>
                             <td><?= e((string) ($activity['admin_username'] ?? '')) ?></td>
@@ -636,6 +778,7 @@ if (!function_exists('enma_human_last_run')) {
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?= $activityPagination ?>
             <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'products'): ?>
@@ -735,6 +878,7 @@ if (!function_exists('enma_human_last_run')) {
             <h2>Products</h2>
             <form method="get" class="toolbar">
                 <input type="hidden" name="tab" value="products">
+                <input type="hidden" name="products_page" value="1">
                 <div class="field">
                     <label>Search</label>
                     <input type="text" name="q" value="<?= e($productQuery) ?>" placeholder="ASIN, title, category">
@@ -744,6 +888,7 @@ if (!function_exists('enma_human_last_run')) {
             <?php if ($allProducts === []): ?>
                 <div class="empty">No products found for this filter.</div>
             <?php else: ?>
+            <p class="muted">Showing <?= number_format(count($allProducts)) ?> of <?= number_format($productsTotal) ?> products.</p>
             <table>
                 <thead>
                     <tr>
@@ -775,11 +920,12 @@ if (!function_exists('enma_human_last_run')) {
                             </form>
                         </td>
                     </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            <?php endif; ?>
-        </section>
+                  <?php endforeach; ?>
+                  </tbody>
+              </table>
+              <?= $productsPagination ?>
+              <?php endif; ?>
+          </section>
         <?php elseif ($activeTab === 'posts'): ?>
         <?php if ($editingPost): ?>
         <section class="box">
@@ -933,13 +1079,10 @@ if (!function_exists('enma_human_last_run')) {
 
         <section class="box">
             <h2>Existing Posts</h2>
-            <?php
-            $stmt = $pdo->query('SELECT id, title, slug, post_type, status, published_at FROM posts ORDER BY published_at DESC');
-            $allPosts = $stmt->fetchAll();
-            ?>
             <?php if ($allPosts === []): ?>
                 <div class="empty">No posts or guides found in database.</div>
             <?php else: ?>
+                <p class="muted">Showing <?= number_format(count($allPosts)) ?> of <?= number_format($postsTotal) ?> posts.</p>
                 <table>
                     <thead>
                     <tr>
@@ -970,11 +1113,12 @@ if (!function_exists('enma_human_last_run')) {
                                 </form>
                             </td>
                         </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
-	        </section>
+                      <?php endforeach; ?>
+                      </tbody>
+                  </table>
+                  <?= $postsPagination ?>
+              <?php endif; ?>
+  	        </section>
 	        <?php elseif ($activeTab === 'users'): ?>
 	        <?php if ($editingUser): ?>
 	        <section class="box">
@@ -1073,19 +1217,21 @@ if (!function_exists('enma_human_last_run')) {
 	        </section>
 
 	        <section class="box">
-	            <h2>Users</h2>
-	            <form method="get" class="toolbar">
-	                <input type="hidden" name="tab" value="users">
-	                <div class="field">
-	                    <label>Search</label>
-	                    <input type="text" name="user_q" value="<?= e($userSearch) ?>" placeholder="email, username, display name">
-	                </div>
-	                <button class="btn" type="submit">Filter</button>
-	            </form>
-	            <?php if ($allUsers === []): ?>
-	                <div class="empty">No users found for this filter.</div>
-	            <?php else: ?>
-	                <table>
+ 	            <h2>Users</h2>
+  	            <form method="get" class="toolbar">
+  	                <input type="hidden" name="tab" value="users">
+                    <input type="hidden" name="users_page" value="1">
+  	                <div class="field">
+  	                    <label>Search</label>
+  	                    <input type="text" name="user_q" value="<?= e($userSearch) ?>" placeholder="email, username, display name">
+  	                </div>
+  	                <button class="btn" type="submit">Filter</button>
+  	            </form>
+  	            <?php if ($allUsers === []): ?>
+  	                <div class="empty">No users found for this filter.</div>
+  	            <?php else: ?>
+                    <p class="muted">Showing <?= number_format(count($allUsers)) ?> of <?= number_format($usersTotal) ?> users.</p>
+  	                <table>
 	                    <thead>
 	                        <tr>
 	                            <th>ID</th>
@@ -1117,18 +1263,20 @@ if (!function_exists('enma_human_last_run')) {
 	                                </form>
 	                            </td>
 	                        </tr>
-	                    <?php endforeach; ?>
-	                    </tbody>
-	                </table>
-	            <?php endif; ?>
-	        </section>
+  	                    <?php endforeach; ?>
+  	                    </tbody>
+  	                </table>
+                    <?= $usersPagination ?>
+  	            <?php endif; ?>
+  	        </section>
 
 	        <section class="box">
 	            <h2>Admin Activity Log</h2>
-	            <?php if ($recentAdminActivity === []): ?>
-	                <div class="empty">No admin activity recorded yet.</div>
-	            <?php else: ?>
-	                <table>
+  	            <?php if ($recentAdminActivity === []): ?>
+  	                <div class="empty">No admin activity recorded yet.</div>
+  	            <?php else: ?>
+                    <p class="muted">Showing <?= number_format(count($recentAdminActivity)) ?> of <?= number_format($activityTotal) ?> activity records.</p>
+  	                <table>
 	                    <thead>
 	                        <tr>
 	                            <th>Date</th>
@@ -1156,10 +1304,11 @@ if (!function_exists('enma_human_last_run')) {
 	                            <td><?= e(trim((string) (($activity['entity_type'] ?? '') . ' #' . ($activity['entity_id'] ?? '')), ' #')) ?></td>
 	                            <td><code><?= e($details === [] ? '' : json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></code></td>
 	                        </tr>
-	                    <?php endforeach; ?>
-	                    </tbody>
-	                </table>
-	            <?php endif; ?>
+  	                    <?php endforeach; ?>
+  	                    </tbody>
+  	                </table>
+                    <?= $activityPagination ?>
+  	            <?php endif; ?>
 	        </section>
 	        <?php elseif ($activeTab === 'analytics'): ?>
         <section class="box">
