@@ -42,4 +42,11 @@ if (file_put_contents($targetPath, $xml) === false) {
     throw new RuntimeException('Could not write sitemap.xml');
 }
 
-echo 'Sitemap generated: ' . $targetPath . PHP_EOL;
+$lines = [
+    'Sitemap generated: ' . $targetPath,
+    'Entries: ' . count($entries),
+];
+maintenance_prune_files('logs', 'generate-sitemap_*.log', 30);
+$logPath = maintenance_append_log('generate-sitemap', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

@@ -281,9 +281,9 @@ if ($authenticated && $activeTab === 'analytics') {
         $analyticsDashboard = [
             'stats' => $analytics->getDashboardStats(),
             'chart_data' => $analytics->getTrafficChartData(),
-            'top_agents' => $analytics->getTopUserAgents(),
+            'top_agents' => $analytics->getTopUserAgents(50),
             'suspicious_ips' => $analytics->getSuspiciousIPs(),
-            'recent_logs' => $analytics->getRecentLogs(50),
+            'recent_logs' => $analytics->getRecentLogs(200),
         ];
     } catch (Throwable $e) {
         $errors[] = 'Analytics load failed: ' . $e->getMessage();
@@ -348,6 +348,68 @@ $usersPagination = $authenticated && $activeTab === 'users'
     : '';
 $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
+    : '';
+
+$viewsSectionPerPage = 10;
+$viewsTopPagesPage = $authenticated ? enma_page_value('views_top_pages_page') : 1;
+$viewsTopProductsPage = $authenticated ? enma_page_value('views_top_products_page') : 1;
+$viewsTopClickedPage = $authenticated ? enma_page_value('views_top_clicked_page') : 1;
+$viewsReferrersPage = $authenticated ? enma_page_value('views_referrers_page') : 1;
+
+$viewsTopPagesAll = $viewsDashboard['top_pages'] ?? [];
+$viewsTopProductsAll = $viewsDashboard['top_products'] ?? [];
+$viewsTopClickedAll = $viewsDashboard['clicks']['top_products'] ?? [];
+$viewsReferrersAll = $viewsDashboard['top_referrers'] ?? [];
+
+$viewsTopPagesTotalPages = enma_total_pages(count($viewsTopPagesAll), $viewsSectionPerPage);
+$viewsTopProductsTotalPages = enma_total_pages(count($viewsTopProductsAll), $viewsSectionPerPage);
+$viewsTopClickedTotalPages = enma_total_pages(count($viewsTopClickedAll), $viewsSectionPerPage);
+$viewsReferrersTotalPages = enma_total_pages(count($viewsReferrersAll), $viewsSectionPerPage);
+
+$viewsTopPagesPage = min($viewsTopPagesPage, $viewsTopPagesTotalPages);
+$viewsTopProductsPage = min($viewsTopProductsPage, $viewsTopProductsTotalPages);
+$viewsTopClickedPage = min($viewsTopClickedPage, $viewsTopClickedTotalPages);
+$viewsReferrersPage = min($viewsReferrersPage, $viewsReferrersTotalPages);
+
+$viewsTopPagesRows = array_slice($viewsTopPagesAll, ($viewsTopPagesPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
+$viewsTopProductsRows = array_slice($viewsTopProductsAll, ($viewsTopProductsPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
+$viewsTopClickedRows = array_slice($viewsTopClickedAll, ($viewsTopClickedPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
+$viewsReferrersRows = array_slice($viewsReferrersAll, ($viewsReferrersPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
+
+$viewsBaseExtra = ['days' => $viewDays];
+$viewsTopPagesPagination = $authenticated && $activeTab === 'views'
+    ? enma_render_pagination('views', 'views_top_pages_page', $viewsTopPagesPage, $viewsTopPagesTotalPages, $viewsBaseExtra)
+    : '';
+$viewsTopProductsPagination = $authenticated && $activeTab === 'views'
+    ? enma_render_pagination('views', 'views_top_products_page', $viewsTopProductsPage, $viewsTopProductsTotalPages, $viewsBaseExtra)
+    : '';
+$viewsTopClickedPagination = $authenticated && $activeTab === 'views'
+    ? enma_render_pagination('views', 'views_top_clicked_page', $viewsTopClickedPage, $viewsTopClickedTotalPages, $viewsBaseExtra)
+    : '';
+$viewsReferrersPagination = $authenticated && $activeTab === 'views'
+    ? enma_render_pagination('views', 'views_top_referrers_page', $viewsReferrersPage, $viewsReferrersTotalPages, $viewsBaseExtra)
+    : '';
+
+$analyticsSectionPerPage = 10;
+$analyticsAgentsPage = $authenticated ? enma_page_value('analytics_agents_page') : 1;
+$analyticsLogsPage = $authenticated ? enma_page_value('analytics_logs_page') : 1;
+
+$analyticsAgentsAll = $analyticsDashboard['top_agents'] ?? [];
+$analyticsLogsAll = $analyticsDashboard['recent_logs'] ?? [];
+
+$analyticsAgentsTotalPages = enma_total_pages(count($analyticsAgentsAll), $analyticsSectionPerPage);
+$analyticsLogsTotalPages = enma_total_pages(count($analyticsLogsAll), $analyticsSectionPerPage);
+$analyticsAgentsPage = min($analyticsAgentsPage, $analyticsAgentsTotalPages);
+$analyticsLogsPage = min($analyticsLogsPage, $analyticsLogsTotalPages);
+
+$analyticsAgentsRows = array_slice($analyticsAgentsAll, ($analyticsAgentsPage - 1) * $analyticsSectionPerPage, $analyticsSectionPerPage);
+$analyticsLogsRows = array_slice($analyticsLogsAll, ($analyticsLogsPage - 1) * $analyticsSectionPerPage, $analyticsSectionPerPage);
+
+$analyticsAgentsPagination = $authenticated && $activeTab === 'analytics'
+    ? enma_render_pagination('analytics', 'analytics_agents_page', $analyticsAgentsPage, $analyticsAgentsTotalPages)
+    : '';
+$analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
+    ? enma_render_pagination('analytics', 'analytics_logs_page', $analyticsLogsPage, $analyticsLogsTotalPages)
     : '';
 
 ?>
@@ -1329,12 +1391,13 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
             <?php if (($analyticsDashboard['top_agents'] ?? []) === []): ?>
                 <div class="empty">No traffic data yet.</div>
             <?php else: ?>
+            <p class="muted">Showing <?= number_format(count($analyticsAgentsRows)) ?> of <?= number_format(count($analyticsAgentsAll)) ?> user agents.</p>
             <table>
                 <thead>
                     <tr><th>User Agent</th><th>Hits</th></tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($analyticsDashboard['top_agents'] as $agent): ?>
+                    <?php foreach ($analyticsAgentsRows as $agent): ?>
                     <tr>
                         <td><?= e((string) ($agent['user_agent'] ?? '')) ?></td>
                         <td><?= number_format((int) ($agent['count'] ?? 0)) ?></td>
@@ -1342,6 +1405,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $analyticsAgentsPagination ?>
             <?php endif; ?>
         </section>
 
@@ -1350,12 +1414,13 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
             <?php if (($analyticsDashboard['recent_logs'] ?? []) === []): ?>
                 <div class="empty">No recent logs found.</div>
             <?php else: ?>
+            <p class="muted">Showing <?= number_format(count($analyticsLogsRows)) ?> of <?= number_format(count($analyticsLogsAll)) ?> logs.</p>
             <table>
                 <thead>
                     <tr><th>ID</th><th>Date</th><th>URL</th><th>IP/Hash</th><th>User Agent</th></tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($analyticsDashboard['recent_logs'] as $log): ?>
+                    <?php foreach ($analyticsLogsRows as $log): ?>
                     <tr>
                         <td><?= (int) ($log['id'] ?? 0) ?></td>
                         <td><?= e((string) ($log['created_at'] ?? '')) ?></td>
@@ -1366,6 +1431,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                     <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $analyticsLogsPagination ?>
             <?php endif; ?>
         </section>
 
@@ -1409,6 +1475,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
 
         <section class="box">
             <h2>Top Pages</h2>
+            <p class="muted">Showing <?= number_format(count($viewsTopPagesRows)) ?> of <?= number_format(count($viewsTopPagesAll)) ?> rows.</p>
             <table>
                 <thead>
                 <tr>
@@ -1418,7 +1485,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach (($viewsDashboard['top_pages'] ?? []) as $row): ?>
+                <?php foreach ($viewsTopPagesRows as $row): ?>
                     <tr>
                         <td><?= e((string) ($row['path'] ?? '')) ?></td>
                         <td><?= e((string) ($row['page_type'] ?? '')) ?></td>
@@ -1427,10 +1494,12 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $viewsTopPagesPagination ?>
         </section>
 
         <section class="box">
             <h2>Top Product Pages</h2>
+            <p class="muted">Showing <?= number_format(count($viewsTopProductsRows)) ?> of <?= number_format(count($viewsTopProductsAll)) ?> rows.</p>
             <table>
                 <thead>
                 <tr>
@@ -1440,7 +1509,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach (($viewsDashboard['top_products'] ?? []) as $row): ?>
+                <?php foreach ($viewsTopProductsRows as $row): ?>
                     <tr>
                         <td><?= e((string) ($row['title'] ?? '')) ?></td>
                         <td><?= e((string) ($row['slug'] ?? '')) ?></td>
@@ -1449,10 +1518,12 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $viewsTopProductsPagination ?>
         </section>
 
         <section class="box">
             <h2>Top Clicked Products</h2>
+            <p class="muted">Showing <?= number_format(count($viewsTopClickedRows)) ?> of <?= number_format(count($viewsTopClickedAll)) ?> rows.</p>
             <table>
                 <thead>
                 <tr>
@@ -1462,7 +1533,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach (($viewsDashboard['clicks']['top_products'] ?? []) as $row): ?>
+                <?php foreach ($viewsTopClickedRows as $row): ?>
                     <tr>
                         <td><?= e((string) ($row['title'] ?? '')) ?></td>
                         <td><?= e((string) ($row['slug'] ?? '')) ?></td>
@@ -1471,6 +1542,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $viewsTopClickedPagination ?>
         </section>
 
         <section class="box">
@@ -1515,6 +1587,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
 
         <section class="box">
             <h2>Top Referrers</h2>
+            <p class="muted">Showing <?= number_format(count($viewsReferrersRows)) ?> of <?= number_format(count($viewsReferrersAll)) ?> rows.</p>
             <table>
                 <thead>
                 <tr>
@@ -1524,7 +1597,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 </tr>
                 </thead>
                 <tbody>
-                <?php foreach (($viewsDashboard['top_referrers'] ?? []) as $row): ?>
+                <?php foreach ($viewsReferrersRows as $row): ?>
                     <tr>
                         <td><?= e((string) ($row['referrer_host'] ?? 'direct')) ?></td>
                         <td><?= e((string) ($row['source_type'] ?? '')) ?></td>
@@ -1533,6 +1606,7 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?= $viewsReferrersPagination ?>
         </section>
         <?php else: ?>
         <section class="box">

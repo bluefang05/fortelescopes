@@ -181,6 +181,68 @@ function render_sitemap_xml(array $entries): string
     return implode("\n", $lines);
 }
 
+function maintenance_ensure_directory(string $path): string
+{
+    if (!is_dir($path) && !mkdir($path, 0775, true) && !is_dir($path)) {
+        throw new RuntimeException('Could not create directory: ' . $path);
+    }
+
+    return $path;
+}
+
+function maintenance_data_path(string $subpath = ''): string
+{
+    $base = maintenance_ensure_directory(__DIR__ . '/../data');
+    $subpath = trim(str_replace('\\', '/', $subpath), '/');
+    if ($subpath === '') {
+        return $base;
+    }
+
+    return maintenance_ensure_directory($base . '/' . $subpath);
+}
+
+function maintenance_append_log(string $scriptName, array $lines): string
+{
+    $scriptName = slugify($scriptName);
+    $logDir = maintenance_data_path('logs');
+    $logPath = $logDir . '/' . $scriptName . '_' . gmdate('Ymd') . '.log';
+
+    $payload = '[' . gmdate('c') . ']' . PHP_EOL;
+    foreach ($lines as $line) {
+        $payload .= (string) $line . PHP_EOL;
+    }
+    $payload .= PHP_EOL;
+
+    if (file_put_contents($logPath, $payload, FILE_APPEND) === false) {
+        throw new RuntimeException('Could not write log file: ' . $logPath);
+    }
+
+    return $logPath;
+}
+
+function maintenance_prune_files(string $directory, string $pattern, int $olderThanDays): int
+{
+    $directory = maintenance_data_path(trim(str_replace('\\', '/', $directory), '/'));
+    $olderThanDays = max(1, $olderThanDays);
+    $cutoff = time() - ($olderThanDays * 86400);
+    $deleted = 0;
+
+    foreach (glob($directory . '/' . $pattern) ?: [] as $path) {
+        if (!is_file($path)) {
+            continue;
+        }
+        $mtime = filemtime($path);
+        if ($mtime === false || $mtime >= $cutoff) {
+            continue;
+        }
+        if (@unlink($path)) {
+            $deleted++;
+        }
+    }
+
+    return $deleted;
+}
+
 function indexnow_key_location_url(): string
 {
     return 'https://' . SITE_DOMAIN . '/' . INDEXNOW_KEY . '.txt';

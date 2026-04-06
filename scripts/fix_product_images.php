@@ -149,8 +149,14 @@ foreach ($rows as $row) {
     $updated++;
 }
 
-echo 'Checked: ' . $checked . PHP_EOL;
-echo 'Updated: ' . $updated . PHP_EOL;
-echo 'Skipped (invalid/missing ASIN): ' . $skippedNoAsin . PHP_EOL;
-echo 'Scraped real images: ' . $scraped . PHP_EOL;
-echo 'Fallback placeholder: ' . $fallbackToPlaceholder . PHP_EOL;
+$lines = [
+    'Checked: ' . $checked,
+    'Updated: ' . $updated,
+    'Skipped (invalid/missing ASIN): ' . $skippedNoAsin,
+    'Scraped real images: ' . $scraped,
+    'Fallback placeholder: ' . $fallbackToPlaceholder,
+];
+maintenance_prune_files('logs', 'fix-product-images_*.log', 30);
+$logPath = maintenance_append_log('fix-product-images', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

@@ -73,7 +73,13 @@ if ($bytesWritten === false) {
     exit(1);
 }
 
-echo "SUCCESS: Database schema exported to db_schema.sql\n";
-echo "File size: " . number_format($bytesWritten) . " bytes\n";
-echo "Tables exported: " . count($tables) . "\n";
-echo "Location: " . realpath($schemaPath) . "\n";
+$lines = [
+    'SUCCESS: Database schema exported to db_schema.sql',
+    'File size: ' . number_format($bytesWritten) . ' bytes',
+    'Tables exported: ' . count($tables),
+    'Location: ' . realpath($schemaPath),
+];
+maintenance_prune_files('logs', 'export-db-schema_*.log', 30);
+$logPath = maintenance_append_log('export-db-schema', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

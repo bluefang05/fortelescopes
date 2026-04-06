@@ -24,4 +24,10 @@ $stmt->execute([
     ':threshold' => $threshold,
 ]);
 
-echo "Products refreshed: " . $stmt->rowCount() . PHP_EOL;
+$lines = [
+    'Products refreshed: ' . $stmt->rowCount(),
+];
+maintenance_prune_files('logs', 'cron-refresh_*.log', 30);
+$logPath = maintenance_append_log('cron-refresh', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

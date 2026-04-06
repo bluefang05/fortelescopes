@@ -34,6 +34,12 @@ foreach ($rows as $row) {
     $updated++;
 }
 
-echo 'Checked: ' . $checked . PHP_EOL;
-echo 'Updated: ' . $updated . PHP_EOL;
-echo 'Tag: ' . AMAZON_ASSOCIATE_TAG . PHP_EOL;
+$lines = [
+    'Checked: ' . $checked,
+    'Updated: ' . $updated,
+    'Tag: ' . AMAZON_ASSOCIATE_TAG,
+];
+maintenance_prune_files('logs', 'normalize-affiliate-urls_*.log', 30);
+$logPath = maintenance_append_log('normalize-affiliate-urls', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

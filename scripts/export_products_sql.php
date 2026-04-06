@@ -77,5 +77,11 @@ if ($bytesWritten === false) {
     throw new RuntimeException('Could not write products_export.sql');
 }
 
-echo 'Products exported: ' . count($rows) . PHP_EOL;
-echo 'Location: ' . realpath($exportPath) . PHP_EOL;
+$lines = [
+    'Products exported: ' . count($rows),
+    'Location: ' . realpath($exportPath),
+];
+maintenance_prune_files('logs', 'export-products-sql_*.log', 30);
+$logPath = maintenance_append_log('export-products-sql', $lines);
+$lines[] = 'Log: ' . $logPath;
+echo implode(PHP_EOL, $lines) . PHP_EOL;

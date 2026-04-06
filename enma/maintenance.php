@@ -122,6 +122,20 @@ $maintenanceTaskMeta = [
         'group' => 'weekly',
         'script' => 'scripts/export_db_schema.php',
     ],
+    'prune_old_logs' => [
+        'label' => 'Prune Old Logs',
+        'description' => 'Limpia logs y tablas historicas antiguas para evitar crecimiento innecesario.',
+        'frequency' => 'Weekly',
+        'group' => 'weekly',
+        'script' => 'scripts/prune_old_logs.php',
+    ],
+    'check_links' => [
+        'label' => 'Check Links',
+        'description' => 'Verifica enlaces internos del sitemap y enlaces externos dentro del contenido editorial.',
+        'frequency' => 'Weekly',
+        'group' => 'weekly',
+        'script' => 'scripts/check_links.php',
+    ],
     'generate_sitemap' => [
         'label' => 'Generate Sitemap',
         'description' => 'Genera sitemap.xml solo con URLs publicas del sitio.',
@@ -429,6 +443,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $taskRunMessage = 'Image fix failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
+        } elseif ($task === 'backup_content_sql') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Database data backup completed.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: backup_content_sql';
+                $maintenanceLog[] = 'Output: /workspace/data/backups/db_backup_latest.sql';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Database backup failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
         } elseif ($task === 'export_db_schema') {
             $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
             ob_start();
@@ -450,6 +487,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             } catch (Throwable $e) {
                 ob_end_clean();
                 $taskRunMessage = 'Schema export failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'prune_old_logs') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Old logs pruned successfully.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: prune_old_logs';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Log pruning failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'check_links') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Link check completed.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: check_links';
+                $maintenanceLog[] = 'Output: /workspace/data/reports/link_check_latest.json';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Link check failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_sitemap') {

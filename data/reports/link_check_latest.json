@@ -1,0 +1,333 @@
+{
+    "generated_at": "2026-04-06T18:55:25+00:00",
+    "summary": {
+        "checked": 46,
+        "ok": 0,
+        "warning": 46,
+        "broken": 0
+    },
+    "results": [
+        {
+            "url": "http://localhostscripts/",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/telescopes",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/accessories",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/guides",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/blog",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/about",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/affiliate-disclosure",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/contact",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/privacy-policy",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/terms-of-use",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/best-telescopes-under-500",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/best-telescope-accessories",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/best-beginner-telescopes",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/blog/stargazing-tips-for-complete-beginners",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/blog/how-to-choose-your-first-telescope",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/category/accessories",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/category/telescopes",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-nexyz-dx-kit-with-zoom-eyepiece-b09nvz39kc",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-ultra-wide-angle-eyepiece-kit-b01mr78i42",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-1-25-inch-moon-filter-b071ctytqs",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-2x-barlow-lens-b00ww0tc32",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-7pcs-telescope-filter-kit-b072l6ff9g",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-nexstar-optical-tube-carrying-case-b006ytq9kq",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-40-inch-full-kit-telescope-bag-b08vf6m3g3",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-sv233-7-piece-accessory-kit-b0dhcqhsbw",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-moon-filter-kit-b07st7hvcx",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-sv137-2x-barlow-lens-b07y21jqf5",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/telescope-carrying-bag-b07vz7w5z9",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/moon-filter-b00006rh5i",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/red-dot-finder-scope-b00d12p6z2",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-x-cel-lx-eyepiece-b0048ezcf2",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-6mm-eyepiece-b07jwdfmzl",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-travel-scope-70-b001ti9y2m",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/orion-starblast-4-5-astro-b001uq6e4k",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/sky-watcher-heritage-130p-b002828hje",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-starsense-explorer-dx-130az-b083jw8nwk",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-astromaster-130eq-b000mll6r8",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-nexstar-8se-b000gufoc8",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-powertank-b0000635wi",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/telescope-phone-adapter-b01k7m0jem",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/svbony-telescope-lens-kit-b01lz6ddc2",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-8-24mm-zoom-eyepiece-b0007uqnv8",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/orion-skyquest-xt6-b001ddw9v6",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-nexstar-130slt-b000gufobo",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/gskyer-70mm-telescope-b07c8zqf9q",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        },
+        {
+            "url": "http://localhostscripts/product/celestron-powerseeker-127eq-b0007uqnnq",
+            "type": "internal",
+            "status_code": 0,
+            "state": "warning",
+            "error": "Could not resolve host: localhostscripts"
+        }
+    ]
+}
