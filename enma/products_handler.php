@@ -78,6 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 ':updated_at' => $now,
             ]);
 
+            $newProductId = (int) $pdo->lastInsertId();
+            enma_record_activity($pdo, 'product.create', 'product', $newProductId, [
+                'title' => $title,
+                'asin' => $asin,
+                'category_name' => $categoryName,
+            ]);
+            $indexNowResult = indexnow_submit_urls([
+                absolute_url('/product/' . $slug),
+                absolute_url('/category/' . $categorySlug),
+                absolute_url('/' . $categorySlug),
+            ]);
+            if (!empty($indexNowResult['message'])) {
+                $maintenanceLog[] = (string) $indexNowResult['message'];
+            }
             $flash = 'Product created successfully.';
         } catch (Throwable $e) {
             $errors[] = 'Insert failed. Verify ASIN uniqueness and URL fields.';
@@ -141,6 +155,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 ':id' => $id
             ]);
 
+            enma_record_activity($pdo, 'product.update', 'product', $id, [
+                'title' => $title,
+                'asin' => $asin,
+                'category_name' => $categoryName,
+            ]);
+            $slugStmt = $pdo->prepare('SELECT slug, category_slug FROM products WHERE id = :id LIMIT 1');
+            $slugStmt->execute([':id' => $id]);
+            $savedProduct = $slugStmt->fetch();
+            $savedSlug = trim((string) ($savedProduct['slug'] ?? ''));
+            $savedCategorySlug = trim((string) ($savedProduct['category_slug'] ?? $categorySlug));
+            if ($savedSlug !== '') {
+                $indexNowResult = indexnow_submit_urls([
+                    absolute_url('/product/' . $savedSlug),
+                    absolute_url('/category/' . $savedCategorySlug),
+                    absolute_url('/' . $savedCategorySlug),
+                ]);
+                if (!empty($indexNowResult['message'])) {
+                    $maintenanceLog[] = (string) $indexNowResult['message'];
+                }
+            }
             $flash = 'Product updated successfully.';
             $editingProduct = null;
         } catch (Throwable $e) {
@@ -156,8 +190,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     } else {
         $id = (int) ($_POST['id'] ?? 0);
         if ($id > 0) {
+            $productStmt = $pdo->prepare('SELECT title, asin, category_name, slug, category_slug FROM products WHERE id = :id LIMIT 1');
+            $productStmt->execute([':id' => $id]);
+            $productRow = $productStmt->fetch();
             $stmt = $pdo->prepare('DELETE FROM products WHERE id = :id');
             $stmt->execute([':id' => $id]);
+            enma_record_activity($pdo, 'product.delete', 'product', $id, [
+                'title' => (string) ($productRow['title'] ?? ''),
+                'asin' => (string) ($productRow['asin'] ?? ''),
+                'category_name' => (string) ($productRow['category_name'] ?? ''),
+            ]);
+            $productSlug = trim((string) ($productRow['slug'] ?? ''));
+            $categorySlug = trim((string) ($productRow['category_slug'] ?? ''));
+            if ($productSlug !== '') {
+                $indexNowResult = indexnow_submit_urls([
+                    absolute_url('/product/' . $productSlug),
+                    absolute_url('/category/' . $categorySlug),
+                    absolute_url('/' . $categorySlug),
+                ]);
+                if (!empty($indexNowResult['message'])) {
+                    $maintenanceLog[] = (string) $indexNowResult['message'];
+                }
+            }
             $flash = 'Product deleted successfully.';
         }
     }

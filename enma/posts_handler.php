@@ -22,6 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     $content = enma_normalize_editor_html((string) ($_POST['content_html'] ?? ''));
     $postType = trim((string) ($_POST['post_type'] ?? 'post'));
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
+    $metaTitle = trim((string) ($_POST['meta_title'] ?? ''));
+    $metaDescription = trim((string) ($_POST['meta_description'] ?? ''));
 
     $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
     if ($uploaded !== null) {
@@ -39,10 +41,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
         try {
             $stmt = $pdo->prepare(
                 'INSERT INTO posts (
-                    slug, title, excerpt, content_html, featured_image, post_type, status,
+                    slug, title, excerpt, content_html, featured_image, post_type, status, meta_title, meta_description,
                     created_at, updated_at, published_at
                  ) VALUES (
-                    :slug, :title, :excerpt, :content_html, :featured_image, :post_type, :status,
+                    :slug, :title, :excerpt, :content_html, :featured_image, :post_type, :status, :meta_title, :meta_description,
                     :created_at, :updated_at, :published_at
                  )'
             );
@@ -55,11 +57,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 ':featured_image' => $featuredImage,
                 ':post_type' => $postType,
                 ':status' => 'published',
+                ':meta_title' => $metaTitle !== '' ? $metaTitle : null,
+                ':meta_description' => $metaDescription !== '' ? $metaDescription : null,
                 ':created_at' => $now,
                 ':updated_at' => $now,
                 ':published_at' => $now,
             ]);
 
+            $newPostId = (int) $pdo->lastInsertId();
+            enma_record_activity($pdo, 'post.create', 'post', $newPostId, [
+                'title' => $title,
+                'slug' => $slug,
+                'post_type' => $postType,
+                'meta_title' => $metaTitle,
+            ]);
+            $postPath = $postType === 'guide' ? '/' . $slug : '/blog/' . $slug;
+            $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+            if (!empty($indexNowResult['message'])) {
+                $maintenanceLog[] = (string) $indexNowResult['message'];
+            }
             $flash = ucfirst($postType) . ' created successfully.';
         } catch (Throwable $e) {
             $errors[] = 'Insert failed: ' . $e->getMessage();
@@ -79,6 +95,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     $content = enma_normalize_editor_html((string) ($_POST['content_html'] ?? ''));
     $postType = trim((string) ($_POST['post_type'] ?? 'post'));
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
+    $metaTitle = trim((string) ($_POST['meta_title'] ?? ''));
+    $metaDescription = trim((string) ($_POST['meta_description'] ?? ''));
 
     $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
     if ($uploaded !== null) {
@@ -111,6 +129,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                     content_html = :content_html, 
                     featured_image = :featured_image, 
                     post_type = :post_type, 
+                    meta_title = :meta_title,
+                    meta_description = :meta_description,
                     updated_at = :updated_at 
                 WHERE id = :id'
             );
@@ -121,10 +141,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 ':content_html' => $content,
                 ':featured_image' => $featuredImage,
                 ':post_type' => $postType,
+                ':meta_title' => $metaTitle !== '' ? $metaTitle : null,
+                ':meta_description' => $metaDescription !== '' ? $metaDescription : null,
                 ':updated_at' => $now,
                 ':id' => $id
             ]);
 
+            enma_record_activity($pdo, 'post.update', 'post', $id, [
+                'title' => $title,
+                'post_type' => $postType,
+                'meta_title' => $metaTitle,
+            ]);
+            $slugStmt = $pdo->prepare('SELECT slug, post_type FROM posts WHERE id = :id LIMIT 1');
+            $slugStmt->execute([':id' => $id]);
+            $savedPost = $slugStmt->fetch();
+            $savedSlug = trim((string) ($savedPost['slug'] ?? ''));
+            $savedType = trim((string) ($savedPost['post_type'] ?? $postType));
+            if ($savedSlug !== '') {
+                $postPath = $savedType === 'guide' ? '/' . $savedSlug : '/blog/' . $savedSlug;
+                $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+                if (!empty($indexNowResult['message'])) {
+                    $maintenanceLog[] = (string) $indexNowResult['message'];
+                }
+            }
             $flash = ucfirst($postType) . ' updated successfully.';
             $editingPost = null; // Clear editing state after success
         } catch (Throwable $e) {
@@ -140,8 +179,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     } else {
         $id = (int) ($_POST['id'] ?? 0);
         if ($id > 0) {
+            $titleStmt = $pdo->prepare('SELECT title, slug, post_type FROM posts WHERE id = :id LIMIT 1');
+            $titleStmt->execute([':id' => $id]);
+            $postRow = $titleStmt->fetch();
             $stmt = $pdo->prepare('DELETE FROM posts WHERE id = :id');
             $stmt->execute([':id' => $id]);
+            enma_record_activity($pdo, 'post.delete', 'post', $id, [
+                'title' => (string) ($postRow['title'] ?? ''),
+                'slug' => (string) ($postRow['slug'] ?? ''),
+                'post_type' => (string) ($postRow['post_type'] ?? ''),
+            ]);
+            $deletedSlug = trim((string) ($postRow['slug'] ?? ''));
+            $deletedType = trim((string) ($postRow['post_type'] ?? 'post'));
+            if ($deletedSlug !== '') {
+                $postPath = $deletedType === 'guide' ? '/' . $deletedSlug : '/blog/' . $deletedSlug;
+                $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+                if (!empty($indexNowResult['message'])) {
+                    $maintenanceLog[] = (string) $indexNowResult['message'];
+                }
+            }
             $flash = 'Post deleted successfully.';
         }
     }

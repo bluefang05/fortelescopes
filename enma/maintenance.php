@@ -122,6 +122,13 @@ $maintenanceTaskMeta = [
         'group' => 'weekly',
         'script' => 'scripts/export_db_schema.php',
     ],
+    'generate_sitemap' => [
+        'label' => 'Generate Sitemap',
+        'description' => 'Genera sitemap.xml solo con URLs publicas del sitio.',
+        'frequency' => 'As needed',
+        'group' => 'seo',
+        'script' => 'scripts/generate_sitemap.php',
+    ],
     'generate_migration' => [
         'label' => 'Generate Migration Script',
         'description' => 'Compara DB vs schema y crea script de migracion.',
@@ -436,6 +443,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             } catch (Throwable $e) {
                 ob_end_clean();
                 $taskRunMessage = 'Schema export failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'generate_sitemap') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                if (!defined('ENMA_ALLOW_WEB_RUN')) {
+                    define('ENMA_ALLOW_WEB_RUN', true);
+                }
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Sitemap generated successfully.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: generate_sitemap';
+                $maintenanceLog[] = 'Output: /workspace/sitemap.xml';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Sitemap generation failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_migration') {

@@ -56,5 +56,6 @@ if ($isLocal) {
 // ======================
 define('AMAZON_ASSOCIATE_TAG', 'fortelescopes-20');
 define('ENMA_ADVANCED_KEY', '');
+define('INDEXNOW_KEY', '15fd8574046040c7b6653ff63836ac8a');
 
 date_default_timezone_set(TIMEZONE);

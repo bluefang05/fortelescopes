@@ -15,9 +15,17 @@ $mistakes = is_array($guide['mistakes'] ?? null) ? $guide['mistakes'] : [];
 $fullGuideHtmlRaw = trim((string) ($guide['content_html'] ?? ''));
 $fullGuideHtml = '';
 if ($fullGuideHtmlRaw !== '') {
-    $candidate = (strpos($fullGuideHtmlRaw, '&lt;') !== false || strpos($fullGuideHtmlRaw, '&gt;') !== false)
-        ? html_entity_decode($fullGuideHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8')
-        : $fullGuideHtmlRaw;
+    $candidate = $fullGuideHtmlRaw;
+    for ($i = 0; $i < 3; $i++) {
+        if (strpos($candidate, '&lt;') === false && strpos($candidate, '&gt;') === false) {
+            break;
+        }
+        $next = html_entity_decode($candidate, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if ($next === $candidate) {
+            break;
+        }
+        $candidate = $next;
+    }
     // Keep <style> blocks from trusted guide content so scoped guide CSS can render.
     $candidate = preg_replace('/<\s*(script|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $candidate) ?? $candidate;
     $candidate = preg_replace('/\son[a-z]+\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $candidate) ?? $candidate;

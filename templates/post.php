@@ -7,11 +7,19 @@ if ($postSummary === '') {
 $postHtmlRaw = trim((string) ($post['content_html'] ?? ''));
 $postHtml = $postHtmlRaw;
 if ($postHtmlRaw !== '') {
-    if ((strpos($postHtmlRaw, '&lt;') !== false || strpos($postHtmlRaw, '&gt;') !== false) && strpos($postHtmlRaw, '<') === false) {
-        $decoded = html_entity_decode($postHtmlRaw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        if (trim($decoded) !== '') {
-            $postHtml = trim($decoded);
+    $decodedHtml = $postHtmlRaw;
+    for ($i = 0; $i < 3; $i++) {
+        if (strpos($decodedHtml, '&lt;') === false && strpos($decodedHtml, '&gt;') === false) {
+            break;
         }
+        $next = html_entity_decode($decodedHtml, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if ($next === $decodedHtml) {
+            break;
+        }
+        $decodedHtml = $next;
+    }
+    if (trim($decodedHtml) !== '' && strpos($decodedHtml, '<') !== false) {
+        $postHtml = trim($decodedHtml);
     }
     // Force guide-like visual consistency: drop custom style/script blocks from post body.
     $postHtml = preg_replace('/<\s*(script|style|object|embed)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/i', '', $postHtml) ?? $postHtml;

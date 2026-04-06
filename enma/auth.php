@@ -7,11 +7,16 @@ declare(strict_types=1);
  * Handles login, logout and session management
  */
 
+enma_admin_init_schema($pdo);
+
 // Logout handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
     } else {
+        enma_record_activity($pdo, 'auth.logout', 'session', null, [
+            'username' => (string) ($_SESSION['admin_username'] ?? ''),
+        ]);
         $_SESSION = [];
         session_destroy();
         header('Location: ' . url('/enma/'));
@@ -49,12 +54,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
                     $_SESSION['admin_ok'] = true;
                     $_SESSION['admin_user_id'] = (int) $row['id'];
                     $_SESSION['admin_username'] = $row['username'];
+                    $_SESSION['admin_role'] = $row['role'];
                     $_SESSION['login_attempts'] = 0;
                     $_SESSION['login_locked_until'] = 0;
                     
                     // Update last login time
                     $updateStmt = $pdo->prepare('UPDATE users SET last_login_at = :now WHERE id = :id');
                     $updateStmt->execute([':now' => now_iso(), ':id' => $row['id']]);
+                    enma_record_activity($pdo, 'auth.login', 'user', (int) $row['id'], [
+                        'username' => (string) $row['username'],
+                    ]);
                     
                     header('Location: ' . url('/enma/'));
                     exit;

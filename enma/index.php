@@ -60,18 +60,20 @@ $maintenanceLog = [];
 $advancedEnabled = ENMA_ADVANCED_KEY !== '';
 $editingPost = null;
 $editingProduct = null;
+$editingUser = null;
 
 // Include handlers
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/posts_handler.php';
 require_once __DIR__ . '/products_handler.php';
+require_once __DIR__ . '/users_handler.php';
 require_once __DIR__ . '/maintenance.php';
 
 // Refresh auth state in case auth.php changed the session
 $authenticated = !empty($_SESSION['admin_ok']);
 
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
-if (!in_array($activeTab, ['overview', 'products', 'posts', 'views', 'analytics', 'maintenance'], true)) {
+if (!in_array($activeTab, ['overview', 'products', 'posts', 'users', 'views', 'analytics', 'maintenance'], true)) {
     $activeTab = 'overview';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
@@ -110,7 +112,38 @@ $overviewStats = [
         'missing_images' => (int) $pdo->query("SELECT COUNT(*) FROM products WHERE image_url IS NULL OR image_url = ''")->fetchColumn(),
         'views_30d' => (int) $pdo->query($views30dSql)->fetchColumn(),
         'posts' => (int) $pdo->query('SELECT COUNT(*) FROM posts')->fetchColumn(),
+        'users' => (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn(),
     ];
+}
+
+$allUsers = [];
+$recentAdminActivity = [];
+if ($authenticated && ($activeTab === 'users' || $activeTab === 'overview')) {
+    $activityStmt = $pdo->query(
+        'SELECT id, admin_username, action_key, entity_type, entity_id, details_json, created_at
+         FROM admin_activity_log
+         ORDER BY id DESC
+         LIMIT 100'
+    );
+    $recentAdminActivity = $activityStmt->fetchAll();
+}
+if ($authenticated && $activeTab === 'users') {
+    if ($userSearch !== '') {
+        $stmt = $pdo->prepare(
+            'SELECT id, email, username, display_name, role, status, last_login_at, created_at, updated_at
+             FROM users
+             WHERE email LIKE :q OR username LIKE :q OR display_name LIKE :q
+             ORDER BY id DESC'
+        );
+        $stmt->execute([':q' => '%' . $userSearch . '%']);
+        $allUsers = $stmt->fetchAll();
+    } else {
+        $allUsers = $pdo->query(
+            'SELECT id, email, username, display_name, role, status, last_login_at, created_at, updated_at
+             FROM users
+             ORDER BY id DESC'
+        )->fetchAll();
+    }
 }
 
 $analyticsDashboard = [];
@@ -138,7 +171,7 @@ if ($authenticated && $activeTab === 'analytics') {
 
 $dbTables = [];
 if ($authenticated && $activeTab === 'maintenance') {
-    $tableNames = ['products', 'page_views', 'page_view_hits', 'outbound_clicks', 'posts'];
+    $tableNames = ['products', 'page_views', 'page_view_hits', 'outbound_clicks', 'posts', 'users', 'admin_activity_log'];
     foreach ($tableNames as $tableName) {
         try {
             $count = (int) $pdo->query('SELECT COUNT(*) FROM ' . $tableName)->fetchColumn();
@@ -217,7 +250,7 @@ if (!function_exists('enma_human_last_run')) {
         }
 
         // Keep hidden textarea in sync with Summernote before submit.
-        $('form').on('submit', function () {
+	        $('form').on('submit', function () {
           var $form = $(this);
           var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
           if (action !== 'add_post' && action !== 'update_post') {
@@ -234,11 +267,76 @@ if (!function_exists('enma_human_last_run')) {
             html = $content.summernote('code') || '';
           } else {
             html = $content.val() || '';
-          }
-          $content.val(html);
-        });
-      });
-    </script>
+	          }
+	          $content.val(html);
+	        });
+
+	        function stripPreviewHtml(html) {
+	          var $tmp = $('<div>').html(html || '');
+	          $tmp.find('script, style').remove();
+	          return ($tmp.text() || '').replace(/\s+/g, ' ').trim();
+	        }
+
+	        function updatePostPreview($form) {
+	          if (!$form || $form.length === 0) {
+	            return;
+	          }
+
+	          var title = ($form.find('input[name="title"]').val() || '').trim();
+	          var excerpt = ($form.find('textarea[name="excerpt"]').val() || '').trim();
+	          var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
+	          var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
+	          var imageUrl = ($form.find('input[name="featured_image"]').val() || '').trim();
+	          var $content = $form.find('textarea[name="content_html"]');
+	          var html = '';
+
+	          if ($content.length) {
+	            if (typeof $content.summernote === 'function' && $content.next('.note-editor').length) {
+	              html = $content.summernote('code') || '';
+	            } else {
+	              html = $content.val() || '';
+	            }
+	          }
+
+	          var plainBody = stripPreviewHtml(html);
+	          var serpTitle = metaTitle || title || 'Post title preview';
+	          var serpDescription = metaDescription || excerpt || plainBody || 'Meta description preview';
+	          var cardTitle = title || 'Post title preview';
+	          var cardExcerpt = excerpt || metaDescription || plainBody || 'Post excerpt preview';
+
+	          $form.find('[data-preview="serp-title"]').text(serpTitle);
+	          $form.find('[data-preview="serp-description"]').text(serpDescription.substring(0, 170));
+	          $form.find('[data-preview="hero-title"]').text(cardTitle);
+	          $form.find('[data-preview="hero-copy"]').text(cardExcerpt.substring(0, 180));
+	          $form.find('[data-preview="article-title"]').text(cardTitle);
+	          $form.find('[data-preview="article-copy"]').text(cardExcerpt.substring(0, 220));
+	          $form.find('[data-preview="article-body"]').text((plainBody || 'Article body preview').substring(0, 520));
+
+	          var $img = $form.find('[data-preview="hero-image"]');
+	          if (imageUrl !== '') {
+	            $img.attr('src', imageUrl).show();
+	          } else {
+	            $img.hide().attr('src', '');
+	          }
+	        }
+
+	        $('.post-editor-form').each(function () {
+	          var $form = $(this);
+	          $form.on('input change', 'input, textarea, select', function () {
+	            updatePostPreview($form);
+	          });
+
+	          var $content = $form.find('textarea[name="content_html"]');
+	          if ($content.length && typeof $content.on === 'function') {
+	            $content.on('summernote.change', function () {
+	              updatePostPreview($form);
+	            });
+	          }
+
+	          updatePostPreview($form);
+	        });
+	      });
+	    </script>
     <style>
         :root {
             --bg: #edf3fb;
@@ -355,22 +453,113 @@ if (!function_exists('enma_human_last_run')) {
         }
         .maintenance-last strong.ok { color: #1e6a31; background: transparent; padding: 0; }
         .maintenance-last strong.fail { color: #9b1c1c; background: transparent; padding: 0; }
-        .maintenance-badge {
-            display: inline-block;
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 999px;
+	        .maintenance-badge {
+	            display: inline-block;
+	            font-size: 11px;
+	            padding: 2px 8px;
+	            border-radius: 999px;
             border: 1px solid #b8ccec;
             color: #20426f;
             background: #edf4ff;
-            margin-left: 6px;
-            vertical-align: middle;
-        }
-        .btn[disabled] {
-            opacity: 0.55;
-            cursor: not-allowed;
-        }
-    </style>
+	            margin-left: 6px;
+	            vertical-align: middle;
+	        }
+	        .post-preview-grid {
+	            display:grid;
+	            grid-template-columns:1.1fr 1fr;
+	            gap:16px;
+	            align-items:start;
+	        }
+	        .post-preview-card {
+	            border:1px solid #d8e3f0;
+	            border-radius:12px;
+	            background:#fbfdff;
+	            padding:14px;
+	        }
+	        .serp-preview-title {
+	            color:#1a0dab;
+	            font-size:22px;
+	            line-height:1.25;
+	            margin:0 0 6px;
+	        }
+	        .serp-preview-url {
+	            color:#188038;
+	            font-size:14px;
+	            margin-bottom:6px;
+	        }
+	        .serp-preview-desc {
+	            color:#4d5156;
+	            font-size:14px;
+	            line-height:1.45;
+	            margin:0;
+	        }
+	        .post-render-preview {
+	            border:1px solid #dfe8f3;
+	            border-radius:16px;
+	            background:#fff;
+	            overflow:hidden;
+	        }
+	        .post-render-preview .hero-preview {
+	            padding:18px;
+	            background:linear-gradient(145deg,#fff9ee 0%,#fff2d8 100%);
+	            border-bottom:1px solid #ebf0f5;
+	        }
+	        .post-render-preview .hero-preview h3 {
+	            margin:10px 0 8px;
+	            font-size:28px;
+	            line-height:1.1;
+	            font-family:Georgia, serif;
+	        }
+	        .preview-kicker {
+	            display:inline-flex;
+	            font-size:11px;
+	            font-weight:800;
+	            text-transform:uppercase;
+	            letter-spacing:.04em;
+	            color:#0f294f;
+	            background:#eaf2ff;
+	            border-radius:999px;
+	            padding:5px 8px;
+	        }
+	        .preview-hero-media {
+	            margin:16px auto 0;
+	            width:min(100%, 560px);
+	            aspect-ratio:16 / 9;
+	            border-radius:12px;
+	            background:#15284a;
+	            display:flex;
+	            align-items:center;
+	            justify-content:center;
+	            overflow:hidden;
+	        }
+	        .preview-hero-media img {
+	            width:100%;
+	            height:100%;
+	            object-fit:cover;
+	            display:block;
+	        }
+	        .preview-article-body {
+	            padding:18px;
+	        }
+	        .preview-article-body h4 {
+	            margin:0 0 10px;
+	            font-size:22px;
+	            font-family:Georgia, serif;
+	        }
+	        .preview-muted {
+	            color:var(--muted);
+	            font-size:14px;
+	        }
+	        .btn[disabled] {
+	            opacity: 0.55;
+	            cursor: not-allowed;
+	        }
+	        @media (max-width: 980px) {
+	            .post-preview-grid {
+	                grid-template-columns:1fr;
+	            }
+	        }
+	    </style>
 </head>
 <body>
 <div class="wrap">
@@ -385,24 +574,24 @@ if (!function_exists('enma_human_last_run')) {
     <?php endif; ?>
 
     <?php if (!$authenticated): ?>
-        <section class="box">
-            <h2>Admin Login</h2>
-            <form method="post">
+	        <section class="box">
+	            <h2>Admin Login</h2>
+	            <form method="post">
                 <input type="hidden" name="action" value="login">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <label>User</label>
                 <input type="text" name="user" required>
                 <label>Password</label>
-                <input type="password" name="pass" required>
-                <button class="btn" type="submit">Login</button>
-            </form>
-            <p>Default local credentials: <strong>admin</strong> / <strong>change-this-now</strong></p>
-        </section>
+	                <input type="password" name="pass" required>
+	                <button class="btn" type="submit">Login</button>
+	            </form>
+	        </section>
     <?php else: ?>
         <div class="tabs">
             <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Overview</a>
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
             <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Posts</a>
+            <a class="tab <?= $activeTab === 'users' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=users')) ?>">Users</a>
             <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
             <a class="tab <?= $activeTab === 'analytics' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=analytics')) ?>">Analytics & Seguridad</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
@@ -418,8 +607,36 @@ if (!function_exists('enma_human_last_run')) {
                 <div class="stat"><div class="stat-k">Missing Tags</div><div class="stat-v"><?= number_format((int) ($overviewStats['missing_tags'] ?? 0)) ?></div></div>
                 <div class="stat"><div class="stat-k">Missing Images</div><div class="stat-v"><?= number_format((int) ($overviewStats['missing_images'] ?? 0)) ?></div></div>
                 <div class="stat"><div class="stat-k">Posts</div><div class="stat-v"><?= number_format((int) ($overviewStats['posts'] ?? 0)) ?></div></div>
+                <div class="stat"><div class="stat-k">Users</div><div class="stat-v"><?= number_format((int) ($overviewStats['users'] ?? 0)) ?></div></div>
             </div>
             <p class="muted">Use tabs for product management, traffic analytics, and DB/scripts maintenance.</p>
+        </section>
+        <section class="box">
+            <h2>Recent Admin Activity</h2>
+            <?php if ($recentAdminActivity === []): ?>
+                <div class="empty">No admin activity recorded yet.</div>
+            <?php else: ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Admin</th>
+                            <th>Action</th>
+                            <th>Entity</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach (array_slice($recentAdminActivity, 0, 12) as $activity): ?>
+                        <tr>
+                            <td><?= e((string) ($activity['created_at'] ?? '')) ?></td>
+                            <td><?= e((string) ($activity['admin_username'] ?? '')) ?></td>
+                            <td><?= e((string) ($activity['action_key'] ?? '')) ?></td>
+                            <td><?= e(trim((string) (($activity['entity_type'] ?? '') . ' #' . ($activity['entity_id'] ?? '')), ' #')) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'products'): ?>
         <?php if ($editingProduct): ?>
@@ -570,10 +787,10 @@ if (!function_exists('enma_human_last_run')) {
                 <h2 style="margin:0;">Edit Post: <?= e($editingPost['title']) ?></h2>
                 <a href="<?= e(url('/enma/?tab=posts')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
             </div>
-            <form method="post" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="update_post">
-                <input type="hidden" name="id" value="<?= (int)$editingPost['id'] ?>">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+	            <form method="post" enctype="multipart/form-data" class="post-editor-form">
+	                <input type="hidden" name="action" value="update_post">
+	                <input type="hidden" name="id" value="<?= (int)$editingPost['id'] ?>">
+	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Title</label>
@@ -586,12 +803,22 @@ if (!function_exists('enma_human_last_run')) {
                             <option value="guide" <?= $editingPost['post_type'] === 'guide' ? 'selected' : '' ?>>Guide (Structured)</option>
                         </select>
                     </div>
-                </div>
-                <label>Excerpt (Short summary)</label>
-                <textarea name="excerpt" rows="2" required><?= e($editingPost['excerpt'] ?? '') ?></textarea>
-                <label>Content (HTML allowed)</label>
-                <textarea id="edit_post_content_html" name="content_html" rows="16" style="font-family: Consolas, 'Courier New', monospace; line-height: 1.45;"><?= e($editingPost['content_html'] ?? '') ?></textarea>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                </div>
+	                <label>Excerpt (Short summary)</label>
+	                <textarea name="excerpt" rows="2" required><?= e($editingPost['excerpt'] ?? '') ?></textarea>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Meta Title (Google title)</label>
+	                        <input type="text" name="meta_title" value="<?= e((string) ($editingPost['meta_title'] ?? '')) ?>" placeholder="Optional SEO title">
+	                    </div>
+	                    <div>
+	                        <label>Meta Description (Google description)</label>
+	                        <textarea name="meta_description" rows="2" placeholder="Optional SEO description"><?= e((string) ($editingPost['meta_description'] ?? '')) ?></textarea>
+	                    </div>
+	                </div>
+	                <label>Content (HTML allowed)</label>
+	                <textarea id="edit_post_content_html" name="content_html" rows="16" style="font-family: Consolas, 'Courier New', monospace; line-height: 1.45;"><?= e($editingPost['content_html'] ?? '') ?></textarea>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Featured Image URL</label>
                         <input type="text" name="featured_image" value="<?= e($editingPost['featured_image'] ?? '') ?>">
@@ -601,22 +828,45 @@ if (!function_exists('enma_human_last_run')) {
                         <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
                     </div>
                 </div>
-                <?php if (!empty($editingPost['featured_image'])): ?>
-                    <div style="margin-bottom:12px;">
-                        <span class="muted">Current Image:</span><br>
-                        <img src="<?= e(url($editingPost['featured_image'])) ?>" alt="Preview" style="max-width:100px;max-height:100px;border-radius:6px;margin-top:5px;border:1px solid #ddd;">
-                    </div>
-                <?php endif; ?>
-                <button class="btn" type="submit">Update Post</button>
-            </form>
-        </section>
+	                <?php if (!empty($editingPost['featured_image'])): ?>
+	                    <div style="margin-bottom:12px;">
+	                        <span class="muted">Current Image:</span><br>
+	                        <img src="<?= e(url($editingPost['featured_image'])) ?>" alt="Preview" style="max-width:100px;max-height:100px;border-radius:6px;margin-top:5px;border:1px solid #ddd;">
+	                    </div>
+	                <?php endif; ?>
+	                <div class="post-preview-grid" style="margin:8px 0 14px;">
+	                    <div class="post-preview-card">
+	                        <h3 style="margin:0 0 10px;">Google Preview</h3>
+	                        <div class="serp-preview-url"><?= e(absolute_url('/blog/' . ((string) ($editingPost['slug'] ?? 'preview-post')))) ?></div>
+	                        <div class="serp-preview-title" data-preview="serp-title"><?= e((string) (($editingPost['meta_title'] ?? '') !== '' ? $editingPost['meta_title'] : $editingPost['title'])) ?></div>
+	                        <p class="serp-preview-desc" data-preview="serp-description"><?= e((string) (($editingPost['meta_description'] ?? '') !== '' ? $editingPost['meta_description'] : ($editingPost['excerpt'] ?? ''))) ?></p>
+	                    </div>
+	                    <div class="post-render-preview">
+	                        <div class="hero-preview">
+	                            <span class="preview-kicker">Post Preview</span>
+	                            <h3 data-preview="hero-title"><?= e($editingPost['title']) ?></h3>
+	                            <p class="preview-muted" data-preview="hero-copy"><?= e((string) ($editingPost['excerpt'] ?? '')) ?></p>
+	                            <div class="preview-hero-media">
+	                                <img data-preview="hero-image" src="<?= e((string) ($editingPost['featured_image'] ?? '')) ?>" alt="" <?= empty($editingPost['featured_image']) ? 'style="display:none;"' : '' ?>>
+	                            </div>
+	                        </div>
+	                        <div class="preview-article-body">
+	                            <h4 data-preview="article-title"><?= e($editingPost['title']) ?></h4>
+	                            <p class="preview-muted" data-preview="article-copy"><?= e((string) ($editingPost['excerpt'] ?? '')) ?></p>
+	                            <p data-preview="article-body"><?= e(trim(strip_tags((string) ($editingPost['content_html'] ?? ''))) !== '' ? trim(preg_replace('/\s+/', ' ', strip_tags((string) ($editingPost['content_html'] ?? '')))) : 'Article body preview') ?></p>
+	                        </div>
+	                    </div>
+	                </div>
+	                <button class="btn" type="submit">Update Post</button>
+	            </form>
+	        </section>
         <?php endif; ?>
 
         <section class="box">
             <h2>Add New Post</h2>
-            <form method="post" enctype="multipart/form-data">
-                <input type="hidden" name="action" value="add_post">
-                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+	            <form method="post" enctype="multipart/form-data" class="post-editor-form">
+	                <input type="hidden" name="action" value="add_post">
+	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Title</label>
@@ -629,11 +879,21 @@ if (!function_exists('enma_human_last_run')) {
                             <option value="guide">Guide (Structured)</option>
                         </select>
                     </div>
-                </div>
-                <label>Excerpt (Short summary)</label>
-                <textarea name="excerpt" rows="2" required placeholder="A brief summary for listings..."></textarea>
-                <label>Content (HTML allowed)</label>
-                <textarea id="add_post_content_html" name="content_html" rows="10" placeholder="<p>Full article content here...</p>"></textarea>
+	                </div>
+	                <label>Excerpt (Short summary)</label>
+	                <textarea name="excerpt" rows="2" required placeholder="A brief summary for listings..."></textarea>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Meta Title (Google title)</label>
+	                        <input type="text" name="meta_title" placeholder="Optional SEO title">
+	                    </div>
+	                    <div>
+	                        <label>Meta Description (Google description)</label>
+	                        <textarea name="meta_description" rows="2" placeholder="Optional SEO description"></textarea>
+	                    </div>
+	                </div>
+	                <label>Content (HTML allowed)</label>
+	                <textarea id="add_post_content_html" name="content_html" rows="10" placeholder="<p>Full article content here...</p>"></textarea>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
                         <label>Featured Image URL (Optional)</label>
@@ -642,11 +902,34 @@ if (!function_exists('enma_human_last_run')) {
                     <div>
                         <label>Upload Image (Optional)</label>
                         <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
-                    </div>
-                </div>
-                <button class="btn" type="submit">Publish Post</button>
-            </form>
-        </section>
+	                    </div>
+	                </div>
+	                <div class="post-preview-grid" style="margin:8px 0 14px;">
+	                    <div class="post-preview-card">
+	                        <h3 style="margin:0 0 10px;">Google Preview</h3>
+	                        <div class="serp-preview-url"><?= e(absolute_url('/blog/preview-post')) ?></div>
+	                        <div class="serp-preview-title" data-preview="serp-title">Post title preview</div>
+	                        <p class="serp-preview-desc" data-preview="serp-description">Meta description preview</p>
+	                    </div>
+	                    <div class="post-render-preview">
+	                        <div class="hero-preview">
+	                            <span class="preview-kicker">Post Preview</span>
+	                            <h3 data-preview="hero-title">Post title preview</h3>
+	                            <p class="preview-muted" data-preview="hero-copy">Post excerpt preview</p>
+	                            <div class="preview-hero-media">
+	                                <img data-preview="hero-image" src="" alt="" style="display:none;">
+	                            </div>
+	                        </div>
+	                        <div class="preview-article-body">
+	                            <h4 data-preview="article-title">Post title preview</h4>
+	                            <p class="preview-muted" data-preview="article-copy">Post excerpt preview</p>
+	                            <p data-preview="article-body">Article body preview</p>
+	                        </div>
+	                    </div>
+	                </div>
+	                <button class="btn" type="submit">Publish Post</button>
+	            </form>
+	        </section>
 
         <section class="box">
             <h2>Existing Posts</h2>
@@ -691,8 +974,194 @@ if (!function_exists('enma_human_last_run')) {
                     </tbody>
                 </table>
             <?php endif; ?>
-        </section>
-        <?php elseif ($activeTab === 'analytics'): ?>
+	        </section>
+	        <?php elseif ($activeTab === 'users'): ?>
+	        <?php if ($editingUser): ?>
+	        <section class="box">
+	            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+	                <h2 style="margin:0;">Edit User: <?= e($editingUser['username']) ?></h2>
+	                <a href="<?= e(url('/enma/?tab=users')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
+	            </div>
+	            <form method="post">
+	                <input type="hidden" name="action" value="update_user">
+	                <input type="hidden" name="id" value="<?= (int) $editingUser['id'] ?>">
+	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Email</label>
+	                        <input type="email" name="email" required value="<?= e((string) ($editingUser['email'] ?? '')) ?>">
+	                    </div>
+	                    <div>
+	                        <label>Username</label>
+	                        <input type="text" name="username" required value="<?= e((string) ($editingUser['username'] ?? '')) ?>">
+	                    </div>
+	                </div>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Display Name</label>
+	                        <input type="text" name="display_name" value="<?= e((string) ($editingUser['display_name'] ?? '')) ?>">
+	                    </div>
+	                    <div>
+	                        <label>New Password</label>
+	                        <input type="password" name="password" placeholder="Leave blank to keep current password">
+	                    </div>
+	                </div>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Role</label>
+	                        <select name="role">
+	                            <option value="admin" <?= ($editingUser['role'] ?? '') === 'admin' ? 'selected' : '' ?>>Admin</option>
+	                            <option value="user" <?= ($editingUser['role'] ?? '') === 'user' ? 'selected' : '' ?>>User</option>
+	                        </select>
+	                    </div>
+	                    <div>
+	                        <label>Status</label>
+	                        <select name="status">
+	                            <option value="active" <?= ($editingUser['status'] ?? '') === 'active' ? 'selected' : '' ?>>Active</option>
+	                            <option value="inactive" <?= ($editingUser['status'] ?? '') === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+	                        </select>
+	                    </div>
+	                </div>
+	                <button class="btn" type="submit">Update User</button>
+	            </form>
+	        </section>
+	        <?php endif; ?>
+
+	        <section class="box">
+	            <h2>Add User</h2>
+	            <form method="post">
+	                <input type="hidden" name="action" value="add_user">
+	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Email</label>
+	                        <input type="email" name="email" required>
+	                    </div>
+	                    <div>
+	                        <label>Username</label>
+	                        <input type="text" name="username" required>
+	                    </div>
+	                </div>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Display Name</label>
+	                        <input type="text" name="display_name">
+	                    </div>
+	                    <div>
+	                        <label>Password</label>
+	                        <input type="password" name="password" required minlength="8">
+	                    </div>
+	                </div>
+	                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+	                    <div>
+	                        <label>Role</label>
+	                        <select name="role">
+	                            <option value="admin">Admin</option>
+	                            <option value="user">User</option>
+	                        </select>
+	                    </div>
+	                    <div>
+	                        <label>Status</label>
+	                        <select name="status">
+	                            <option value="active">Active</option>
+	                            <option value="inactive">Inactive</option>
+	                        </select>
+	                    </div>
+	                </div>
+	                <button class="btn" type="submit">Create User</button>
+	            </form>
+	        </section>
+
+	        <section class="box">
+	            <h2>Users</h2>
+	            <form method="get" class="toolbar">
+	                <input type="hidden" name="tab" value="users">
+	                <div class="field">
+	                    <label>Search</label>
+	                    <input type="text" name="user_q" value="<?= e($userSearch) ?>" placeholder="email, username, display name">
+	                </div>
+	                <button class="btn" type="submit">Filter</button>
+	            </form>
+	            <?php if ($allUsers === []): ?>
+	                <div class="empty">No users found for this filter.</div>
+	            <?php else: ?>
+	                <table>
+	                    <thead>
+	                        <tr>
+	                            <th>ID</th>
+	                            <th>Identity</th>
+	                            <th>Role</th>
+	                            <th>Status</th>
+	                            <th>Last Login</th>
+	                            <th>Actions</th>
+	                        </tr>
+	                    </thead>
+	                    <tbody>
+	                    <?php foreach ($allUsers as $userRow): ?>
+	                        <tr>
+	                            <td><?= (int) $userRow['id'] ?></td>
+	                            <td>
+	                                <strong><?= e((string) ($userRow['display_name'] ?: $userRow['username'])) ?></strong><br>
+	                                <span class="muted"><?= e((string) $userRow['username']) ?> · <?= e((string) $userRow['email']) ?></span>
+	                            </td>
+	                            <td><?= e((string) $userRow['role']) ?></td>
+	                            <td><?= e((string) $userRow['status']) ?></td>
+	                            <td><?= e((string) ($userRow['last_login_at'] ?: 'Never')) ?></td>
+	                            <td>
+	                                <a href="<?= e(url('/enma/?tab=users&edit_user=' . $userRow['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
+	                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this user?');">
+	                                    <input type="hidden" name="action" value="delete_user">
+	                                    <input type="hidden" name="id" value="<?= (int) $userRow['id'] ?>">
+	                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+	                                    <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0;font-size:13px;">Delete</button>
+	                                </form>
+	                            </td>
+	                        </tr>
+	                    <?php endforeach; ?>
+	                    </tbody>
+	                </table>
+	            <?php endif; ?>
+	        </section>
+
+	        <section class="box">
+	            <h2>Admin Activity Log</h2>
+	            <?php if ($recentAdminActivity === []): ?>
+	                <div class="empty">No admin activity recorded yet.</div>
+	            <?php else: ?>
+	                <table>
+	                    <thead>
+	                        <tr>
+	                            <th>Date</th>
+	                            <th>Admin</th>
+	                            <th>Action</th>
+	                            <th>Entity</th>
+	                            <th>Details</th>
+	                        </tr>
+	                    </thead>
+	                    <tbody>
+	                    <?php foreach ($recentAdminActivity as $activity): ?>
+	                        <?php
+	                        $details = [];
+	                        if (!empty($activity['details_json'])) {
+	                            $decoded = json_decode((string) $activity['details_json'], true);
+	                            if (is_array($decoded)) {
+	                                $details = $decoded;
+	                            }
+	                        }
+	                        ?>
+	                        <tr>
+	                            <td><?= e((string) ($activity['created_at'] ?? '')) ?></td>
+	                            <td><?= e((string) ($activity['admin_username'] ?? '')) ?></td>
+	                            <td><?= e((string) ($activity['action_key'] ?? '')) ?></td>
+	                            <td><?= e(trim((string) (($activity['entity_type'] ?? '') . ' #' . ($activity['entity_id'] ?? '')), ' #')) ?></td>
+	                            <td><code><?= e($details === [] ? '' : json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></code></td>
+	                        </tr>
+	                    <?php endforeach; ?>
+	                    </tbody>
+	                </table>
+	            <?php endif; ?>
+	        </section>
+	        <?php elseif ($activeTab === 'analytics'): ?>
         <section class="box">
             <h2>Analytics & Seguridad</h2>
             <div class="stats">
@@ -922,6 +1391,7 @@ if (!function_exists('enma_human_last_run')) {
             <p class="muted" style="margin: 0 0 10px;">Only available/working tasks are shown. Last usage is tracked automatically.</p>
             <?php
             $maintenanceGroups = [
+                'seo' => 'SEO',
                 'daily' => 'Daily',
                 'weekly' => 'Weekly',
                 'as_needed' => 'As Needed',

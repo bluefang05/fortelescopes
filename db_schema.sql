@@ -158,6 +158,27 @@ CREATE TABLE IF NOT EXISTS `users` (
   KEY `idx_users_status` (`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- ----------------------------
+-- Table structure for admin_activity_log
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `admin_activity_log` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `admin_user_id` int(10) unsigned DEFAULT NULL,
+  `admin_username` varchar(100) NOT NULL DEFAULT '',
+  `action_key` varchar(80) NOT NULL,
+  `entity_type` varchar(40) NOT NULL DEFAULT '',
+  `entity_id` bigint(20) DEFAULT NULL,
+  `details_json` longtext DEFAULT NULL,
+  `ip_address` varchar(64) NOT NULL DEFAULT '',
+  `user_agent` varchar(255) NOT NULL DEFAULT '',
+  `created_at` varchar(40) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_admin_activity_user` (`admin_user_id`),
+  KEY `idx_admin_activity_action` (`action_key`),
+  KEY `idx_admin_activity_entity` (`entity_type`,`entity_id`),
+  KEY `idx_admin_activity_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ----------------------------

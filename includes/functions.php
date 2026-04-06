@@ -63,6 +63,207 @@ function absolute_url(string $path = '/'): string
     return base_url() . url($path);
 }
 
+function sitemap_lastmod_value(?string $preferred, string $fallbackIso): string
+{
+    $candidate = trim((string) $preferred);
+    if ($candidate === '') {
+        return $fallbackIso;
+    }
+
+    $timestamp = strtotime($candidate);
+    if ($timestamp === false) {
+        return $fallbackIso;
+    }
+
+    return gmdate('c', $timestamp);
+}
+
+function get_sitemap_entries(PDO $pdo): array
+{
+    $nowIso = gmdate('c');
+    $publishedGuides = get_posts($pdo, 'guide', 5000);
+    $publishedPosts = get_posts($pdo, 'post', 5000);
+
+    $latestGuideMod = $publishedGuides !== []
+        ? sitemap_lastmod_value((string) ($publishedGuides[0]['updated_at'] ?? $publishedGuides[0]['published_at'] ?? ''), $nowIso)
+        : $nowIso;
+
+    $latestBlogMod = $publishedPosts !== []
+        ? sitemap_lastmod_value((string) ($publishedPosts[0]['updated_at'] ?? $publishedPosts[0]['published_at'] ?? ''), $nowIso)
+        : $nowIso;
+
+    $entries = [
+        ['loc' => absolute_url('/'), 'lastmod' => $latestGuideMod],
+        ['loc' => absolute_url('/telescopes'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/accessories'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/guides'), 'lastmod' => $latestGuideMod],
+        ['loc' => absolute_url('/blog'), 'lastmod' => $latestBlogMod],
+        ['loc' => absolute_url('/about'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/affiliate-disclosure'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/contact'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/privacy-policy'), 'lastmod' => $nowIso],
+        ['loc' => absolute_url('/terms-of-use'), 'lastmod' => $nowIso],
+    ];
+
+    foreach ($publishedGuides as $guide) {
+        $slug = trim((string) ($guide['slug'] ?? ''));
+        if ($slug === '') {
+            continue;
+        }
+        $entries[] = [
+            'loc' => absolute_url('/' . $slug),
+            'lastmod' => sitemap_lastmod_value((string) ($guide['updated_at'] ?? $guide['published_at'] ?? ''), $nowIso),
+        ];
+    }
+
+    foreach ($publishedPosts as $post) {
+        $slug = trim((string) ($post['slug'] ?? ''));
+        if ($slug === '') {
+            continue;
+        }
+        $entries[] = [
+            'loc' => absolute_url('/blog/' . $slug),
+            'lastmod' => sitemap_lastmod_value((string) ($post['updated_at'] ?? $post['published_at'] ?? ''), $nowIso),
+        ];
+    }
+
+    foreach (get_categories($pdo) as $category) {
+        $categorySlug = trim((string) ($category['category_slug'] ?? ''));
+        if ($categorySlug === '') {
+            continue;
+        }
+        $entries[] = [
+            'loc' => absolute_url('/category/' . $categorySlug),
+            'lastmod' => $nowIso,
+        ];
+    }
+
+    foreach (get_recent_products($pdo, 5000) as $product) {
+        $slug = trim((string) ($product['slug'] ?? ''));
+        if ($slug === '') {
+            continue;
+        }
+        $entries[] = [
+            'loc' => absolute_url('/product/' . $slug),
+            'lastmod' => sitemap_lastmod_value((string) ($product['updated_at'] ?? $product['last_synced_at'] ?? ''), $nowIso),
+        ];
+    }
+
+    return $entries;
+}
+
+function render_sitemap_xml(array $entries): string
+{
+    $nowIso = gmdate('c');
+    $seen = [];
+    $lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ];
+
+    foreach ($entries as $entry) {
+        $loc = trim((string) ($entry['loc'] ?? ''));
+        if ($loc === '' || isset($seen[$loc])) {
+            continue;
+        }
+        $seen[$loc] = true;
+
+        $lastmod = sitemap_lastmod_value((string) ($entry['lastmod'] ?? ''), $nowIso);
+
+        $lines[] = '  <url>';
+        $lines[] = '    <loc>' . e($loc) . '</loc>';
+        $lines[] = '    <lastmod>' . e($lastmod) . '</lastmod>';
+        $lines[] = '  </url>';
+    }
+
+    $lines[] = '</urlset>';
+
+    return implode("\n", $lines);
+}
+
+function indexnow_key_location_url(): string
+{
+    return 'https://' . SITE_DOMAIN . '/' . INDEXNOW_KEY . '.txt';
+}
+
+function indexnow_submit_urls(array $urls): array
+{
+    $cleanUrls = [];
+    foreach ($urls as $url) {
+        $candidate = trim((string) $url);
+        if ($candidate === '' || filter_var($candidate, FILTER_VALIDATE_URL) === false) {
+            continue;
+        }
+        $cleanUrls[$candidate] = true;
+    }
+    $cleanUrls = array_keys($cleanUrls);
+
+    if (INDEXNOW_KEY === '' || $cleanUrls === []) {
+        return ['ok' => false, 'message' => 'IndexNow skipped.'];
+    }
+
+    $payload = json_encode([
+        'host' => SITE_DOMAIN,
+        'key' => INDEXNOW_KEY,
+        'keyLocation' => indexnow_key_location_url(),
+        'urlList' => array_values($cleanUrls),
+    ], JSON_UNESCAPED_SLASHES);
+
+    if (!is_string($payload) || $payload === '') {
+        return ['ok' => false, 'message' => 'IndexNow payload encoding failed.'];
+    }
+
+    $endpoint = 'https://api.indexnow.org/indexnow';
+    $headers = [
+        'Content-Type: application/json; charset=utf-8',
+        'Content-Length: ' . strlen($payload),
+    ];
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init($endpoint);
+        if ($ch === false) {
+            return ['ok' => false, 'message' => 'IndexNow cURL initialization failed.'];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POSTFIELDS => $payload,
+            CURLOPT_TIMEOUT => 10,
+        ]);
+        $response = curl_exec($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false || $statusCode < 200 || $statusCode >= 300) {
+            $message = $curlError !== '' ? $curlError : ('HTTP ' . $statusCode);
+            return ['ok' => false, 'message' => 'IndexNow request failed: ' . $message];
+        }
+
+        return ['ok' => true, 'message' => 'IndexNow notified ' . count($cleanUrls) . ' URL(s).'];
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => implode("\r\n", $headers),
+            'content' => $payload,
+            'timeout' => 10,
+            'ignore_errors' => true,
+        ],
+    ]);
+    $response = @file_get_contents($endpoint, false, $context);
+    $statusLine = $http_response_header[0] ?? '';
+
+    if ($response === false || !preg_match('/\s2\d\d\s/', $statusLine)) {
+        return ['ok' => false, 'message' => 'IndexNow request failed: ' . ($statusLine !== '' ? $statusLine : 'network error')];
+    }
+
+    return ['ok' => true, 'message' => 'IndexNow notified ' . count($cleanUrls) . ' URL(s).'];
+}
+
 function slugify(string $value): string
 {
     $value = strtolower(trim($value));

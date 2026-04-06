@@ -184,6 +184,68 @@ function init_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
 
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS users (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(255) NOT NULL,
+            username VARCHAR(100) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            display_name VARCHAR(100) NULL,
+            avatar_url TEXT NULL,
+            role VARCHAR(20) NOT NULL DEFAULT \'user\',
+            status VARCHAR(20) NOT NULL DEFAULT \'active\',
+            last_login_at VARCHAR(40) NULL,
+            created_at VARCHAR(40) NOT NULL,
+            updated_at VARCHAR(40) NOT NULL,
+            UNIQUE KEY uq_users_email (email),
+            UNIQUE KEY uq_users_username (username),
+            KEY idx_users_email (email),
+            KEY idx_users_username (username),
+            KEY idx_users_status (status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS admin_activity_log (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            admin_user_id INT UNSIGNED NULL,
+            admin_username VARCHAR(100) NOT NULL DEFAULT \'\',
+            action_key VARCHAR(80) NOT NULL,
+            entity_type VARCHAR(40) NOT NULL DEFAULT \'\',
+            entity_id BIGINT NULL,
+            details_json LONGTEXT NULL,
+            ip_address VARCHAR(64) NOT NULL DEFAULT \'\',
+            user_agent VARCHAR(255) NOT NULL DEFAULT \'\',
+            created_at VARCHAR(40) NOT NULL,
+            KEY idx_admin_activity_user (admin_user_id),
+            KEY idx_admin_activity_action (action_key),
+            KEY idx_admin_activity_entity (entity_type, entity_id),
+            KEY idx_admin_activity_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+    );
+
+    $usersCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+    if ($usersCount === 0) {
+        $stmt = $pdo->prepare(
+            'INSERT INTO users (
+                email, username, password_hash, display_name, role, status, created_at, updated_at
+            ) VALUES (
+                :email, :username, :password_hash, :display_name, :role, :status, :created_at, :updated_at
+            )'
+        );
+        $now = now_iso();
+        $stmt->execute([
+            ':email' => 'admin@fortelescopes.local',
+            ':username' => 'admin',
+            ':password_hash' => password_hash('change-this-now', PASSWORD_DEFAULT),
+            ':display_name' => 'Administrator',
+            ':role' => 'admin',
+            ':status' => 'active',
+            ':created_at' => $now,
+            ':updated_at' => $now,
+        ]);
+    }
+
     $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'post_type\'');
     $stmt->execute();
     if (!$stmt->fetch()) {

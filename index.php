@@ -75,57 +75,7 @@ if (count($segments) === 1 && $segments[0] === 'robots.txt') {
 
 if (count($segments) === 1 && $segments[0] === 'sitemap.xml') {
     header('Content-Type: application/xml; charset=UTF-8');
-    $nowIso = gmdate('c');
-    $urls = [
-        ['loc' => absolute_url('/'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/telescopes'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/accessories'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/best-beginner-telescopes'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/best-telescope-accessories'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/best-telescopes-under-500'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/guides'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/about'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/affiliate-disclosure'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/contact'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/privacy-policy'), 'lastmod' => $nowIso],
-        ['loc' => absolute_url('/terms-of-use'), 'lastmod' => $nowIso],
-    ];
-    $cats = get_categories($pdo);
-    foreach ($cats as $cat) {
-        $urls[] = [
-            'loc' => absolute_url('/category/' . $cat['category_slug']),
-            'lastmod' => $nowIso,
-        ];
-    }
-    foreach (get_recent_products($pdo, 5000) as $product) {
-        $urls[] = [
-            'loc' => absolute_url('/product/' . $product['slug']),
-            'lastmod' => (string) ($product['updated_at'] ?? $product['last_synced_at'] ?? $nowIso),
-        ];
-    }
-
-    echo "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-    echo "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n";
-    $seen = [];
-    foreach ($urls as $entry) {
-        $loc = (string) ($entry['loc'] ?? '');
-        if ($loc === '' || isset($seen[$loc])) {
-            continue;
-        }
-        $seen[$loc] = true;
-        $lastmod = (string) ($entry['lastmod'] ?? $nowIso);
-        $lastmodTs = strtotime($lastmod);
-        if ($lastmodTs !== false) {
-            $lastmod = gmdate('c', $lastmodTs);
-        } else {
-            $lastmod = $nowIso;
-        }
-        echo "  <url>\n";
-        echo "    <loc>" . e($loc) . "</loc>\n";
-        echo "    <lastmod>" . e($lastmod) . "</lastmod>\n";
-        echo "  </url>\n";
-    }
-    echo "</urlset>";
+    echo render_sitemap_xml(get_sitemap_entries($pdo));
     exit;
 }
 
@@ -290,7 +240,7 @@ if ($segments === []) {
         $data['post'] = $post;
         $data['otherGuides'] = get_posts($pdo, 'guide', 3);
         $template = __DIR__ . '/templates/post.php';
-        $pageTitle = $post['title'] . ' | ' . APP_NAME;
+        $pageTitle = (($post['meta_title'] ?? '') !== '' ? $post['meta_title'] : $post['title']) . ' | ' . APP_NAME;
         $meta['description'] = $post['meta_description'] ?: $post['excerpt'];
         $meta['image'] = $post['featured_image'] ?: absolute_url('/assets/logo/1024.png');
         $canonicalPath = '/blog/' . $postSlug;
