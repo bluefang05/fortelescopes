@@ -50,7 +50,7 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
             <div class="trust-box">Checking now helps avoid stale price assumptions</div>
         </div>
         <p style="margin: 0 0 12px;">
-            <a class="btn amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price on Amazon</a>
+            <a class="btn amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
         </p>
         <p class="muted" style="font-size: 13px; margin: 0;">ASIN: <?= e($product['asin']) ?> | External merchant checkout applies.</p>
     </div>
