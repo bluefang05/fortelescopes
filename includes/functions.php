@@ -1689,7 +1689,6 @@ apply_security_checks();
  */
 function json_ld_for_product_legacy(array $product): array
 {
-    $price = isset($product['price_amount']) ? (float) $product['price_amount'] : null;
     $imageUrl = product_image_url($product);
     if (filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
         $imageUrl = absolute_url($imageUrl);
@@ -1705,14 +1704,9 @@ function json_ld_for_product_legacy(array $product): array
         'brand' => ['@type' => 'Brand', 'name' => APP_NAME],
         'offers' => [
             '@type' => 'Offer',
-            'priceCurrency' => $product['price_currency'] ?? 'USD',
             'url' => amazon_affiliate_url((string) ($product['affiliate_url'] ?? '')),
         ],
     ];
-
-    if ($price !== null && $price > 0) {
-        $out['offers']['price'] = number_format($price, 2, '.', '');
-    }
 
     return $out;
 }

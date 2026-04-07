@@ -20,7 +20,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
     $title = trim((string) ($_POST['title'] ?? ''));
     $categoryName = trim((string) ($_POST['category_name'] ?? ''));
-    $price = trim((string) ($_POST['price_amount'] ?? ''));
     $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
     $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
     $description = trim((string) ($_POST['description'] ?? ''));
@@ -52,11 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
             $stmt = $pdo->prepare(
                 'INSERT INTO products (
                     asin, slug, title, description, category_slug, category_name,
-                    price_amount, price_currency, image_url, affiliate_url, status,
+                    image_url, affiliate_url, status,
                     last_synced_at, created_at, updated_at
                  ) VALUES (
                     :asin, :slug, :title, :description, :category_slug, :category_name,
-                    :price_amount, :price_currency, :image_url, :affiliate_url, :status,
+                    :image_url, :affiliate_url, :status,
                     :last_synced_at, :created_at, :updated_at
                  )'
             );
@@ -68,8 +67,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 ':description' => $description,
                 ':category_slug' => $categorySlug,
                 ':category_name' => $categoryName,
-                ':price_amount' => is_numeric($price) ? (float) $price : null,
-                ':price_currency' => 'USD',
                 ':image_url' => $imageUrl,
                 ':affiliate_url' => $affiliateUrl,
                 ':status' => 'published',
@@ -109,7 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     $asin = strtoupper(trim((string) ($_POST['asin'] ?? '')));
     $title = trim((string) ($_POST['title'] ?? ''));
     $categoryName = trim((string) ($_POST['category_name'] ?? ''));
-    $price = trim((string) ($_POST['price_amount'] ?? ''));
     $imageUrl = trim((string) ($_POST['image_url'] ?? ''));
     $affiliateUrl = trim((string) ($_POST['affiliate_url'] ?? ''));
     $description = trim((string) ($_POST['description'] ?? ''));
@@ -135,7 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                     description = :description, 
                     category_slug = :category_slug, 
                     category_name = :category_name, 
-                    price_amount = :price_amount, 
                     image_url = :image_url, 
                     affiliate_url = :affiliate_url, 
                     updated_at = :updated_at 
@@ -148,7 +143,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 ':description' => $description,
                 ':category_slug' => $categorySlug,
                 ':category_name' => $categoryName,
-                ':price_amount' => is_numeric($price) ? (float) $price : null,
                 ':image_url' => $imageUrl,
                 ':affiliate_url' => $affiliateUrl,
                 ':updated_at' => $now,

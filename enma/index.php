@@ -146,7 +146,7 @@ if ($authenticated && $activeTab === 'products') {
         $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
         $productsPage = min($productsPage, $productsTotalPages);
         $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
+            'SELECT id, asin, title, category_name, last_synced_at, affiliate_url
              FROM products
              WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q
              ORDER BY id DESC
@@ -162,7 +162,7 @@ if ($authenticated && $activeTab === 'products') {
         $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
         $productsPage = min($productsPage, $productsTotalPages);
         $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, price_amount, last_synced_at, affiliate_url
+            'SELECT id, asin, title, category_name, last_synced_at, affiliate_url
              FROM products
              ORDER BY id DESC
              LIMIT :limit OFFSET :offset'
@@ -869,10 +869,6 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <label>Category Name</label>
                         <input type="text" name="category_name" required value="<?= e($editingProduct['category_name']) ?>">
                     </div>
-                    <div>
-                        <label>Price (USD)</label>
-                        <input type="number" name="price_amount" step="0.01" min="0" value="<?= e((string)$editingProduct['price_amount']) ?>">
-                    </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
@@ -912,10 +908,6 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <div>
                         <label>Category Name</label>
                         <input type="text" name="category_name" required>
-                    </div>
-                    <div>
-                        <label>Price (USD)</label>
-                        <input type="number" name="price_amount" step="0.01" min="0">
                     </div>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
@@ -970,7 +962,6 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <td><?= e($item['asin']) ?></td>
                         <td><?= e($item['title']) ?></td>
                         <td><?= e($item['category_name']) ?></td>
-                        <td><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, 'USD')) ?></td>
                         <td><?= amazon_tag_present((string) ($item['affiliate_url'] ?? '')) ? 'OK' : 'Missing' ?></td>
                         <td>
                             <a href="<?= e(url('/enma/?tab=products&edit_product=' . $item['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
