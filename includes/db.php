@@ -89,8 +89,6 @@ function init_schema(PDO $pdo): void
             description TEXT NULL,
             category_slug VARCHAR(120) NOT NULL,
             category_name VARCHAR(120) NOT NULL,
-            price_amount DECIMAL(10,2) NULL,
-            price_currency VARCHAR(10) NOT NULL DEFAULT \'USD\',
             image_url TEXT NULL,
             affiliate_url TEXT NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT \'published\',

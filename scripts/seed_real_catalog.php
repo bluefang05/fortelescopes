@@ -42,11 +42,11 @@ if (DB_DRIVER === 'mysql') {
     $stmt = $pdo->prepare(
         'INSERT INTO products (
             asin, slug, title, description, category_slug, category_name,
-            price_amount, price_currency, image_url, affiliate_url, status,
+            image_url, affiliate_url, status,
             last_synced_at, created_at, updated_at
         ) VALUES (
             :asin, :slug, :title, :description, :category_slug, :category_name,
-            :price_amount, :price_currency, :image_url, :affiliate_url, :status,
+            :image_url, :affiliate_url, :status,
             :last_synced_at, :created_at, :updated_at
         )
         ON DUPLICATE KEY UPDATE
@@ -55,8 +55,6 @@ if (DB_DRIVER === 'mysql') {
             description = VALUES(description),
             category_slug = VALUES(category_slug),
             category_name = VALUES(category_name),
-            price_amount = VALUES(price_amount),
-            price_currency = VALUES(price_currency),
             image_url = VALUES(image_url),
             affiliate_url = VALUES(affiliate_url),
             status = VALUES(status),
@@ -67,11 +65,11 @@ if (DB_DRIVER === 'mysql') {
     $stmt = $pdo->prepare(
         'INSERT INTO products (
             asin, slug, title, description, category_slug, category_name,
-            price_amount, price_currency, image_url, affiliate_url, status,
+            image_url, affiliate_url, status,
             last_synced_at, created_at, updated_at
         ) VALUES (
             :asin, :slug, :title, :description, :category_slug, :category_name,
-            :price_amount, :price_currency, :image_url, :affiliate_url, :status,
+            :image_url, :affiliate_url, :status,
             :last_synced_at, :created_at, :updated_at
         )
         ON CONFLICT(asin) DO UPDATE SET
@@ -80,8 +78,6 @@ if (DB_DRIVER === 'mysql') {
             description = excluded.description,
             category_slug = excluded.category_slug,
             category_name = excluded.category_name,
-            price_amount = excluded.price_amount,
-            price_currency = excluded.price_currency,
             image_url = excluded.image_url,
             affiliate_url = excluded.affiliate_url,
             status = excluded.status,
@@ -105,8 +101,6 @@ foreach ($products as $p) {
         ':description' => $p['focus'],
         ':category_slug' => $categorySlug,
         ':category_name' => $categoryName,
-        ':price_amount' => null,
-        ':price_currency' => 'USD',
         ':image_url' => $p['img'],
         ':affiliate_url' => $p['url'],
         ':status' => 'published',
