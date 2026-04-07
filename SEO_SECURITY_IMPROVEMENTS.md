@@ -107,7 +107,7 @@ This document describes the SEO and security enhancements implemented to improve
     </div>
     
     <!-- CTA Button -->
-    <a href="[AFFILIATE_LINK]" style="display: block; width: 100%; max-width: 400px; background: linear-gradient(140deg, #ff7a1a 0%, #ff5c00 100%); color: #fff; text-align: center; padding: 16px 24px; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 16px; margin: 0 auto 16px; box-shadow: 0 10px 24px rgba(255, 122, 26, 0.3);">Check Price on Amazon</a>
+    <a href="[AFFILIATE_LINK]" style="display: block; width: 100%; max-width: 400px; background: linear-gradient(140deg, #ff7a1a 0%, #ff5c00 100%); color: #fff; text-align: center; padding: 16px 24px; border-radius: 12px; text-decoration: none; font-weight: 800; font-size: 16px; margin: 0 auto 16px; box-shadow: 0 10px 24px rgba(255, 122, 26, 0.3);">View on Amazon</a>
     
     <!-- Trust Signal -->
     <p style="text-align: center; color: rgba(241, 239, 231, 0.7); font-size: 12px; margin: 0;">✓ Verified purchase links | ✓ Updated pricing | ✓ In stock</p>
