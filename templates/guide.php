@@ -117,14 +117,12 @@ if ($fullGuideHtmlRaw !== '') {
             <span class="tier-tag tier-top">Top Pick</span>
             <h4><?= e($top['title']) ?></h4>
             <p><?= e($bestForMap[$top['asin']] ?? product_best_for($top)) ?></p>
-            <strong><?= e(money($top['price_amount'] !== null ? (float) $top['price_amount'] : null, $top['price_currency'])) ?></strong>
         </article>
         <?php if ($budget !== null): ?>
         <article class="tier-card">
             <span class="tier-tag tier-budget">Budget Pick</span>
             <h4><?= e($budget['title']) ?></h4>
             <p><?= e($bestForMap[$budget['asin']] ?? product_best_for($budget)) ?></p>
-            <strong><?= e(money($budget['price_amount'] !== null ? (float) $budget['price_amount'] : null, $budget['price_currency'])) ?></strong>
         </article>
         <?php endif; ?>
         <?php if ($premium !== null): ?>
@@ -132,7 +130,6 @@ if ($fullGuideHtmlRaw !== '') {
             <span class="tier-tag tier-premium">Premium Pick</span>
             <h4><?= e($premium['title']) ?></h4>
             <p><?= e($bestForMap[$premium['asin']] ?? product_best_for($premium)) ?></p>
-            <strong><?= e(money($premium['price_amount'] !== null ? (float) $premium['price_amount'] : null, $premium['price_currency'])) ?></strong>
         </article>
         <?php endif; ?>
     </div>
@@ -141,7 +138,7 @@ if ($fullGuideHtmlRaw !== '') {
 
 <h2 class="section-title">Recommended shortlist</h2>
 <p class="muted">
-    <?= $isBeginnerGuide ? 'These real picks are suitable for first-time stargazers. Check details and current availability on Amazon before buying.' : ($isAccessoriesGuide ? 'These accessories are selected for practical field impact. Start with one high-impact upgrade and scale gradually.' : ($isUnder500Guide ? 'These real models are commonly considered in the under-$500 category. Verify current price before purchase.' : 'These are selected for beginner usability and conversion intent. Open detail pages for use-case fit before checkout.')) ?>
+    <?= $isBeginnerGuide ? 'These real picks are suitable for first-time stargazers. Check details and current availability on Amazon before buying.' : ($isAccessoriesGuide ? 'These accessories are selected for practical field impact. Start with one high-impact upgrade and scale gradually.' : ($isUnder500Guide ? 'These real models are commonly considered in the under-$500 category. Verify current availability before purchase.' : 'These are selected for beginner usability and conversion intent. Open detail pages for use-case fit before checkout.')) ?>
 </p>
 
 <div class="grid">
@@ -158,11 +155,7 @@ if ($fullGuideHtmlRaw !== '') {
                 <?php if ($isBeginnerGuide || $isAccessoriesGuide || $isUnder500Guide): ?>
                     <p class="muted" style="margin: 8px 0 0; font-size: 13px;"><?= e($bestForMap[$item['asin']] ?? product_best_for($item)) ?></p>
                 <?php endif; ?>
-                <div class="price-line">
-                    <span class="price"><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, $item['price_currency'])) ?></span>
-                    <span class="hint">Check availability on Amazon</span>
-                </div>
-                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= $idx === 0 ? 'Check price on Amazon' : 'View on Amazon' ?></a>
+                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
                 <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
         </article>
@@ -253,10 +246,10 @@ if ($fullGuideHtmlRaw !== '') {
 <section class="panel" style="margin-top: 18px;">
     <h2 class="section-title" style="margin-top:0;">Final recommendation</h2>
     <p class="muted" style="margin-bottom: 10px;">
-        <?= e((string) ($guide['final_recommendation'] ?? 'For most first-time stargazers, start with a simple and stable model that you can use consistently from week one. If you are still comparing options, open the top pick first and check current price and availability on Amazon.')) ?>
+        <?= e((string) ($guide['final_recommendation'] ?? 'For most first-time stargazers, start with a simple and stable model that you can use consistently from week one. If you are still comparing options, open the top pick first and verify availability on Amazon.')) ?>
     </p>
     <?php if ($top !== null): ?>
-        <a class="btn amazon-btn" href="<?= e(outbound_url((string) $top['affiliate_url'], (int) ($top['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= e((string) ($guide['cta_text'] ?? 'Check current price on Amazon')) ?></a>
+        <a class="btn amazon-btn" href="<?= e(outbound_url((string) $top['affiliate_url'], (int) ($top['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= e((string) ($guide['cta_text'] ?? 'View on Amazon')) ?></a>
         <?php if (!empty($guide['cta_note'])): ?>
             <p class="muted" style="margin-top: 8px; font-size: 13px;"><?= e((string) $guide['cta_note']) ?></p>
         <?php endif; ?>
