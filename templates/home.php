@@ -28,11 +28,7 @@ $accessories = $data['accessories'] ?? [];
                     <span class="badge"><?= e($item['category_name']) ?></span>
                     <h3><?= e($item['title']) ?></h3>
                     <p class="card-copy"><?= e($item['description']) ?></p>
-                    <div class="price-line">
-                        <span class="price"><?= e(money($item['price_amount'] !== null ? (float)$item['price_amount'] : null, $item['price_currency'])) ?></span>
-                        <span class="hint">Check availability on Amazon</span>
-                    </div>
-                    <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check price on Amazon</a>
+                    <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
                     <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">See details</a></p>
                 </div>
             </article>
@@ -55,10 +51,6 @@ $accessories = $data['accessories'] ?? [];
                     <span class="badge"><?= e($item['category_name']) ?></span>
                     <h3><?= e($item['title']) ?></h3>
                     <p class="card-copy"><?= e($item['description']) ?></p>
-                    <div class="price-line">
-                        <span class="price"><?= e(money($item['price_amount'] !== null ? (float)$item['price_amount'] : null, $item['price_currency'])) ?></span>
-                        <span class="hint">Check availability on Amazon</span>
-                    </div>
                     <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
                     <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">See details</a></p>
                 </div>

@@ -40,14 +40,10 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
             </div>
         </div>
 
-        <div class="price-line" style="margin: 14px 0 16px;">
-            <span class="price"><?= e(money($product['price_amount'] !== null ? (float) $product['price_amount'] : null, $product['price_currency'])) ?></span>
-            <span class="hint">Check availability on Amazon</span>
-        </div>
         <div class="trust-strip" style="margin-bottom: 12px;">
             <div class="trust-box">Price and availability can change anytime</div>
             <div class="trust-box">Secure checkout handled by Amazon</div>
-            <div class="trust-box">Checking now helps avoid stale price assumptions</div>
+            <div class="trust-box">Checking now helps avoid stale assumptions</div>
         </div>
         <p style="margin: 0 0 12px;">
             <a class="btn amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
@@ -80,5 +76,5 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
     </div>
 </section>
 
-<a class="mobile-sticky-cta amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">Check Price Now - <?= e(money($product['price_amount'] !== null ? (float) $product['price_amount'] : null, $product['price_currency'])) ?> - <?= e($relativeUpdate) ?></a>
+<a class="mobile-sticky-cta amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon - <?= e($relativeUpdate) ?></a>
 

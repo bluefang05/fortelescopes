@@ -21,19 +21,19 @@ $tiers = pick_tier_products($products);
             <span class="tier-tag tier-top">Top Pick</span>
             <h4><?= e($tiers['top']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['top'])) ?></p>
-            <strong><?= e(money($tiers['top']['price_amount'] !== null ? (float) $tiers['top']['price_amount'] : null, $tiers['top']['price_currency'])) ?></strong>
+            
         </article>
         <article class="tier-card">
             <span class="tier-tag tier-budget">Budget Pick</span>
             <h4><?= e($tiers['budget']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['budget'])) ?></p>
-            <strong><?= e(money($tiers['budget']['price_amount'] !== null ? (float) $tiers['budget']['price_amount'] : null, $tiers['budget']['price_currency'])) ?></strong>
+            
         </article>
         <article class="tier-card">
             <span class="tier-tag tier-premium">Premium Pick</span>
             <h4><?= e($tiers['premium']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['premium'])) ?></p>
-            <strong><?= e(money($tiers['premium']['price_amount'] !== null ? (float) $tiers['premium']['price_amount'] : null, $tiers['premium']['price_currency'])) ?></strong>
+            
         </article>
     </div>
 <?php endif; ?>
@@ -54,12 +54,8 @@ $tiers = pick_tier_products($products);
                 <span class="badge"><?= e($item['category_name']) ?></span>
                 <h3><?= e($item['title']) ?></h3>
                 <p class="card-copy"><?= e($item['description']) ?></p>
-                <div class="price-line">
-                    <span class="price"><?= e(money($item['price_amount'] !== null ? (float) $item['price_amount'] : null, $item['price_currency'])) ?></span>
-                    <span class="hint">Check availability on Amazon</span>
-                </div>
                 <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">
-                    <?= $idx === 0 ? 'Check price on Amazon' : 'See details on Amazon' ?>
+                    <?= $idx === 0 ? 'View on Amazon' : 'View on Amazon' ?>
                 </a>
                 <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
