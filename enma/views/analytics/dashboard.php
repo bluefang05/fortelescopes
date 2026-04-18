@@ -3,6 +3,35 @@
 $labelsJson = $data['chart_labels_json'] ?? '[]';
 $valuesJson = $data['chart_values_json'] ?? '[]';
 $user = $data['user']['username'] ?? 'Admin';
+$topCountries = $data['top_countries'] ?? [];
+$topSources = $data['top_sources'] ?? [];
+$topReferrers = $data['top_referrers'] ?? [];
+$originBase = max(1, (int) ($data['stats']['total_views'] ?? 0));
+
+$countryNames = [
+    'US' => 'Estados Unidos',
+    'CL' => 'Chile',
+    'MX' => 'Mexico',
+    'AR' => 'Argentina',
+    'CO' => 'Colombia',
+    'PE' => 'Peru',
+    'ES' => 'Espana',
+    'BR' => 'Brasil',
+    'UNK' => 'Desconocido',
+];
+$sourceNames = [
+    'direct' => 'Directo',
+    'organic' => 'Busqueda organica',
+    'social' => 'Redes sociales',
+    'referral' => 'Referido (otro sitio)',
+    'email' => 'Email',
+    'paid' => 'Publicidad pagada',
+];
+
+$pct = static function ($count, $base): string {
+    $value = $base > 0 ? ((int) $count * 100 / $base) : 0;
+    return number_format($value, 1) . '%';
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -44,6 +73,9 @@ $user = $data['user']['username'] ?? 'Admin';
         .tab-pane.active { display: block; }
         .chart-wrap { height: 340px; }
         .mono { font-family: Consolas, Menlo, Monaco, monospace; font-size: .82rem; }
+        .explain { background: #edf4ff; border: 1px solid #cfe1ff; color: #1c3f6e; border-radius: 10px; padding: 12px; }
+        .origin-list li { padding-left: 0; padding-right: 0; }
+        .origin-list .count { min-width: 110px; text-align: right; }
     </style>
 </head>
 <body>
@@ -136,6 +168,84 @@ $user = $data['user']['username'] ?? 'Admin';
             </section>
 
             <section id="traffic" class="tab-pane">
+                <div class="card-ui p-3 mb-3">
+                    <h6 class="mb-2">De donde vienen tus visitas</h6>
+                    <p class="explain mb-3">
+                        Esta seccion resume origen geografico, tipo de fuente y sitio de referencia. Asi evitas asumir y tomas decisiones con datos reales.
+                    </p>
+
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <div class="border rounded-3 p-3 h-100">
+                                <h6 class="mb-3">Paises (top)</h6>
+                                <ul class="list-group list-group-flush origin-list small">
+                                    <?php if (empty($topCountries)): ?>
+                                        <li class="list-group-item text-muted">Sin datos de pais por ahora.</li>
+                                    <?php else: ?>
+                                        <?php foreach ($topCountries as $row): ?>
+                                            <?php
+                                            $code = strtoupper((string) ($row['country_code'] ?? 'UNK'));
+                                            $name = $countryNames[$code] ?? $code;
+                                            $count = (int) ($row['count'] ?? 0);
+                                            ?>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span><?= htmlspecialchars($name) ?> <small class="text-muted">(<?= htmlspecialchars($code) ?>)</small></span>
+                                                <span class="count text-muted"><?= number_format($count) ?> (<?= $pct($count, $originBase) ?>)</span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-4">
+                            <div class="border rounded-3 p-3 h-100">
+                                <h6 class="mb-3">Fuente de trafico</h6>
+                                <ul class="list-group list-group-flush origin-list small">
+                                    <?php if (empty($topSources)): ?>
+                                        <li class="list-group-item text-muted">Sin datos de fuente por ahora.</li>
+                                    <?php else: ?>
+                                        <?php foreach ($topSources as $row): ?>
+                                            <?php
+                                            $type = strtolower((string) ($row['source_type'] ?? 'direct'));
+                                            $name = $sourceNames[$type] ?? ucfirst($type);
+                                            $count = (int) ($row['count'] ?? 0);
+                                            ?>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span><?= htmlspecialchars($name) ?></span>
+                                                <span class="count text-muted"><?= number_format($count) ?> (<?= $pct($count, $originBase) ?>)</span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-4">
+                            <div class="border rounded-3 p-3 h-100">
+                                <h6 class="mb-3">Sitios que te enviaron trafico</h6>
+                                <ul class="list-group list-group-flush origin-list small">
+                                    <?php if (empty($topReferrers)): ?>
+                                        <li class="list-group-item text-muted">Sin datos de referidos por ahora.</li>
+                                    <?php else: ?>
+                                        <?php foreach ($topReferrers as $row): ?>
+                                            <?php
+                                            $host = (string) ($row['referrer_host'] ?? 'direct');
+                                            $hostLabel = $host === '' ? 'direct' : $host;
+                                            $count = (int) ($row['count'] ?? 0);
+                                            ?>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span class="text-truncate" style="max-width: 200px;" title="<?= htmlspecialchars($hostLabel) ?>"><?= htmlspecialchars($hostLabel) ?></span>
+                                                <span class="count text-muted"><?= number_format($count) ?> (<?= $pct($count, $originBase) ?>)</span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card-ui p-3">
                     <h6 class="mb-3">Recent traffic rows</h6>
                     <div class="table-responsive">

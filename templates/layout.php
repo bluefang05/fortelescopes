@@ -22,6 +22,12 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
     <meta name="twitter:title" content="<?= e($pageTitle) ?>">
     <meta name="twitter:description" content="<?= e($meta['description'] ?? '') ?>">
     <meta name="twitter:image" content="<?= e($meta['image'] ?? '') ?>">
+    <?php if (!empty($meta['prev_url'])): ?>
+        <link rel="prev" href="<?= e((string) $meta['prev_url']) ?>">
+    <?php endif; ?>
+    <?php if (!empty($meta['next_url'])): ?>
+        <link rel="next" href="<?= e((string) $meta['next_url']) ?>">
+    <?php endif; ?>
     <link rel="icon" type="image/png" href="<?= e(url('/assets/logo/logo.png')) ?>">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= e(url('/assets/logo/32.png')) ?>">
     <link rel="icon" type="image/png" sizes="192x192" href="<?= e(url('/assets/logo/192.png')) ?>">
@@ -191,6 +197,17 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
             border-radius: 999px;
             padding: 6px 10px;
             text-transform: uppercase;
+        }
+        .draft-preview-bar {
+            max-width: 1180px;
+            margin: 8px auto 0;
+            padding: 10px 14px;
+            border-radius: 12px;
+            border: 1px solid #f6c89a;
+            background: #fff3df;
+            color: #7d2d00;
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .hero h1, .hero h2 {
@@ -392,6 +409,56 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 14px 24px rgba(255, 122, 26, 0.4);
+        }
+
+        .pagination {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-info {
+            font-size: 13px;
+            color: var(--text-soft);
+            font-weight: 700;
+        }
+
+        .pagination-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 38px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 800;
+            text-decoration: none;
+            border: 1px solid #d2d8e2;
+            background: #fff;
+            color: #12213a;
+            transition: transform 180ms ease, border-color 180ms ease;
+        }
+
+        .pagination-link:hover {
+            transform: translateY(-1px);
+            border-color: #b4bfce;
+        }
+
+        .pagination-link.active {
+            background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 8px 18px rgba(255, 122, 26, 0.28);
         }
 
         .amazon-btn {
@@ -894,6 +961,9 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         <a href="<?= e(url('/contact')) ?>">Contact</a>
     </nav>
 </header>
+<?php if (!empty($draftPreviewNotice)): ?>
+    <div class="draft-preview-bar"><?= e((string) $draftPreviewNotice) ?></div>
+<?php endif; ?>
 <main>
     <?php if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1): ?>
         <nav aria-label="Breadcrumb" style="margin: 0 0 12px; font-size: 13px; color: #334155;">

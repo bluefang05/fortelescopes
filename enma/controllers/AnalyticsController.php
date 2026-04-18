@@ -19,6 +19,9 @@ class AnalyticsController {
             'stats' => $analytics->getDashboardStats(),
             'chart_data' => $analytics->getTrafficChartData(),
             'top_agents' => $analytics->getTopUserAgents(),
+            'top_countries' => $analytics->getTopCountries(),
+            'top_sources' => $analytics->getTopTrafficSources(),
+            'top_referrers' => $analytics->getTopReferrers(),
             'suspicious_ips' => $analytics->getSuspiciousIPs(),
             'recent_logs' => $analytics->getRecentLogs(50),
             'user' => Auth::user()

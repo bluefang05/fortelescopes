@@ -78,6 +78,7 @@ if (!in_array($activeTab, ['overview', 'products', 'posts', 'users', 'views', 'a
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
 $viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
+$postAutosaveEnabled = !empty($postAutosaveEnabled);
 
 if (!function_exists('enma_page_value')) {
     function enma_page_value(string $key): int
@@ -125,6 +126,19 @@ if (!function_exists('enma_render_pagination')) {
         $html .= '</div>';
 
         return $html;
+    }
+}
+
+if (!function_exists('enma_post_public_path')) {
+    function enma_post_public_path(array $post): string
+    {
+        $slug = trim((string) ($post['slug'] ?? ''));
+        if ($slug === '') {
+            return '';
+        }
+
+        $postType = trim((string) ($post['post_type'] ?? 'post'));
+        return $postType === 'guide' ? '/' . $slug : '/blog/' . $slug;
     }
 }
 
@@ -258,16 +272,36 @@ $postsPerPage = 20;
 $postsTotal = 0;
 $postsTotalPages = 1;
 $allPosts = [];
+$postsStatusFilter = $authenticated ? strtolower(trim((string) ($_GET['posts_status'] ?? 'all'))) : 'all';
+if (!in_array($postsStatusFilter, ['all', 'published', 'draft'], true)) {
+    $postsStatusFilter = 'all';
+}
 if ($authenticated && $activeTab === 'posts') {
-    $postsTotal = (int) $pdo->query('SELECT COUNT(*) FROM posts')->fetchColumn();
+    $whereSql = '';
+    if ($postsStatusFilter !== 'all') {
+        $whereSql = ' WHERE status = :status';
+    }
+
+    $countSql = 'SELECT COUNT(*) FROM posts' . $whereSql;
+    $countStmt = $pdo->prepare($countSql);
+    if ($postsStatusFilter !== 'all') {
+        $countStmt->bindValue(':status', $postsStatusFilter, PDO::PARAM_STR);
+    }
+    $countStmt->execute();
+    $postsTotal = (int) $countStmt->fetchColumn();
+
     $postsTotalPages = enma_total_pages($postsTotal, $postsPerPage);
     $postsPage = min($postsPage, $postsTotalPages);
     $stmt = $pdo->prepare(
         'SELECT id, title, slug, post_type, status, published_at
          FROM posts
-         ORDER BY published_at DESC, id DESC
+         ' . $whereSql . '
+         ORDER BY (status = "draft") DESC, published_at DESC, id DESC
          LIMIT :limit OFFSET :offset'
     );
+    if ($postsStatusFilter !== 'all') {
+        $stmt->bindValue(':status', $postsStatusFilter, PDO::PARAM_STR);
+    }
     $stmt->bindValue(':limit', $postsPerPage, PDO::PARAM_INT);
     $stmt->bindValue(':offset', ($postsPage - 1) * $postsPerPage, PDO::PARAM_INT);
     $stmt->execute();
@@ -337,11 +371,20 @@ if (!function_exists('enma_human_last_run')) {
     }
 }
 
+if (!function_exists('enma_signed_number')) {
+    function enma_signed_number(float $value, int $decimals = 0): string
+    {
+        $normalized = round($value, $decimals);
+        $prefix = $normalized > 0 ? '+' : '';
+        return $prefix . number_format($normalized, $decimals);
+    }
+}
+
 $productsPagination = $authenticated && $activeTab === 'products'
     ? enma_render_pagination('products', 'products_page', $productsPage, $productsTotalPages, $productQuery !== '' ? ['q' => $productQuery] : [])
     : '';
 $postsPagination = $authenticated && $activeTab === 'posts'
-    ? enma_render_pagination('posts', 'posts_page', $postsPage, $postsTotalPages)
+    ? enma_render_pagination('posts', 'posts_page', $postsPage, $postsTotalPages, $postsStatusFilter !== 'all' ? ['posts_status' => $postsStatusFilter] : [])
     : '';
 $usersPagination = $authenticated && $activeTab === 'users'
     ? enma_render_pagination('users', 'users_page', $usersPage, $usersTotalPages, $userSearch !== '' ? ['user_q' => $userSearch] : [])
@@ -360,6 +403,17 @@ $viewsTopPagesAll = $viewsDashboard['top_pages'] ?? [];
 $viewsTopProductsAll = $viewsDashboard['top_products'] ?? [];
 $viewsTopClickedAll = $viewsDashboard['clicks']['top_products'] ?? [];
 $viewsReferrersAll = $viewsDashboard['top_referrers'] ?? [];
+$viewsCompare = $viewsDashboard['compare'] ?? [];
+$viewsCompareDelta = $viewsCompare['delta'] ?? ['views' => 0, 'clicks' => 0, 'ctr_percent' => 0];
+$viewsTopWinners = $viewsCompare['top_winners'] ?? [];
+$viewsTopLosers = $viewsCompare['top_losers'] ?? [];
+$viewsFunnel = $viewsDashboard['funnel'] ?? [
+    'discovery_views' => 0,
+    'product_views' => 0,
+    'outbound_clicks' => 0,
+    'discovery_to_product_percent' => 0.0,
+    'product_to_click_percent' => 0.0,
+];
 
 $viewsTopPagesTotalPages = enma_total_pages(count($viewsTopPagesAll), $viewsSectionPerPage);
 $viewsTopProductsTotalPages = enma_total_pages(count($viewsTopProductsAll), $viewsSectionPerPage);
@@ -428,22 +482,21 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         var $addContent = $('#add_post_content_html');
         if ($addContent.length) {
           $addContent.summernote({
-          placeholder: 'Write your content here...',
-          tabsize: 2,
-          height: 400,
-          toolbar: [
-            ['style', ['style']],
-            ['font', ['bold', 'underline', 'clear']],
-            ['color', ['color']],
-            ['para', ['ul', 'ol', 'paragraph']],
-            ['table', ['table']],
-            ['insert', ['link', 'picture', 'video']],
-            ['view', ['fullscreen', 'codeview', 'help']]
-          ]
+            placeholder: 'Write your content here...',
+            tabsize: 2,
+            height: 400,
+            toolbar: [
+              ['style', ['style']],
+              ['font', ['bold', 'underline', 'clear']],
+              ['color', ['color']],
+              ['para', ['ul', 'ol', 'paragraph']],
+              ['table', ['table']],
+              ['insert', ['link', 'picture', 'video']],
+              ['view', ['fullscreen', 'codeview', 'help']]
+            ]
           });
         }
 
-        // Force plain textarea in Edit Post, even if Summernote was initialized by cache/old script.
         var $editContent = $('#edit_post_content_html');
         if ($editContent.length) {
           if ($editContent.next('.note-editor').length && typeof $editContent.summernote === 'function') {
@@ -452,11 +505,121 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           $editContent.show();
         }
 
-        // Keep hidden textarea in sync with Summernote before submit.
-	        $('form').on('submit', function () {
-          var $form = $(this);
-          var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
-          if (action !== 'add_post' && action !== 'update_post') {
+        function stripPreviewHtml(html) {
+          var $tmp = $('<div>').html(html || '');
+          $tmp.find('script, style').remove();
+          return ($tmp.text() || '').replace(/\s+/g, ' ').trim();
+        }
+
+        function extractLinks(html) {
+          var urls = [];
+          var regex = /<a[^>]+href=["']([^"']+)["']/gi;
+          var match;
+          while ((match = regex.exec(html || '')) !== null) {
+            urls.push((match[1] || '').trim());
+          }
+          return urls;
+        }
+
+        function getContentHtml($form) {
+          var $content = $form.find('textarea[name="content_html"]');
+          if ($content.length === 0) {
+            return '';
+          }
+          if (typeof $content.summernote === 'function' && $content.next('.note-editor').length) {
+            return $content.summernote('code') || '';
+          }
+          return $content.val() || '';
+        }
+
+        function updatePostPreview($form) {
+          if (!$form || $form.length === 0) {
+            return;
+          }
+
+          var title = ($form.find('input[name="title"]').val() || '').trim();
+          var excerpt = ($form.find('textarea[name="excerpt"]').val() || '').trim();
+          var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
+          var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
+          var imageUrl = ($form.find('input[name="featured_image"]').val() || '').trim();
+          var html = getContentHtml($form);
+          var plainBody = stripPreviewHtml(html);
+          var serpTitle = metaTitle || title || 'Post title preview';
+          var serpDescription = metaDescription || excerpt || plainBody || 'Meta description preview';
+          var cardTitle = title || 'Post title preview';
+          var cardExcerpt = excerpt || metaDescription || plainBody || 'Post excerpt preview';
+
+          $form.find('[data-preview="serp-title"]').text(serpTitle);
+          $form.find('[data-preview="serp-description"]').text(serpDescription.substring(0, 170));
+          $form.find('[data-preview="hero-title"]').text(cardTitle);
+          $form.find('[data-preview="hero-copy"]').text(cardExcerpt.substring(0, 180));
+          $form.find('[data-preview="article-title"]').text(cardTitle);
+          $form.find('[data-preview="article-copy"]').text(cardExcerpt.substring(0, 220));
+          $form.find('[data-preview="article-body"]').text((plainBody || 'Article body preview').substring(0, 520));
+
+          var $img = $form.find('[data-preview="hero-image"]');
+          if (imageUrl !== '') {
+            $img.attr('src', imageUrl).show();
+          } else {
+            $img.hide().attr('src', '');
+          }
+        }
+
+        function updateSeoAssistant($form) {
+          var title = ($form.find('input[name="title"]').val() || '').trim();
+          var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
+          var excerpt = ($form.find('textarea[name="excerpt"]').val() || '').trim();
+          var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
+          var imageUrl = ($form.find('input[name="featured_image"]').val() || '').trim();
+          var html = getContentHtml($form);
+          var body = stripPreviewHtml(html);
+          var words = body === '' ? 0 : body.split(/\s+/).length;
+          var h2Count = (html.match(/<h2\b/gi) || []).length;
+          var linkList = extractLinks(html);
+          var internalLinks = linkList.filter(function(link) {
+            return link.startsWith('/') || link.indexOf(window.location.origin) === 0;
+          }).length;
+          var titleLen = title.length;
+          var metaTitleLen = metaTitle.length;
+          var metaDescLen = (metaDescription || excerpt).length;
+
+          var checks = [
+            { key: 'title', ok: titleLen >= 40 && titleLen <= 65, message: 'Title length 40-65 chars' },
+            { key: 'meta-title', ok: metaTitleLen === 0 || (metaTitleLen >= 45 && metaTitleLen <= 65), message: 'Meta title 45-65 chars (optional but recommended)' },
+            { key: 'meta-desc', ok: metaDescLen >= 120 && metaDescLen <= 160, message: 'Meta description 120-160 chars' },
+            { key: 'h2', ok: h2Count >= 2, message: 'At least 2 H2 headings' },
+            { key: 'words', ok: words >= 600, message: 'At least 600 words' },
+            { key: 'links', ok: internalLinks >= 2, message: 'At least 2 internal links' },
+            { key: 'image', ok: imageUrl !== '', message: 'Featured image defined' }
+          ];
+
+          var passed = checks.filter(function(item) { return item.ok; }).length;
+          var score = Math.round((passed / checks.length) * 100);
+
+          $form.find('[data-seo="score"]').text(score + '/100');
+          $form.find('[data-seo="title-len"]').text(titleLen.toString());
+          $form.find('[data-seo="meta-title-len"]').text(metaTitleLen.toString());
+          $form.find('[data-seo="meta-desc-len"]').text(metaDescLen.toString());
+          $form.find('[data-seo="h2-count"]').text(h2Count.toString());
+          $form.find('[data-seo="word-count"]').text(words.toString());
+          $form.find('[data-seo="internal-links"]').text(internalLinks.toString());
+
+          checks.forEach(function(check) {
+            var $node = $form.find('[data-seo-check="' + check.key + '"]');
+            $node.removeClass('seo-ok seo-warn').addClass(check.ok ? 'seo-ok' : 'seo-warn');
+            $node.find('[data-seo-check-status]').text(check.ok ? 'OK' : 'Needs work');
+          });
+        }
+
+        function insertContentBlock($form, blockType) {
+          var templates = {
+            review_intro: '<p><strong>Quick verdict:</strong> This option is best for beginners who want reliable results without overpaying.</p>',
+            pros_cons: '<h2>Pros and Cons</h2><h3>Pros</h3><ul><li>Easy to set up and use</li><li>Good value for the price</li></ul><h3>Cons</h3><ul><li>Limited advanced features</li></ul>',
+            faq: '<h2>Frequently Asked Questions</h2><h3>Is this good for beginners?</h3><p>Yes, it offers a friendly learning curve and enough performance for early stages.</p>',
+            cta: '<h2>Final Recommendation</h2><p>If this matches your budget and use case, check today\'s price and availability before stock changes.</p><p><a href="/telescopes">Compare more telescope options</a>.</p>'
+          };
+          var snippet = templates[blockType] || '';
+          if (snippet === '') {
             return;
           }
 
@@ -464,82 +627,131 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           if ($content.length === 0) {
             return;
           }
-
-          var html = '';
           if (typeof $content.summernote === 'function' && $content.next('.note-editor').length) {
-            html = $content.summernote('code') || '';
+            $content.summernote('pasteHTML', '\n' + snippet + '\n');
           } else {
-            html = $content.val() || '';
-	          }
-	          $content.val(html);
-	        });
+            var previous = $content.val() || '';
+            $content.val(previous + '\n' + snippet + '\n');
+          }
+          updatePostPreview($form);
+          updateSeoAssistant($form);
+        }
 
-	        function stripPreviewHtml(html) {
-	          var $tmp = $('<div>').html(html || '');
-	          $tmp.find('script, style').remove();
-	          return ($tmp.text() || '').replace(/\s+/g, ' ').trim();
-	        }
+        function updateAutosaveStatus($form, message, isError) {
+          var $status = $form.find('[data-autosave-status]');
+          if ($status.length === 0) {
+            return;
+          }
+          $status.text(message).removeClass('seo-warn seo-ok').addClass(isError ? 'seo-warn' : 'seo-ok');
+        }
 
-	        function updatePostPreview($form) {
-	          if (!$form || $form.length === 0) {
-	            return;
-	          }
+        function setupAutosave($form) {
+          var enabled = ($form.attr('data-autosave-enabled') || '0') === '1';
+          if (!enabled) {
+            updateAutosaveStatus($form, 'Autosave DB schema not enabled yet', true);
+            return;
+          }
 
-	          var title = ($form.find('input[name="title"]').val() || '').trim();
-	          var excerpt = ($form.find('textarea[name="excerpt"]').val() || '').trim();
-	          var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
-	          var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
-	          var imageUrl = ($form.find('input[name="featured_image"]').val() || '').trim();
-	          var $content = $form.find('textarea[name="content_html"]');
-	          var html = '';
+          var lastFingerprint = '';
+          var saveInFlight = false;
+          var timerMs = 45000;
+          updateAutosaveStatus($form, 'Autosave active (every 45s)', false);
 
-	          if ($content.length) {
-	            if (typeof $content.summernote === 'function' && $content.next('.note-editor').length) {
-	              html = $content.summernote('code') || '';
-	            } else {
-	              html = $content.val() || '';
-	            }
-	          }
+          function saveNow() {
+            if (saveInFlight) {
+              return;
+            }
 
-	          var plainBody = stripPreviewHtml(html);
-	          var serpTitle = metaTitle || title || 'Post title preview';
-	          var serpDescription = metaDescription || excerpt || plainBody || 'Meta description preview';
-	          var cardTitle = title || 'Post title preview';
-	          var cardExcerpt = excerpt || metaDescription || plainBody || 'Post excerpt preview';
+            var payload = {
+              action: 'save_post_autosave',
+              csrf_token: $form.find('input[name="csrf_token"]').val() || '',
+              post_id: $form.find('input[name="post_id"]').val() || $form.find('input[name="id"]').val() || '0',
+              draft_key: $form.find('input[name="draft_key"]').val() || '',
+              title: $form.find('input[name="title"]').val() || '',
+              excerpt: $form.find('textarea[name="excerpt"]').val() || '',
+              meta_title: $form.find('input[name="meta_title"]').val() || '',
+              meta_description: $form.find('textarea[name="meta_description"]').val() || '',
+              content_html: getContentHtml($form)
+            };
 
-	          $form.find('[data-preview="serp-title"]').text(serpTitle);
-	          $form.find('[data-preview="serp-description"]').text(serpDescription.substring(0, 170));
-	          $form.find('[data-preview="hero-title"]').text(cardTitle);
-	          $form.find('[data-preview="hero-copy"]').text(cardExcerpt.substring(0, 180));
-	          $form.find('[data-preview="article-title"]').text(cardTitle);
-	          $form.find('[data-preview="article-copy"]').text(cardExcerpt.substring(0, 220));
-	          $form.find('[data-preview="article-body"]').text((plainBody || 'Article body preview').substring(0, 520));
+            var fingerprint = JSON.stringify(payload);
+            if (fingerprint === lastFingerprint) {
+              return;
+            }
 
-	          var $img = $form.find('[data-preview="hero-image"]');
-	          if (imageUrl !== '') {
-	            $img.attr('src', imageUrl).show();
-	          } else {
-	            $img.hide().attr('src', '');
-	          }
-	        }
+            saveInFlight = true;
+            var formData = new URLSearchParams(payload);
+            fetch(window.location.pathname + window.location.search, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+              body: formData.toString()
+            }).then(function(response) {
+              return response.json();
+            }).then(function(json) {
+              if (json && json.ok) {
+                lastFingerprint = fingerprint;
+                if (json.draft_key) {
+                  $form.find('input[name="draft_key"]').val(json.draft_key);
+                }
+                updateAutosaveStatus($form, 'Saved at ' + (json.saved_at || 'now'), false);
+              } else {
+                updateAutosaveStatus($form, (json && json.message) ? json.message : 'Autosave failed', true);
+              }
+            }).catch(function() {
+              updateAutosaveStatus($form, 'Autosave failed (network/server)', true);
+            }).finally(function() {
+              saveInFlight = false;
+            });
+          }
 
-	        $('.post-editor-form').each(function () {
-	          var $form = $(this);
-	          $form.on('input change', 'input, textarea, select', function () {
-	            updatePostPreview($form);
-	          });
+          setInterval(saveNow, timerMs);
+          $form.on('input change', 'input, textarea, select', function() {
+            if (lastFingerprint !== '') {
+              updateAutosaveStatus($form, 'Unsaved changes...', true);
+            }
+          });
+        }
 
-	          var $content = $form.find('textarea[name="content_html"]');
-	          if ($content.length && typeof $content.on === 'function') {
-	            $content.on('summernote.change', function () {
-	              updatePostPreview($form);
-	            });
-	          }
+        $('form').on('submit', function () {
+          var $form = $(this);
+          var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
+          if (action !== 'add_post' && action !== 'update_post') {
+            return;
+          }
+          var $content = $form.find('textarea[name="content_html"]');
+          if ($content.length === 0) {
+            return;
+          }
+          $content.val(getContentHtml($form));
+        });
 
-	          updatePostPreview($form);
-	        });
-	      });
-	    </script>
+        $('.post-editor-form').each(function () {
+          var $form = $(this);
+          $form.on('input change', 'input, textarea, select', function () {
+            updatePostPreview($form);
+            updateSeoAssistant($form);
+          });
+
+          var $content = $form.find('textarea[name="content_html"]');
+          if ($content.length && typeof $content.on === 'function') {
+            $content.on('summernote.change', function () {
+              updatePostPreview($form);
+              updateSeoAssistant($form);
+            });
+          }
+
+          $form.find('[data-insert-block]').on('click', function (event) {
+            event.preventDefault();
+            var blockType = ($form.find('[data-editor-blocks]').val() || '').trim();
+            insertContentBlock($form, blockType);
+          });
+
+          updatePostPreview($form);
+          updateSeoAssistant($form);
+          setupAutosave($form);
+        });
+      });
+    </script>
     <style>
         :root {
             --bg: #edf3fb;
@@ -753,6 +965,70 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            color:var(--muted);
 	            font-size:14px;
 	        }
+            .seo-panel {
+                border: 1px solid #d8e3f0;
+                border-radius: 12px;
+                background: #f9fcff;
+                padding: 12px;
+                margin: 8px 0 14px;
+            }
+            .seo-panel h3 {
+                margin: 0 0 10px;
+                font-size: 16px;
+            }
+            .seo-score {
+                font-size: 24px;
+                font-weight: 800;
+                color: #0e2a57;
+            }
+            .seo-metrics {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+                gap: 8px;
+                margin: 10px 0;
+            }
+            .seo-metric {
+                border: 1px solid #e0eaf7;
+                border-radius: 8px;
+                padding: 8px;
+                background: #fff;
+                font-size: 12px;
+            }
+            .seo-checklist {
+                margin: 10px 0 0;
+                padding: 0;
+                list-style: none;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 8px;
+            }
+            .seo-checklist li {
+                border: 1px solid #dbe6f4;
+                border-radius: 8px;
+                padding: 8px;
+                font-size: 13px;
+                display: flex;
+                justify-content: space-between;
+                gap: 10px;
+                background: #fff;
+            }
+            .seo-ok {
+                color: #1a6f35;
+            }
+            .seo-warn {
+                color: #9a2f15;
+            }
+            .editor-tools {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: flex-end;
+                margin: 8px 0 10px;
+            }
+            .editor-tools .field {
+                min-width: 220px;
+                flex: 1;
+            }
 	        .btn[disabled] {
 	            opacity: 0.55;
 	            cursor: not-allowed;
@@ -984,11 +1260,20 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section class="box">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                 <h2 style="margin:0;">Edit Post: <?= e($editingPost['title']) ?></h2>
-                <a href="<?= e(url('/enma/?tab=posts')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <?php $editingPostPublicPath = enma_post_public_path((array) $editingPost); ?>
+                    <?php if ($editingPostPublicPath !== ''): ?>
+                        <a href="<?= e(url($editingPostPublicPath)) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;text-decoration:none;font-weight:700;">View Live</a>
+                    <?php endif; ?>
+                    <a href="<?= e(url('/enma/?tab=posts')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
+                </div>
             </div>
-	            <form method="post" enctype="multipart/form-data" class="post-editor-form">
+                <?php $editDraftKey = 'post-' . (int) ($editingPost['id'] ?? 0); ?>
+	            <form method="post" enctype="multipart/form-data" class="post-editor-form" data-autosave-enabled="<?= $postAutosaveEnabled ? '1' : '0' ?>">
 	                <input type="hidden" name="action" value="update_post">
 	                <input type="hidden" name="id" value="<?= (int)$editingPost['id'] ?>">
+                    <input type="hidden" name="post_id" value="<?= (int)$editingPost['id'] ?>">
+                    <input type="hidden" name="draft_key" value="<?= e($editDraftKey) ?>">
 	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
@@ -1056,6 +1341,42 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                        </div>
 	                    </div>
 	                </div>
+                    <div class="editor-tools">
+                        <div class="field">
+                            <label>Insert Content Block</label>
+                            <select data-editor-blocks>
+                                <option value="review_intro">Review Intro</option>
+                                <option value="pros_cons">Pros and Cons</option>
+                                <option value="faq">FAQ Section</option>
+                                <option value="cta">Final CTA</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button class="btn" data-insert-block type="button">Insert Block</button>
+                        </div>
+                    </div>
+                    <section class="seo-panel">
+                        <h3>SEO Assistant</h3>
+                        <div class="seo-score" data-seo="score">0/100</div>
+                        <div class="seo-metrics">
+                            <div class="seo-metric">Title: <strong data-seo="title-len">0</strong></div>
+                            <div class="seo-metric">Meta title: <strong data-seo="meta-title-len">0</strong></div>
+                            <div class="seo-metric">Meta desc: <strong data-seo="meta-desc-len">0</strong></div>
+                            <div class="seo-metric">H2 tags: <strong data-seo="h2-count">0</strong></div>
+                            <div class="seo-metric">Words: <strong data-seo="word-count">0</strong></div>
+                            <div class="seo-metric">Internal links: <strong data-seo="internal-links">0</strong></div>
+                        </div>
+                        <ul class="seo-checklist">
+                            <li data-seo-check="title"><span>Title length 40-65 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="meta-title"><span>Meta title 45-65 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="meta-desc"><span>Meta description 120-160 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="h2"><span>At least 2 H2 headings</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="words"><span>At least 600 words</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="links"><span>At least 2 internal links</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="image"><span>Featured image defined</span><strong data-seo-check-status>Needs work</strong></li>
+                        </ul>
+                        <p class="muted" data-autosave-status style="margin:10px 0 0;">Autosave idle</p>
+                    </section>
 	                <button class="btn" type="submit">Update Post</button>
 	            </form>
 	        </section>
@@ -1063,8 +1384,11 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 
         <section class="box">
             <h2>Add New Post</h2>
-	            <form method="post" enctype="multipart/form-data" class="post-editor-form">
+                <?php $newDraftKey = 'new-' . substr(hash('sha256', (string) session_id() . '|add-post'), 0, 24); ?>
+	            <form method="post" enctype="multipart/form-data" class="post-editor-form" data-autosave-enabled="<?= $postAutosaveEnabled ? '1' : '0' ?>">
 	                <input type="hidden" name="action" value="add_post">
+                    <input type="hidden" name="post_id" value="0">
+                    <input type="hidden" name="draft_key" value="<?= e($newDraftKey) ?>">
 	                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
                     <div>
@@ -1126,16 +1450,65 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                        </div>
 	                    </div>
 	                </div>
+                    <div class="editor-tools">
+                        <div class="field">
+                            <label>Insert Content Block</label>
+                            <select data-editor-blocks>
+                                <option value="review_intro">Review Intro</option>
+                                <option value="pros_cons">Pros and Cons</option>
+                                <option value="faq">FAQ Section</option>
+                                <option value="cta">Final CTA</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button class="btn" data-insert-block type="button">Insert Block</button>
+                        </div>
+                    </div>
+                    <section class="seo-panel">
+                        <h3>SEO Assistant</h3>
+                        <div class="seo-score" data-seo="score">0/100</div>
+                        <div class="seo-metrics">
+                            <div class="seo-metric">Title: <strong data-seo="title-len">0</strong></div>
+                            <div class="seo-metric">Meta title: <strong data-seo="meta-title-len">0</strong></div>
+                            <div class="seo-metric">Meta desc: <strong data-seo="meta-desc-len">0</strong></div>
+                            <div class="seo-metric">H2 tags: <strong data-seo="h2-count">0</strong></div>
+                            <div class="seo-metric">Words: <strong data-seo="word-count">0</strong></div>
+                            <div class="seo-metric">Internal links: <strong data-seo="internal-links">0</strong></div>
+                        </div>
+                        <ul class="seo-checklist">
+                            <li data-seo-check="title"><span>Title length 40-65 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="meta-title"><span>Meta title 45-65 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="meta-desc"><span>Meta description 120-160 chars</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="h2"><span>At least 2 H2 headings</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="words"><span>At least 600 words</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="links"><span>At least 2 internal links</span><strong data-seo-check-status>Needs work</strong></li>
+                            <li data-seo-check="image"><span>Featured image defined</span><strong data-seo-check-status>Needs work</strong></li>
+                        </ul>
+                        <p class="muted" data-autosave-status style="margin:10px 0 0;">Autosave idle</p>
+                    </section>
 	                <button class="btn" type="submit">Publish Post</button>
 	            </form>
 	        </section>
 
         <section class="box">
             <h2>Existing Posts</h2>
+            <form method="get" class="toolbar" style="margin-bottom:8px;">
+                <input type="hidden" name="tab" value="posts">
+                <input type="hidden" name="posts_page" value="1">
+                <div class="field" style="max-width:220px;">
+                    <label>Status Filter</label>
+                    <select name="posts_status">
+                        <option value="all" <?= $postsStatusFilter === 'all' ? 'selected' : '' ?>>All statuses</option>
+                        <option value="draft" <?= $postsStatusFilter === 'draft' ? 'selected' : '' ?>>Draft only</option>
+                        <option value="published" <?= $postsStatusFilter === 'published' ? 'selected' : '' ?>>Published only</option>
+                    </select>
+                </div>
+                <button class="btn" type="submit">Apply</button>
+            </form>
             <?php if ($allPosts === []): ?>
                 <div class="empty">No posts or guides found in database.</div>
             <?php else: ?>
-                <p class="muted">Showing <?= number_format(count($allPosts)) ?> of <?= number_format($postsTotal) ?> posts.</p>
+                <p class="muted">Showing <?= number_format(count($allPosts)) ?> of <?= number_format($postsTotal) ?> posts<?= $postsStatusFilter !== 'all' ? ' (' . e($postsStatusFilter) . ')' : '' ?>. Drafts are prioritized at the top.</p>
                 <table>
                     <thead>
                     <tr>
@@ -1157,6 +1530,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                             <td><?= e($p['status']) ?></td>
                             <td><?= e(substr((string)$p['published_at'], 0, 10)) ?></td>
                             <td>
+                                <?php $postPublicPath = enma_post_public_path((array) $p); ?>
+                                <?php if ($postPublicPath !== ''): ?>
+                                    <a href="<?= e(url($postPublicPath)) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">View</a>
+                                <?php endif; ?>
                                 <a href="<?= e(url('/enma/?tab=posts&edit_post=' . $p['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
                                 <form method="post" style="display:inline;" onsubmit="return confirm('Delete this post?');">
                                     <input type="hidden" name="action" value="delete_post">
@@ -1430,6 +1807,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section class="box">
             <h2>Views Dashboard</h2>
             <p style="margin: 0 0 10px; font-size: 14px; color: #334155;">Tracking window: last <?= (int) ($viewsDashboard['days'] ?? $viewDays) ?> days (from <?= e((string) ($viewsDashboard['from_date'] ?? '')) ?> UTC)</p>
+            <p class="muted" style="margin: 0 0 10px;">Compared against previous window: <?= e((string) ($viewsDashboard['previous_range']['from_date'] ?? '-')) ?> to <?= e((string) ($viewsDashboard['previous_range']['to_date'] ?? '-')) ?>.</p>
             <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
                 <input type="hidden" name="tab" value="views">
                 <div style="max-width:160px;">
@@ -1443,6 +1821,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div class="stat">
                     <div class="stat-k">Total Views</div>
                     <div class="stat-v"><?= number_format((int) (($viewsDashboard['totals']['total_views'] ?? 0))) ?></div>
+                    <div class="muted <?= ((int) ($viewsCompareDelta['views'] ?? 0)) >= 0 ? 'seo-ok' : 'seo-warn' ?>"><?= e(enma_signed_number((float) ($viewsCompareDelta['views'] ?? 0))) ?> vs previous</div>
                 </div>
                 <div class="stat">
                     <div class="stat-k">Tracked Paths</div>
@@ -1455,13 +1834,85 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div class="stat">
                     <div class="stat-k">Outbound Clicks</div>
                     <div class="stat-v"><?= number_format((int) (($viewsDashboard['clicks']['total_clicks'] ?? 0))) ?></div>
+                    <div class="muted <?= ((int) ($viewsCompareDelta['clicks'] ?? 0)) >= 0 ? 'seo-ok' : 'seo-warn' ?>"><?= e(enma_signed_number((float) ($viewsCompareDelta['clicks'] ?? 0))) ?> vs previous</div>
                 </div>
                 <div class="stat">
                     <div class="stat-k">CTR</div>
                     <div class="stat-v"><?= number_format((float) (($viewsDashboard['clicks']['ctr_percent'] ?? 0.0)), 2) ?>%</div>
+                    <div class="muted <?= ((float) ($viewsCompareDelta['ctr_percent'] ?? 0.0)) >= 0 ? 'seo-ok' : 'seo-warn' ?>"><?= e(enma_signed_number((float) ($viewsCompareDelta['ctr_percent'] ?? 0.0), 2)) ?> pp vs previous</div>
                 </div>
             </div>
             <p style="margin: 0; font-size: 12px; color: #5b6678;">Country is best-effort from server/CDN geo headers (fallback: Accept-Language).</p>
+        </section>
+
+        <section class="box">
+            <h2>Traffic Funnel</h2>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-k">Discovery Views</div>
+                    <div class="stat-v"><?= number_format((int) ($viewsFunnel['discovery_views'] ?? 0)) ?></div>
+                </div>
+                <div class="stat">
+                    <div class="stat-k">Product Page Views</div>
+                    <div class="stat-v"><?= number_format((int) ($viewsFunnel['product_views'] ?? 0)) ?></div>
+                    <div class="muted"><?= number_format((float) ($viewsFunnel['discovery_to_product_percent'] ?? 0.0), 2) ?>% from discovery</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-k">Outbound Clicks</div>
+                    <div class="stat-v"><?= number_format((int) ($viewsFunnel['outbound_clicks'] ?? 0)) ?></div>
+                    <div class="muted"><?= number_format((float) ($viewsFunnel['product_to_click_percent'] ?? 0.0), 2) ?>% from product pages</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="box">
+            <h2>Winners and Losers</h2>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                    <h3 style="margin:0 0 8px;">Top Growth Pages</h3>
+                    <?php if ($viewsTopWinners === []): ?>
+                        <div class="empty">No growth deltas available yet.</div>
+                    <?php else: ?>
+                    <table>
+                        <thead>
+                        <tr><th>Path</th><th>Current</th><th>Previous</th><th>Delta</th></tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (array_slice($viewsTopWinners, 0, 10) as $row): ?>
+                            <tr>
+                                <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                                <td><?= number_format((int) ($row['current_views'] ?? 0)) ?></td>
+                                <td><?= number_format((int) ($row['previous_views'] ?? 0)) ?></td>
+                                <td class="seo-ok"><?= e(enma_signed_number((float) ($row['delta_views'] ?? 0))) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <h3 style="margin:0 0 8px;">Top Decline Pages</h3>
+                    <?php if ($viewsTopLosers === []): ?>
+                        <div class="empty">No decline deltas available yet.</div>
+                    <?php else: ?>
+                    <table>
+                        <thead>
+                        <tr><th>Path</th><th>Current</th><th>Previous</th><th>Delta</th></tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (array_slice($viewsTopLosers, 0, 10) as $row): ?>
+                            <tr>
+                                <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                                <td><?= number_format((int) ($row['current_views'] ?? 0)) ?></td>
+                                <td><?= number_format((int) ($row['previous_views'] ?? 0)) ?></td>
+                                <td class="seo-warn"><?= e(enma_signed_number((float) ($row['delta_views'] ?? 0))) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?php endif; ?>
+                </div>
+            </div>
         </section>
 
         <section class="box">
@@ -1603,6 +2054,68 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section class="box">
             <h2>Maintenance Tools</h2>
             <p class="muted" style="margin: 0 0 10px;">Only available/working tasks are shown. Last usage is tracked automatically.</p>
+            <div class="box" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">AI Draft Generator (Gemini)</h3>
+                <p class="muted" style="margin:0 0 10px;">One click in Auto mode will pick a commercial gap and create a draft. No auto-publish.</p>
+                <?php $affiliateDraftForm = is_array($affiliateDraftForm ?? null) ? $affiliateDraftForm : ['auto_mode' => '1', 'topic' => '', 'keyword' => '', 'product' => '', 'category' => '', 'model' => 'gemini-2.0-flash']; ?>
+                <form method="post" style="margin:0;">
+                    <input type="hidden" name="action" value="maintenance_generate_affiliate_post">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px;">
+                        <input type="checkbox" id="ai_auto_mode" name="auto_mode" value="1" <?= (($affiliateDraftForm['auto_mode'] ?? '1') === '1') ? 'checked' : '' ?> style="width:auto;margin:0;">
+                        <label for="ai_auto_mode" style="margin:0;">Auto mode (recommended, one-click draft)</label>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label>Topic (manual override)</label>
+                            <input type="text" name="topic" value="<?= e((string) ($affiliateDraftForm['topic'] ?? '')) ?>" placeholder="Best beginner telescope for city skies">
+                        </div>
+                        <div>
+                            <label>Keyword (manual override)</label>
+                            <input type="text" name="keyword" value="<?= e((string) ($affiliateDraftForm['keyword'] ?? '')) ?>" placeholder="best beginner telescope for city skies">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div>
+                            <label>Main Product (manual override)</label>
+                            <input type="text" name="product" value="<?= e((string) ($affiliateDraftForm['product'] ?? '')) ?>" placeholder="Celestron NexStar 4SE">
+                        </div>
+                        <div>
+                            <label>Category (manual override)</label>
+                            <input type="text" name="category" value="<?= e((string) ($affiliateDraftForm['category'] ?? '')) ?>" placeholder="telescopes">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;">
+                        <div>
+                            <label>Model</label>
+                            <input type="text" name="model" value="<?= e((string) ($affiliateDraftForm['model'] ?? 'gemini-2.0-flash')) ?>" placeholder="gemini-2.0-flash">
+                        </div>
+                        <div>
+                            <button class="btn" type="submit">Generate Draft (One Click)</button>
+                        </div>
+                    </div>
+                </form>
+                <?php if (is_array($affiliateDraftResult ?? null)): ?>
+                    <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+                        <p style="margin:0 0 8px;font-size:13px;">
+                            Result:
+                            <strong class="<?= !empty($affiliateDraftResult['ok']) ? 'ok' : 'fail' ?>">
+                                <?= !empty($affiliateDraftResult['ok']) ? 'OK' : 'FAIL' ?>
+                            </strong>
+                            | Exit code: <?= (int) ($affiliateDraftResult['exit_code'] ?? 1) ?>
+                        </p>
+                        <?php if (!empty($affiliateDraftResult['php_binary'])): ?>
+                            <p class="muted" style="margin:0 0 8px;font-size:12px;">PHP CLI used: <code><?= e((string) $affiliateDraftResult['php_binary']) ?></code></p>
+                        <?php endif; ?>
+                        <?php if (!empty($affiliateDraftResult['output_lines']) && is_array($affiliateDraftResult['output_lines'])): ?>
+                            <?php foreach ($affiliateDraftResult['output_lines'] as $line): ?>
+                                <div style="font-family:monospace;font-size:12px;"><?= e((string) $line) ?></div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
             <?php
             $maintenanceGroups = [
                 'seo' => 'SEO',

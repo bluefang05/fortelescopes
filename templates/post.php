@@ -43,6 +43,9 @@ if ($postHtmlRaw !== '') {
 ?>
 <section class="hero">
     <span class="hero-kicker">Astronomy Article</span>
+    <?php if (!empty($isDraftPreview)): ?>
+        <span class="hero-kicker" style="background:#7d2d00;margin-left:8px;">Draft Preview</span>
+    <?php endif; ?>
     <h1><?= e($post['title']) ?></h1>
     <p><?= e($postSummary) ?></p>
     <?php
@@ -58,6 +61,24 @@ if ($postHtmlRaw !== '') {
     <p class="muted"><?= e($postSummary) ?></p>
 </section>
 <?php endif; ?>
+
+<section class="panel" style="margin-bottom: 18px;">
+    <h2 class="section-title" style="margin-top:0;">What to read next</h2>
+    <div class="compare-table">
+        <div class="compare-row">
+            <div class="compare-label">Need a first scope?</div>
+            <div class="compare-value"><a href="<?= e(url('/best-beginner-telescopes')) ?>">Read the beginner telescope guide</a> for product shortlists and buying tradeoffs.</div>
+        </div>
+        <div class="compare-row">
+            <div class="compare-label">Need a budget cap?</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescopes-under-500')) ?>">Compare telescopes under $500</a> if price is your main constraint.</div>
+        </div>
+        <div class="compare-row">
+            <div class="compare-label">Need upgrades?</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescope-accessories')) ?>">See practical accessory picks</a> if you already own a telescope.</div>
+        </div>
+    </div>
+</section>
 
 <?php if ($postHtml !== ''): ?>
 <section class="panel article-content" style="margin-bottom: 18px;">

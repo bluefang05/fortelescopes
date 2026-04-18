@@ -4,11 +4,29 @@ $guides = $data['guides'] ?? [];
 <section class="hero">
     <span class="hero-kicker">Guides Hub</span>
     <h1>Astronomy Buying Guides</h1>
-    <p>Actionable telescope and accessory guides built for first-time stargazers and practical buyers.</p>
+    <p>Actionable telescope and accessory guides built for first-time stargazers, budget-conscious buyers, and people narrowing down their next upgrade.</p>
     <div class="trust-row">
         <span class="chip">Beginner-first explanations</span>
         <span class="chip">Real product examples</span>
-        <span class="chip">Conversion-focused CTAs</span>
+        <span class="chip">Decision-first topic clusters</span>
+    </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+    <h2 class="section-title" style="margin-top:0;">Choose the guide that matches your search</h2>
+    <div class="compare-table">
+        <div class="compare-row">
+            <div class="compare-label">"best beginner telescope"</div>
+            <div class="compare-value"><a href="<?= e(url('/best-beginner-telescopes')) ?>">Open the beginner telescope guide</a> for first-time purchase decisions.</div>
+        </div>
+        <div class="compare-row">
+            <div class="compare-label">"best telescope under 500"</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescopes-under-500')) ?>">Open the under-$500 guide</a> for budget-bound comparisons.</div>
+        </div>
+        <div class="compare-row">
+            <div class="compare-label">"best telescope accessories"</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescope-accessories')) ?>">Open the accessories guide</a> for high-impact upgrades.</div>
+        </div>
     </div>
 </section>
 
@@ -54,4 +72,16 @@ $guides = $data['guides'] ?? [];
             <div class="compare-value"><a href="<?= e(url('/accessories')) ?>">Browse accessory recommendations</a> for eyepieces, filters, adapters, and practical upgrades.</div>
         </div>
     </div>
+</section>
+
+<section class="panel" style="margin-bottom: 18px;">
+    <h2 class="section-title" style="margin-top:0;">Frequently asked questions</h2>
+    <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
+        <summary style="font-weight: 700; cursor: pointer;">Which astronomy buying guide should I start with?</summary>
+        <p class="muted" style="margin: 8px 0 0;">Start with the guide that matches your immediate decision: first telescope, budget limit, or accessories. That gets you to the right internal pages faster than browsing products at random.</p>
+    </details>
+    <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
+        <summary style="font-weight: 700; cursor: pointer;">Do these guides replace product research?</summary>
+        <p class="muted" style="margin: 8px 0 0;">No. They narrow the field, explain tradeoffs, and then link you into product and category pages so you can validate fit before buying.</p>
+    </details>
 </section>

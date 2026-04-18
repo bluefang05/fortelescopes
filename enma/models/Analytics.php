@@ -232,6 +232,63 @@ class Analytics {
     }
 
     /**
+     * Top paises de origen por codigo.
+     */
+    public function getTopCountries(int $limit = 8): array {
+        $table = $this->analyticsTable();
+        if (!$this->columnExists($table, 'country_code')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $sql = "SELECT country_code, COUNT(*) AS count
+                FROM `$table`
+                GROUP BY country_code
+                ORDER BY count DESC
+                LIMIT $limit";
+
+        return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Top fuentes de trafico.
+     */
+    public function getTopTrafficSources(int $limit = 8): array {
+        $table = $this->analyticsTable();
+        if (!$this->columnExists($table, 'source_type')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $sql = "SELECT source_type, COUNT(*) AS count
+                FROM `$table`
+                GROUP BY source_type
+                ORDER BY count DESC
+                LIMIT $limit";
+
+        return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Top sitios de referencia.
+     */
+    public function getTopReferrers(int $limit = 8): array {
+        $table = $this->analyticsTable();
+        if (!$this->columnExists($table, 'referrer_host')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $sql = "SELECT referrer_host, COUNT(*) AS count
+                FROM `$table`
+                GROUP BY referrer_host
+                ORDER BY count DESC
+                LIMIT $limit";
+
+        return $this->db->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Ultimos registros crudos para exportacion.
      */
     public function getRecentLogs($limit = 50): array {

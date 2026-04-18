@@ -28,17 +28,31 @@ $items = [
     ['asin' => 'B0TSCP020', 'title' => 'Wide Field 32mm Eyepiece', 'category' => 'Eyepieces', 'img' => 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80'],
 ];
 
-$stmt = $pdo->prepare(
-    'INSERT OR IGNORE INTO products (
-        asin, slug, title, description, category_slug, category_name,
-        image_url, affiliate_url, status,
-        last_synced_at, created_at, updated_at
-    ) VALUES (
-        :asin, :slug, :title, :description, :category_slug, :category_name,
-        :image_url, :affiliate_url, :status,
-        :last_synced_at, :created_at, :updated_at
-    )'
-);
+if (DB_DRIVER === 'mysql') {
+    $stmt = $pdo->prepare(
+        'INSERT IGNORE INTO products (
+            asin, slug, title, description, category_slug, category_name,
+            image_url, affiliate_url, status,
+            last_synced_at, created_at, updated_at
+        ) VALUES (
+            :asin, :slug, :title, :description, :category_slug, :category_name,
+            :image_url, :affiliate_url, :status,
+            :last_synced_at, :created_at, :updated_at
+        )'
+    );
+} else {
+    $stmt = $pdo->prepare(
+        'INSERT OR IGNORE INTO products (
+            asin, slug, title, description, category_slug, category_name,
+            image_url, affiliate_url, status,
+            last_synced_at, created_at, updated_at
+        ) VALUES (
+            :asin, :slug, :title, :description, :category_slug, :category_name,
+            :image_url, :affiliate_url, :status,
+            :last_synced_at, :created_at, :updated_at
+        )'
+    );
+}
 
 $inserted = 0;
 $now = gmdate('c');

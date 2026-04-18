@@ -53,6 +53,21 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
 </section>
 
 <section class="panel" style="max-width: 980px; margin: 18px auto 0;">
+    <h2 class="section-title" style="margin-top:0;">Should you buy this?</h2>
+    <p class="muted" style="margin-bottom: 10px;">Use this page as a fit check, not just a click-through. The goal is to help you decide whether this product matches your experience level, observing goals, and current telescope setup before you leave for Amazon.</p>
+    <div class="compare-table">
+        <div class="compare-row">
+            <div class="compare-label">Good fit</div>
+            <div class="compare-value"><?= e(product_best_for($product)) ?></div>
+        </div>
+        <div class="compare-row">
+            <div class="compare-label">Watch for</div>
+            <div class="compare-value"><?= e($cons[0] ?? 'Check compatibility and real usage before buying.') ?></div>
+        </div>
+    </div>
+</section>
+
+<section class="panel" style="max-width: 980px; margin: 18px auto 0;">
     <h2 class="section-title" style="margin-top:0;">Related paths</h2>
     <div class="compare-table">
         <div class="compare-row">
@@ -74,6 +89,22 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
             <div class="compare-value"><a href="<?= e(url('/guides')) ?>">Open all buying guides</a></div>
         </div>
     </div>
+</section>
+
+<section class="panel" style="max-width: 980px; margin: 18px auto 0;">
+    <h2 class="section-title" style="margin-top:0;">Questions buyers often ask</h2>
+    <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
+        <summary style="font-weight: 700; cursor: pointer;">Who is this product best for?</summary>
+        <p class="muted" style="margin: 8px 0 0;"><?= e(product_best_for($product)) ?>.</p>
+    </details>
+    <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
+        <summary style="font-weight: 700; cursor: pointer;"><?= ($product['category_slug'] ?? '') === 'accessories' ? 'How do I check compatibility before buying?' : 'Is this a good beginner option?' ?></summary>
+        <p class="muted" style="margin: 8px 0 0;">
+            <?= ($product['category_slug'] ?? '') === 'accessories'
+                ? 'Check the accessory size, mounting standard, and whether it solves a real problem in your current setup before buying.'
+                : 'It can be a good beginner option if the setup, size, and price match how often you expect to observe and what you want to see first.' ?>
+        </p>
+    </details>
 </section>
 
 <a class="mobile-sticky-cta amazon-btn" href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon - <?= e($relativeUpdate) ?></a>

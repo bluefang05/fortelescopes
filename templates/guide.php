@@ -45,6 +45,9 @@ if ($fullGuideHtmlRaw !== '') {
 ?>
 <section class="hero">
     <span class="hero-kicker">Buying Guide</span>
+    <?php if (!empty($isDraftPreview)): ?>
+        <span class="hero-kicker" style="background:#7d2d00;margin-left:8px;">Draft Preview</span>
+    <?php endif; ?>
     <h1><?= e($guide['title']) ?></h1>
     <p><?= e($guide['description']) ?></p>
     <?php

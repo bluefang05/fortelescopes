@@ -88,6 +88,222 @@ if (!function_exists('enma_maintenance_record_usage')) {
     }
 }
 
+if (!function_exists('enma_maintenance_run_cli')) {
+    function enma_maintenance_resolve_php_cli_binary(): string
+    {
+        $candidates = [];
+
+        $envCli = trim((string) getenv('PHP_CLI'));
+        if ($envCli !== '') {
+            $candidates[] = $envCli;
+        }
+
+        // Prefer plain "php" first (usually points to CLI binary in PATH).
+        $candidates[] = 'php';
+
+        if (defined('PHP_BINARY') && is_string(PHP_BINARY) && trim(PHP_BINARY) !== '') {
+            $candidates[] = trim(PHP_BINARY);
+        }
+
+        $seen = [];
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate === '' || isset($seen[$candidate])) {
+                continue;
+            }
+            $seen[$candidate] = true;
+
+            $probeCmd = escapeshellarg($candidate) . ' -v 2>&1';
+            $probeOutput = [];
+            $probeExit = 1;
+            @exec($probeCmd, $probeOutput, $probeExit);
+            if ($probeExit === 0) {
+                return $candidate;
+            }
+        }
+
+        return 'php';
+    }
+
+    function enma_maintenance_run_cli(string $scriptPath, array $args): array
+    {
+        $phpBinary = enma_maintenance_resolve_php_cli_binary();
+
+        $parts = [escapeshellarg($phpBinary), escapeshellarg($scriptPath)];
+        foreach ($args as $name => $value) {
+            $argName = trim((string) $name);
+            if ($argName === '') {
+                continue;
+            }
+            $parts[] = '--' . $argName . '=' . escapeshellarg((string) $value);
+        }
+
+        $command = implode(' ', $parts) . ' 2>&1';
+        $output = [];
+        $exitCode = 0;
+        exec($command, $output, $exitCode);
+
+        return [
+            'php_binary' => $phpBinary,
+            'command' => $command,
+            'output_lines' => $output,
+            'exit_code' => $exitCode,
+        ];
+    }
+}
+
+if (!function_exists('enma_maintenance_table_exists')) {
+    function enma_maintenance_table_exists(PDO $pdo, string $tableName): bool
+    {
+        $tableName = trim($tableName);
+        if ($tableName === '') {
+            return false;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = :schema
+               AND table_name = :table_name
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':schema' => DB_NAME,
+            ':table_name' => $tableName,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+}
+
+if (!function_exists('enma_maintenance_build_products_export_sql')) {
+    function enma_maintenance_build_products_export_sql(PDO $pdo): array
+    {
+        $generatedAt = gmdate('Y-m-d H:i:s');
+        $rows = $pdo->query(
+            'SELECT
+                asin, slug, title, description, category_slug, category_name,
+                price_amount, price_currency, image_url, affiliate_url, status,
+                last_synced_at, created_at, updated_at
+             FROM products
+             ORDER BY id ASC'
+        )->fetchAll();
+
+        $sql = "-- Fortelescopes Products Export\n";
+        $sql .= "-- Generated on {$generatedAt} UTC\n\n";
+        $sql .= "SET NAMES utf8mb4;\n\n";
+
+        if ($rows === []) {
+            $sql .= "-- No product rows found.\n";
+        } else {
+            $columns = [
+                'asin', 'slug', 'title', 'description', 'category_slug', 'category_name',
+                'price_amount', 'price_currency', 'image_url', 'affiliate_url', 'status',
+                'last_synced_at', 'created_at', 'updated_at',
+            ];
+
+            $sql .= "INSERT INTO `products` (`" . implode('`, `', $columns) . "`) VALUES\n";
+            $valueLines = [];
+
+            foreach ($rows as $row) {
+                $values = [];
+                foreach ($columns as $column) {
+                    $value = $row[$column] ?? null;
+                    if ($value === null || $value === '') {
+                        $values[] = 'NULL';
+                        continue;
+                    }
+
+                    if ($column === 'price_amount' && is_numeric((string) $value)) {
+                        $values[] = number_format((float) $value, 2, '.', '');
+                        continue;
+                    }
+
+                    $values[] = $pdo->quote((string) $value);
+                }
+
+                $valueLines[] = '    (' . implode(', ', $values) . ')';
+            }
+
+            $sql .= implode(",\n", $valueLines) . "\n";
+            $sql .= "ON DUPLICATE KEY UPDATE\n";
+            $sql .= "    `title` = VALUES(`title`),\n";
+            $sql .= "    `description` = VALUES(`description`),\n";
+            $sql .= "    `category_slug` = VALUES(`category_slug`),\n";
+            $sql .= "    `category_name` = VALUES(`category_name`),\n";
+            $sql .= "    `price_amount` = VALUES(`price_amount`),\n";
+            $sql .= "    `price_currency` = VALUES(`price_currency`),\n";
+            $sql .= "    `image_url` = VALUES(`image_url`),\n";
+            $sql .= "    `affiliate_url` = VALUES(`affiliate_url`),\n";
+            $sql .= "    `status` = VALUES(`status`),\n";
+            $sql .= "    `last_synced_at` = VALUES(`last_synced_at`),\n";
+            $sql .= "    `created_at` = VALUES(`created_at`),\n";
+            $sql .= "    `updated_at` = VALUES(`updated_at`);\n";
+        }
+
+        return [
+            'filename' => 'products_export_' . gmdate('Ymd_His') . '.sql',
+            'content_type' => 'application/sql; charset=UTF-8',
+            'content' => $sql,
+            'row_count' => count($rows),
+        ];
+    }
+}
+
+if (!function_exists('enma_maintenance_build_posts_export_json')) {
+    function enma_maintenance_build_posts_export_json(PDO $pdo): array
+    {
+        $rows = $pdo->query(
+            'SELECT *
+             FROM posts
+             ORDER BY id DESC'
+        )->fetchAll();
+
+        $payloadData = [
+            'generated_at' => gmdate('c'),
+            'table' => 'posts',
+            'total_rows' => count($rows),
+            'rows' => $rows,
+        ];
+        $payload = json_encode($payloadData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if (!is_string($payload) || $payload === '') {
+            throw new RuntimeException('Could not encode posts table export as JSON.');
+        }
+
+        return [
+            'filename' => 'posts_table_' . gmdate('Ymd_His') . '.json',
+            'content_type' => 'application/json; charset=UTF-8',
+            'content' => $payload . PHP_EOL,
+            'row_count' => count($rows),
+        ];
+    }
+}
+
+if (!function_exists('enma_maintenance_stream_download')) {
+    function enma_maintenance_stream_download(string $filename, string $contentType, string $content): void
+    {
+        if (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        $fallbackFilename = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?? 'download.dat';
+        if ($fallbackFilename === '') {
+            $fallbackFilename = 'download.dat';
+        }
+
+        header('Content-Description: File Transfer');
+        header('Content-Type: ' . $contentType);
+        header('Content-Disposition: attachment; filename="' . $fallbackFilename . '"; filename*=UTF-8\'\'' . rawurlencode($filename));
+        header('Content-Length: ' . strlen($content));
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo $content;
+        exit;
+    }
+}
+
 $maintenanceTaskMeta = [
     'refresh_sync_labels' => [
         'label' => 'Refresh Sync Labels',
@@ -146,9 +362,16 @@ $maintenanceTaskMeta = [
     'export_products_sql' => [
         'label' => 'Export Products SQL',
         'description' => 'Exporta products a SQL bulk insert reutilizable para una DB futura.',
+        'frequency' => 'Weekly',
+        'group' => 'weekly',
+        'script' => 'scripts/export_products_sql.php',
+    ],
+    'export_posts_pastebin' => [
+        'label' => 'Export Posts Table JSON',
+        'description' => 'Exporta la tabla posts completa a JSON (latest + snapshot).',
         'frequency' => 'As needed',
         'group' => 'as_needed',
-        'script' => 'scripts/export_products_sql.php',
+        'script' => 'scripts/export_posts_pastebin.php',
     ],
     'generate_migration' => [
         'label' => 'Generate Migration Script',
@@ -208,6 +431,13 @@ foreach ($maintenanceTaskMeta as $taskKey => $taskConfig) {
     }
 }
 
+$postAutosaveEnabled = false;
+try {
+    $postAutosaveEnabled = enma_maintenance_table_exists($pdo, 'post_autosaves');
+} catch (Throwable $e) {
+    $postAutosaveEnabled = false;
+}
+
 $availableAdvancedTasks = [];
 foreach ($advancedTaskMeta as $taskKey => $taskConfig) {
     $scriptPath = enma_maintenance_resolve_script((string) $taskConfig['script']);
@@ -230,6 +460,103 @@ try {
     }
 } catch (Throwable $e) {
     $maintenanceLog[] = 'Usage tracking disabled: ' . $e->getMessage();
+}
+
+$affiliateDraftForm = [
+    'auto_mode' => '1',
+    'topic' => '',
+    'keyword' => '',
+    'product' => '',
+    'category' => '',
+    'model' => 'gemini-2.0-flash',
+];
+$affiliateDraftResult = null;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_generate_affiliate_post') {
+    $affiliateDraftForm['auto_mode'] = !empty($_POST['auto_mode']) ? '1' : '0';
+    $affiliateDraftForm['topic'] = trim((string) ($_POST['topic'] ?? ''));
+    $affiliateDraftForm['keyword'] = trim((string) ($_POST['keyword'] ?? ''));
+    $affiliateDraftForm['product'] = trim((string) ($_POST['product'] ?? ''));
+    $affiliateDraftForm['category'] = trim((string) ($_POST['category'] ?? ''));
+    $affiliateDraftForm['model'] = trim((string) ($_POST['model'] ?? ''));
+    if ($affiliateDraftForm['model'] === '') {
+        $affiliateDraftForm['model'] = 'gemini-2.0-flash';
+    }
+
+    $scriptPath = enma_maintenance_resolve_script('scripts/generate_affiliate_post.php');
+    $taskKey = 'maintenance_generate_affiliate_post';
+    $taskRunOk = false;
+    $taskRunMessage = '';
+
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+        $taskRunMessage = 'Invalid request token.';
+    } elseif ($scriptPath === null) {
+        $errors[] = 'Generator script is unavailable.';
+        $taskRunMessage = 'Generator script is unavailable.';
+    } elseif (
+        $affiliateDraftForm['auto_mode'] !== '1'
+        && (
+        $affiliateDraftForm['topic'] === ''
+        || $affiliateDraftForm['keyword'] === ''
+        || $affiliateDraftForm['product'] === ''
+        || $affiliateDraftForm['category'] === ''
+        )
+    ) {
+        $errors[] = 'Topic, keyword, product and category are required.';
+        $taskRunMessage = 'Missing required generator parameters.';
+    } else {
+        try {
+            $cliArgs = ['model' => $affiliateDraftForm['model']];
+            if ($affiliateDraftForm['auto_mode'] === '1') {
+                $cliArgs['auto'] = '1';
+            } else {
+                $cliArgs['topic'] = $affiliateDraftForm['topic'];
+                $cliArgs['keyword'] = $affiliateDraftForm['keyword'];
+                $cliArgs['product'] = $affiliateDraftForm['product'];
+                $cliArgs['category'] = $affiliateDraftForm['category'];
+            }
+            $run = enma_maintenance_run_cli((string) $scriptPath, $cliArgs);
+            $exitCode = (int) ($run['exit_code'] ?? 1);
+            $outputLines = array_values(array_filter(array_map('trim', (array) ($run['output_lines'] ?? [])), static fn(string $line): bool => $line !== ''));
+
+            $affiliateDraftResult = [
+                'ok' => $exitCode === 0,
+                'exit_code' => $exitCode,
+                'php_binary' => (string) ($run['php_binary'] ?? ''),
+                'output_lines' => $outputLines,
+            ];
+
+            if ($exitCode === 0) {
+                $flash = 'Affiliate draft generation completed.';
+                $taskRunOk = true;
+                $taskRunMessage = $flash;
+                $maintenanceLog[] = 'Task: maintenance_generate_affiliate_post';
+                $maintenanceLog[] = 'Script: scripts/generate_affiliate_post.php';
+                $maintenanceLog[] = 'Mode: ' . ($affiliateDraftForm['auto_mode'] === '1' ? 'auto' : 'manual');
+                $maintenanceLog[] = 'PHP CLI: ' . (string) ($run['php_binary'] ?? 'php');
+                foreach ($outputLines as $line) {
+                    $maintenanceLog[] = $line;
+                }
+            } else {
+                $taskRunMessage = 'Affiliate draft generation failed (exit code ' . $exitCode . ').';
+                $errors[] = $taskRunMessage;
+                $maintenanceLog[] = 'PHP CLI: ' . (string) ($run['php_binary'] ?? 'php');
+                foreach ($outputLines as $line) {
+                    $maintenanceLog[] = $line;
+                }
+            }
+        } catch (Throwable $e) {
+            $taskRunMessage = 'Affiliate draft generation failed: ' . $e->getMessage();
+            $errors[] = $taskRunMessage;
+        }
+    }
+
+    try {
+        enma_maintenance_record_usage($pdo, $taskKey, $taskRunOk ? 'ok' : 'fail', $taskRunMessage);
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+    }
 }
 
 // Advanced maintenance tasks
@@ -561,26 +888,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'export_products_sql') {
-            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
-            ob_start();
             try {
-                require $scriptPath;
-                $output = trim((string) ob_get_clean());
-                $flash = 'Products SQL exported successfully.';
+                $export = enma_maintenance_build_products_export_sql($pdo);
+                $flash = 'Products SQL export download started.';
                 $taskRunOk = true;
-                $taskRunMessage = $output !== '' ? $output : $flash;
-                if ($output !== '') {
-                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
-                        if (trim((string) $line) !== '') {
-                            $maintenanceLog[] = (string) $line;
-                        }
-                    }
-                }
+                $taskRunMessage = $flash;
                 $maintenanceLog[] = 'Task: export_products_sql';
-                $maintenanceLog[] = 'Output: /workspace/products_export.sql';
+                $maintenanceLog[] = 'Mode: browser download';
+                $maintenanceLog[] = 'Rows exported: ' . (int) ($export['row_count'] ?? 0);
+                try {
+                    enma_maintenance_record_usage($pdo, $task, 'ok', $taskRunMessage);
+                } catch (Throwable $e) {
+                    $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+                }
+                enma_maintenance_stream_download(
+                    (string) $export['filename'],
+                    (string) $export['content_type'],
+                    (string) $export['content']
+                );
             } catch (Throwable $e) {
-                ob_end_clean();
                 $taskRunMessage = 'Products export failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'export_posts_pastebin') {
+            try {
+                $export = enma_maintenance_build_posts_export_json($pdo);
+                $flash = 'Posts table JSON download started.';
+                $taskRunOk = true;
+                $taskRunMessage = $flash;
+                $maintenanceLog[] = 'Task: export_posts_pastebin';
+                $maintenanceLog[] = 'Mode: browser download';
+                $maintenanceLog[] = 'Rows exported: ' . (int) ($export['row_count'] ?? 0);
+                try {
+                    enma_maintenance_record_usage($pdo, $task, 'ok', $taskRunMessage);
+                } catch (Throwable $e) {
+                    $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+                }
+                enma_maintenance_stream_download(
+                    (string) $export['filename'],
+                    (string) $export['content_type'],
+                    (string) $export['content']
+                );
+            } catch (Throwable $e) {
+                $taskRunMessage = 'Posts table JSON export failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_migration') {

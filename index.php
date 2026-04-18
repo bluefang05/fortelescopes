@@ -33,6 +33,9 @@ $breadcrumbs = [
 $viewPageType = 'home';
 $viewPageSlug = '';
 $viewProductId = 0;
+$canPreviewDrafts = frontend_admin_preview_enabled();
+$isDraftPreview = false;
+$draftPreviewNotice = '';
 $jsonLd[] = json_ld_for_organization();
 $jsonLd[] = json_ld_for_website();
 
@@ -83,10 +86,11 @@ if ($segments === []) {
     $data['products'] = get_recent_products($pdo, 18);
     $data['telescopes'] = get_products_by_category($pdo, 'telescopes', 6);
     $data['accessories'] = get_products_by_category($pdo, 'accessories', 6);
-    $pageTitle = APP_NAME . ' | Telescopes and Astronomy Gear';
-    $meta['description'] = 'Explore beginner telescopes, popular astronomy accessories, and practical stargazing guides.';
+    $pageTitle = 'Best Beginner Telescopes, Astronomy Gear Reviews & Stargazing Guides | ' . APP_NAME;
+    $meta['description'] = 'Compare beginner telescopes, telescope accessories, and practical stargazing guides built to help new observers choose the right gear.';
     $meta['image'] = absolute_url('/assets/logo/1024.png');
     $jsonLd[] = json_ld_for_itemlist($data['products'], 'Featured Telescope and Astronomy Products');
+    $jsonLd[] = json_ld_for_faq(seo_faq_for_page('home'));
 } elseif (count($segments) === 2 && $segments[0] === 'category') {
     $categorySlug = slugify($segments[1]);
     $products = get_products_by_category($pdo, $categorySlug, 12);
@@ -105,9 +109,13 @@ if ($segments === []) {
         $viewPageSlug = $categorySlug;
         $pageTitle = $products[0]['category_name'] . ' | ' . APP_NAME;
         $template = __DIR__ . '/templates/category.php';
-        $meta['description'] = 'Browse ' . $products[0]['category_name'] . ' recommendations and compare options before buying.';
+        $meta['description'] = 'Browse ' . $products[0]['category_name'] . ' recommendations, buying tips, and practical picks for astronomy sessions.';
         $meta['image'] = absolute_url('/assets/logo/1024.png');
         $jsonLd[] = json_ld_for_itemlist($products, $products[0]['category_name'] . ' recommendations');
+        $jsonLd[] = json_ld_for_faq(seo_faq_for_page('category', [
+            'slug' => $categorySlug,
+            'name' => $products[0]['category_name'],
+        ]));
         $breadcrumbs[] = ['name' => 'Categories', 'url' => absolute_url('/telescopes')];
         $breadcrumbs[] = ['name' => $products[0]['category_name'], 'url' => absolute_url($canonicalPath)];
     }
@@ -129,9 +137,13 @@ if ($segments === []) {
         $viewPageSlug = $categorySlug;
         $pageTitle = $products[0]['category_name'] . ' | ' . APP_NAME;
         $template = __DIR__ . '/templates/category.php';
-        $meta['description'] = 'Compare ' . strtolower($products[0]['category_name']) . ' for astronomy and stargazing sessions.';
+        $meta['description'] = 'Compare ' . strtolower($products[0]['category_name']) . ' with practical buying advice, use-case notes, and beginner-friendly recommendations.';
         $meta['image'] = absolute_url('/assets/logo/1024.png');
         $jsonLd[] = json_ld_for_itemlist($products, $products[0]['category_name']);
+        $jsonLd[] = json_ld_for_faq(seo_faq_for_page('category', [
+            'slug' => $categorySlug,
+            'name' => $products[0]['category_name'],
+        ]));
         $breadcrumbs[] = ['name' => $products[0]['category_name'], 'url' => absolute_url($canonicalPath)];
     }
 } elseif (count($segments) === 2 && $segments[0] === 'product') {
@@ -163,16 +175,17 @@ if ($segments === []) {
         }
         $meta['type'] = 'product';
         $jsonLd[] = json_ld_for_product($product);
+        $jsonLd[] = json_ld_for_faq(seo_faq_for_page('product', $product));
         $breadcrumbs[] = ['name' => 'Products', 'url' => absolute_url('/telescopes')];
         $breadcrumbs[] = ['name' => $product['title'], 'url' => absolute_url($canonicalPath)];
     }
 } elseif (
     (count($segments) === 2 && $segments[0] === 'guides') ||
-    (count($segments) === 1 && ($guide = find_post_by_slug($pdo, slugify($segments[0]))) && $guide['post_type'] === 'guide')
+    (count($segments) === 1 && ($guide = find_post_by_slug($pdo, slugify($segments[0]), $canPreviewDrafts)) && $guide['post_type'] === 'guide')
 ) {
     $guideSlug = count($segments) === 2 ? slugify($segments[1]) : slugify($segments[0]);
     if (!isset($guide)) {
-        $guide = find_post_by_slug($pdo, $guideSlug);
+        $guide = find_post_by_slug($pdo, $guideSlug, $canPreviewDrafts);
     }
 
     if ($guide === null || $guide['post_type'] !== 'guide') {
@@ -187,9 +200,14 @@ if ($segments === []) {
         if ($guideProducts === []) {
             $guideProducts = get_recent_products($pdo, 6);
         }
+        $isDraftPreview = $canPreviewDrafts && (($guide['status'] ?? 'published') !== 'published');
+        if ($isDraftPreview) {
+            $draftPreviewNotice = 'Preview privado: esta guía está en BORRADOR. Solo es visible para tu sesión admin.';
+            $meta['robots'] = 'noindex,nofollow';
+        }
         $data['guide'] = $guide;
         $data['guideProducts'] = $guideProducts;
-        $data['otherGuides'] = array_filter(get_posts($pdo, 'guide', 4), function($g) use ($guideSlug) {
+        $data['otherGuides'] = array_filter(get_posts($pdo, 'guide', 4, $canPreviewDrafts), function($g) use ($guideSlug) {
             return $g['slug'] !== $guideSlug;
         });
         $template = __DIR__ . '/templates/guide.php';
@@ -198,7 +216,12 @@ if ($segments === []) {
         $meta['image'] = !empty($guide['featured_image']) ? absolute_url($guide['featured_image']) : absolute_url('/assets/logo/1024.png');
         $canonicalPath = '/' . $guideSlug;
         $jsonLd[] = json_ld_for_itemlist($guideProducts, $guide['title']);
-        $jsonLd[] = json_ld_for_article($guide['title'], $guide['description'], absolute_url($canonicalPath), gmdate('c'));
+        $jsonLd[] = json_ld_for_article(
+            $guide['title'],
+            $guide['description'],
+            absolute_url($canonicalPath),
+            (string) ($guide['updated_at'] ?? $guide['published_at'] ?? gmdate('c'))
+        );
         $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
         $breadcrumbs[] = ['name' => $guide['title'], 'url' => absolute_url($canonicalPath)];
         if (!empty($guide['faq'])) {
@@ -209,25 +232,58 @@ if ($segments === []) {
     $viewPageType = 'guides';
     $viewPageSlug = 'guides-hub';
     $template = __DIR__ . '/templates/guides.php';
-    $data['guides'] = get_posts($pdo, 'guide', 10);
+    $data['guides'] = get_posts($pdo, 'guide', 10, $canPreviewDrafts);
     $pageTitle = 'Astronomy Buying Guides | ' . APP_NAME;
-    $meta['description'] = 'Browse telescope and astronomy buying guides covering beginner picks, accessories, and budget-friendly models.';
+    $meta['description'] = 'Browse telescope buying guides, accessory recommendations, and budget-friendly astronomy advice for beginners.';
     $meta['image'] = absolute_url('/assets/logo/1024.png');
     $canonicalPath = '/guides';
+    $jsonLd[] = json_ld_for_faq(seo_faq_for_page('guides'));
     $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
 } elseif (count($segments) === 1 && $segments[0] === 'blog') {
     $viewPageType = 'blog';
     $viewPageSlug = 'blog-index';
     $template = __DIR__ . '/templates/blog.php';
-    $data['posts'] = get_posts($pdo, 'post', 10);
-    $pageTitle = 'Astronomy Blog | ' . APP_NAME;
-    $meta['description'] = 'Read the latest astronomy articles, news, and stargazing tips.';
+    $blogPerPage = 9;
+    $requestedBlogPage = max(1, (int) ($_GET['page'] ?? 1));
+    $blogTotalPosts = get_posts_count($pdo, 'post', $canPreviewDrafts);
+    $blogTotalPages = max(1, (int) ceil($blogTotalPosts / $blogPerPage));
+    $blogCurrentPage = min($requestedBlogPage, $blogTotalPages);
+    $data['posts'] = get_posts_paginated($pdo, 'post', $blogCurrentPage, $blogPerPage, $canPreviewDrafts);
+    $data['blog_pagination'] = [
+        'page' => $blogCurrentPage,
+        'per_page' => $blogPerPage,
+        'total_items' => $blogTotalPosts,
+        'total_pages' => $blogTotalPages,
+        'has_prev' => $blogCurrentPage > 1,
+        'has_next' => $blogCurrentPage < $blogTotalPages,
+        'prev_page' => max(1, $blogCurrentPage - 1),
+        'next_page' => min($blogTotalPages, $blogCurrentPage + 1),
+    ];
+    $data['blog_admin_preview'] = $canPreviewDrafts;
+    $pageTitle = 'Astronomy Blog, Stargazing Tips & Telescope Advice | ' . APP_NAME;
+    if ($blogCurrentPage > 1) {
+        $pageTitle = 'Astronomy Blog - Page ' . $blogCurrentPage . ' | ' . APP_NAME;
+    }
+    $meta['description'] = 'Read astronomy articles, stargazing tips, telescope setup advice, and beginner-friendly observing content.';
     $meta['image'] = absolute_url('/assets/logo/1024.png');
+    if ($blogCurrentPage > 1) {
+        $meta['prev_url'] = absolute_url('/blog' . ($blogCurrentPage === 2 ? '' : '?page=' . ($blogCurrentPage - 1)));
+    }
+    if ($blogCurrentPage < $blogTotalPages) {
+        $meta['next_url'] = absolute_url('/blog?page=' . ($blogCurrentPage + 1));
+    }
+    if ($canPreviewDrafts) {
+        $draftPreviewNotice = 'Preview privado activo: la lista incluye borradores visibles solo para tu sesión admin.';
+    }
     $canonicalPath = '/blog';
+    if ($blogCurrentPage > 1) {
+        $canonicalPath .= '?page=' . $blogCurrentPage;
+    }
+    $jsonLd[] = json_ld_for_faq(seo_faq_for_page('blog'));
     $breadcrumbs[] = ['name' => 'Blog', 'url' => absolute_url('/blog')];
 } elseif (count($segments) === 2 && $segments[0] === 'blog') {
     $postSlug = slugify($segments[1]);
-    $post = find_post_by_slug($pdo, $postSlug);
+    $post = find_post_by_slug($pdo, $postSlug, $canPreviewDrafts);
 
     if ($post === null || ($post['post_type'] ?? 'post') !== 'post') {
         http_response_code(404);
@@ -235,10 +291,15 @@ if ($segments === []) {
         $pageTitle = 'Post Not Found | ' . APP_NAME;
         $meta['robots'] = 'noindex,follow';
     } else {
+        $isDraftPreview = $canPreviewDrafts && (($post['status'] ?? 'published') !== 'published');
+        if ($isDraftPreview) {
+            $draftPreviewNotice = 'Preview privado: este artículo está en BORRADOR. Solo es visible para tu sesión admin.';
+            $meta['robots'] = 'noindex,nofollow';
+        }
         $viewPageType = 'post';
         $viewPageSlug = $postSlug;
         $data['post'] = $post;
-        $data['otherGuides'] = get_posts($pdo, 'guide', 3);
+        $data['otherGuides'] = get_posts($pdo, 'guide', 3, $canPreviewDrafts);
         $template = __DIR__ . '/templates/post.php';
         $pageTitle = (($post['meta_title'] ?? '') !== '' ? $post['meta_title'] : $post['title']) . ' | ' . APP_NAME;
         $meta['description'] = $post['meta_description'] ?: $post['excerpt'];

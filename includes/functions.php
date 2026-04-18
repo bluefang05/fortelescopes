@@ -434,11 +434,14 @@ function find_product_by_slug(PDO $pdo, string $slug): ?array
     return $row ?: null;
 }
 
-function get_posts(PDO $pdo, string $type = 'post', int $limit = 10): array
+function get_posts(PDO $pdo, string $type = 'post', int $limit = 10, bool $includeDraft = false): array
 {
+    $statusSql = $includeDraft
+        ? 'status IN ("published", "draft")'
+        : 'status = "published"';
     $stmt = $pdo->prepare(
-        'SELECT * FROM posts 
-         WHERE post_type = :type AND status = "published" 
+        'SELECT * FROM posts
+         WHERE post_type = :type AND ' . $statusSql . '
          ORDER BY published_at DESC, id DESC 
          LIMIT :limit'
     );
@@ -450,7 +453,47 @@ function get_posts(PDO $pdo, string $type = 'post', int $limit = 10): array
     return array_map('format_post_row', $rows);
 }
 
-function get_posts_by_types(PDO $pdo, array $types, int $limit = 10): array
+function get_posts_count(PDO $pdo, string $type = 'post', bool $includeDraft = false): int
+{
+    $statusSql = $includeDraft
+        ? 'status IN ("published", "draft")'
+        : 'status = "published"';
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM posts
+         WHERE post_type = :type AND ' . $statusSql
+    );
+    $stmt->bindValue(':type', $type, PDO::PARAM_STR);
+    $stmt->execute();
+    return (int) $stmt->fetchColumn();
+}
+
+function get_posts_paginated(PDO $pdo, string $type = 'post', int $page = 1, int $perPage = 9, bool $includeDraft = false): array
+{
+    $safePage = max(1, $page);
+    $safePerPage = max(1, $perPage);
+    $offset = ($safePage - 1) * $safePerPage;
+    $statusSql = $includeDraft
+        ? 'status IN ("published", "draft")'
+        : 'status = "published"';
+
+    $stmt = $pdo->prepare(
+        'SELECT *
+         FROM posts
+         WHERE post_type = :type AND ' . $statusSql . '
+         ORDER BY published_at DESC, id DESC
+         LIMIT :limit OFFSET :offset'
+    );
+    $stmt->bindValue(':type', $type, PDO::PARAM_STR);
+    $stmt->bindValue(':limit', $safePerPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    return array_map('format_post_row', $rows);
+}
+
+function get_posts_by_types(PDO $pdo, array $types, int $limit = 10, bool $includeDraft = false): array
 {
     $cleanTypes = array_values(array_filter(array_map(static fn($t): string => trim((string) $t), $types)));
     if ($cleanTypes === []) {
@@ -465,8 +508,12 @@ function get_posts_by_types(PDO $pdo, array $types, int $limit = 10): array
         $params[$key] = $type;
     }
 
+    $statusSql = $includeDraft
+        ? 'status IN ("published", "draft")'
+        : 'status = "published"';
+
     $sql = 'SELECT * FROM posts
-            WHERE post_type IN (' . implode(', ', $placeholders) . ') AND status = "published"
+            WHERE post_type IN (' . implode(', ', $placeholders) . ') AND ' . $statusSql . '
             ORDER BY published_at DESC, id DESC
             LIMIT :limit';
     $stmt = $pdo->prepare($sql);
@@ -483,11 +530,14 @@ function get_posts_by_types(PDO $pdo, array $types, int $limit = 10): array
     return array_map('format_post_row', $rows);
 }
 
-function find_post_by_slug(PDO $pdo, string $slug): ?array
+function find_post_by_slug(PDO $pdo, string $slug, bool $includeDraft = false): ?array
 {
+    $statusSql = $includeDraft
+        ? 'status IN ("published", "draft")'
+        : 'status = "published"';
     $stmt = $pdo->prepare(
-        'SELECT * FROM posts 
-         WHERE slug = :slug AND status = "published" 
+        'SELECT * FROM posts
+         WHERE slug = :slug AND ' . $statusSql . '
          LIMIT 1'
     );
     $stmt->execute([':slug' => $slug]);
@@ -553,10 +603,20 @@ function csrf_is_valid(?string $token): bool
     return hash_equals($sessionToken, $token);
 }
 
+function frontend_admin_preview_enabled(): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        @session_start();
+    }
+
+    return !empty($_SESSION['admin_ok'])
+        || (!empty($_SESSION['admin_user_id']) && !empty($_SESSION['admin_username']));
+}
+
 function site_meta_defaults(): array
 {
     return [
-        'description' => 'Affiliate product recommendations for telescope accessories.',
+        'description' => 'Beginner-friendly telescope buying guides, astronomy gear comparisons, and practical stargazing tips.',
         'type' => 'website',
         'image' => 'https://images.unsplash.com/photo-1446776653964-20c1d3a81b06?auto=format&fit=crop&w=1200&q=80',
     ];
@@ -882,6 +942,8 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
 {
     $days = max(1, min(365, $days));
     $fromDate = gmdate('Y-m-d', time() - (($days - 1) * 86400));
+    $prevToDate = gmdate('Y-m-d', strtotime($fromDate . ' -1 day'));
+    $prevFromDate = gmdate('Y-m-d', strtotime($fromDate . ' -' . $days . ' days'));
 
     $totalsStmt = $pdo->prepare(
         'SELECT
@@ -893,6 +955,20 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
     );
     $totalsStmt->execute([':from_date' => $fromDate]);
     $totals = $totalsStmt->fetch() ?: ['total_views' => 0, 'rows_count' => 0, 'unique_paths' => 0];
+
+    $previousTotalsStmt = $pdo->prepare(
+        'SELECT
+            COALESCE(SUM(views), 0) AS total_views,
+            COUNT(*) AS rows_count,
+            COUNT(DISTINCT path) AS unique_paths
+         FROM page_views
+         WHERE view_date BETWEEN :from_date AND :to_date'
+    );
+    $previousTotalsStmt->execute([
+        ':from_date' => $prevFromDate,
+        ':to_date' => $prevToDate,
+    ]);
+    $previousTotals = $previousTotalsStmt->fetch() ?: ['total_views' => 0, 'rows_count' => 0, 'unique_paths' => 0];
 
     $topPagesStmt = $pdo->prepare(
         'SELECT path, page_type, SUM(views) AS total_views
@@ -957,6 +1033,16 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
     );
     $clickTotalsStmt->execute([':from_date' => $fromDate]);
     $clickTotals = $clickTotalsStmt->fetch() ?: ['total_clicks' => 0];
+    $previousClickTotalsStmt = $pdo->prepare(
+        'SELECT COUNT(*) AS total_clicks
+         FROM outbound_clicks
+         WHERE click_date BETWEEN :from_date AND :to_date'
+    );
+    $previousClickTotalsStmt->execute([
+        ':from_date' => $prevFromDate,
+        ':to_date' => $prevToDate,
+    ]);
+    $previousClickTotals = $previousClickTotalsStmt->fetch() ?: ['total_clicks' => 0];
 
     $topClickedProductsStmt = $pdo->prepare(
         'SELECT oc.product_id, p.title, p.slug, COUNT(*) AS clicks
@@ -977,11 +1063,130 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
     if ($totalViews > 0) {
         $ctr = ($totalClicks / $totalViews) * 100;
     }
+    $prevTotalViews = (int) ($previousTotals['total_views'] ?? 0);
+    $prevTotalClicks = (int) ($previousClickTotals['total_clicks'] ?? 0);
+    $prevCtr = $prevTotalViews > 0 ? ($prevTotalClicks / $prevTotalViews) * 100 : 0.0;
+
+    $funnelTotalsStmt = $pdo->prepare(
+        'SELECT
+            COALESCE(SUM(CASE WHEN page_type = \'product\' THEN views ELSE 0 END), 0) AS product_views,
+            COALESCE(SUM(CASE WHEN page_type IN (\'home\', \'category\', \'guide\', \'guides\', \'blog\', \'post\', \'page\') THEN views ELSE 0 END), 0) AS discovery_views
+         FROM page_views
+         WHERE view_date >= :from_date'
+    );
+    $funnelTotalsStmt->execute([':from_date' => $fromDate]);
+    $funnelTotals = $funnelTotalsStmt->fetch() ?: ['product_views' => 0, 'discovery_views' => 0];
+    $productViews = (int) ($funnelTotals['product_views'] ?? 0);
+    $discoveryViews = (int) ($funnelTotals['discovery_views'] ?? 0);
+
+    $pathViewsCurrentStmt = $pdo->prepare(
+        'SELECT path, SUM(views) AS total_views
+         FROM page_views
+         WHERE view_date >= :from_date
+         GROUP BY path'
+    );
+    $pathViewsCurrentStmt->execute([':from_date' => $fromDate]);
+    $pathViewsCurrent = $pathViewsCurrentStmt->fetchAll();
+    $pathViewsPrevStmt = $pdo->prepare(
+        'SELECT path, SUM(views) AS total_views
+         FROM page_views
+         WHERE view_date BETWEEN :from_date AND :to_date
+         GROUP BY path'
+    );
+    $pathViewsPrevStmt->execute([
+        ':from_date' => $prevFromDate,
+        ':to_date' => $prevToDate,
+    ]);
+    $pathViewsPrev = $pathViewsPrevStmt->fetchAll();
+
+    $pathMap = [];
+    foreach ($pathViewsPrev as $row) {
+        $path = (string) ($row['path'] ?? '');
+        if ($path === '') {
+            continue;
+        }
+        $pathMap[$path] = [
+            'path' => $path,
+            'current_views' => 0,
+            'previous_views' => (int) ($row['total_views'] ?? 0),
+            'delta_views' => 0,
+            'delta_percent' => 0.0,
+        ];
+    }
+    foreach ($pathViewsCurrent as $row) {
+        $path = (string) ($row['path'] ?? '');
+        if ($path === '') {
+            continue;
+        }
+        if (!isset($pathMap[$path])) {
+            $pathMap[$path] = [
+                'path' => $path,
+                'current_views' => 0,
+                'previous_views' => 0,
+                'delta_views' => 0,
+                'delta_percent' => 0.0,
+            ];
+        }
+        $pathMap[$path]['current_views'] = (int) ($row['total_views'] ?? 0);
+    }
+
+    foreach ($pathMap as $key => $row) {
+        $currentViews = (int) ($row['current_views'] ?? 0);
+        $previousViews = (int) ($row['previous_views'] ?? 0);
+        $deltaViews = $currentViews - $previousViews;
+        $deltaPercent = $previousViews > 0
+            ? (($deltaViews / $previousViews) * 100)
+            : ($currentViews > 0 ? 100.0 : 0.0);
+        $pathMap[$key]['delta_views'] = $deltaViews;
+        $pathMap[$key]['delta_percent'] = $deltaPercent;
+    }
+
+    $pathDeltaRows = array_values($pathMap);
+    usort($pathDeltaRows, static function (array $a, array $b): int {
+        return ((int) ($b['delta_views'] ?? 0)) <=> ((int) ($a['delta_views'] ?? 0));
+    });
+    $topWinners = array_values(array_filter($pathDeltaRows, static function (array $row): bool {
+        return (int) ($row['delta_views'] ?? 0) > 0;
+    }));
+    $topWinners = array_slice($topWinners, 0, 10);
+
+    usort($pathDeltaRows, static function (array $a, array $b): int {
+        return ((int) ($a['delta_views'] ?? 0)) <=> ((int) ($b['delta_views'] ?? 0));
+    });
+    $topLosers = array_values(array_filter($pathDeltaRows, static function (array $row): bool {
+        return (int) ($row['delta_views'] ?? 0) < 0;
+    }));
+    $topLosers = array_slice($topLosers, 0, 10);
 
     return [
         'days' => $days,
         'from_date' => $fromDate,
+        'previous_range' => [
+            'from_date' => $prevFromDate,
+            'to_date' => $prevToDate,
+        ],
         'totals' => $totals,
+        'compare' => [
+            'totals' => $previousTotals,
+            'clicks' => [
+                'total_clicks' => $prevTotalClicks,
+                'ctr_percent' => $prevCtr,
+            ],
+            'delta' => [
+                'views' => $totalViews - $prevTotalViews,
+                'clicks' => $totalClicks - $prevTotalClicks,
+                'ctr_percent' => $ctr - $prevCtr,
+            ],
+            'top_winners' => $topWinners,
+            'top_losers' => $topLosers,
+        ],
+        'funnel' => [
+            'discovery_views' => $discoveryViews,
+            'product_views' => $productViews,
+            'outbound_clicks' => $totalClicks,
+            'discovery_to_product_percent' => $discoveryViews > 0 ? (($productViews / $discoveryViews) * 100) : 0.0,
+            'product_to_click_percent' => $productViews > 0 ? (($totalClicks / $productViews) * 100) : 0.0,
+        ],
         'top_pages' => $topPages,
         'top_products' => $topProducts,
         'top_countries' => $topCountries,
@@ -1804,5 +2009,106 @@ function json_ld_for_website(): array
         '@type' => 'WebSite',
         'name' => APP_NAME,
         'url' => absolute_url('/'),
+    ];
+}
+
+function seo_faq_for_page(string $pageType, array $context = []): array
+{
+    return match ($pageType) {
+        'home' => [
+            [
+                'q' => 'What is the best telescope for a beginner?',
+                'a' => 'The best beginner telescope is usually one that is stable, easy to set up, and simple enough to use often. Small refractors and beginner Dobsonians are common starting points because they reduce setup friction.',
+            ],
+            [
+                'q' => 'Should I buy a telescope or accessories first?',
+                'a' => 'If you do not already own a telescope, start with the telescope first. Accessories help most after you know which bottlenecks you want to solve, such as comfort, magnification, or phone photography.',
+            ],
+            [
+                'q' => 'How much should a first telescope cost?',
+                'a' => 'Many beginners start in the entry to mid-range budget, then upgrade once they know how often they observe and what targets they enjoy most.',
+            ],
+        ],
+        'category' => category_seo_faq((string) ($context['slug'] ?? ''), (string) ($context['name'] ?? 'Astronomy gear')),
+        'product' => product_seo_faq($context),
+        'guides' => [
+            [
+                'q' => 'Which astronomy guide should I read first?',
+                'a' => 'Start with the guide closest to your current decision. Read a beginner telescope guide if you need your first scope, an accessories guide if you already have one, and a budget guide if you are comparing price ceilings.',
+            ],
+            [
+                'q' => 'Do buying guides help with product research?',
+                'a' => 'Yes. A good buying guide narrows the field, explains tradeoffs, and links to more detailed comparisons so you can avoid random catalog browsing.',
+            ],
+        ],
+        'blog' => [
+            [
+                'q' => 'What kind of astronomy articles are best for beginners?',
+                'a' => 'The most useful beginner articles explain setup, observing habits, and common buying mistakes in plain language, then link to deeper product guides when needed.',
+            ],
+            [
+                'q' => 'Can blog articles help me choose telescope gear?',
+                'a' => 'Yes. Informational articles often answer the early research questions people ask before they are ready to compare products directly.',
+            ],
+        ],
+        default => [],
+    };
+}
+
+function category_seo_faq(string $categorySlug, string $categoryName): array
+{
+    $categorySlug = slugify($categorySlug);
+    if ($categorySlug === 'accessories') {
+        return [
+            [
+                'q' => 'Which telescope accessories matter most first?',
+                'a' => 'The most useful first accessories are usually the ones that solve a clear observing problem, such as a better eyepiece, a moon filter, or a phone adapter for simple astrophotography.',
+            ],
+            [
+                'q' => 'Should beginners buy accessory kits?',
+                'a' => 'Beginners should usually buy accessories one at a time unless a kit clearly matches their telescope and includes items they will actually use.',
+            ],
+        ];
+    }
+
+    return [
+        [
+            'q' => 'What should I look for in beginner telescopes?',
+            'a' => 'Look for stable mounts, manageable aperture, easy setup, and a design you are likely to use often. Ease of use matters more than raw specifications for most first-time buyers.',
+        ],
+        [
+            'q' => 'Is a bigger telescope always better?',
+            'a' => 'Not always. A larger telescope can show more, but if it is hard to move or set up, a simpler model may lead to more real observing time.',
+        ],
+    ];
+}
+
+function product_seo_faq(array $product): array
+{
+    $title = trim((string) ($product['title'] ?? 'this product'));
+    $categorySlug = slugify((string) ($product['category_slug'] ?? ''));
+    $bestFor = product_best_for($product);
+
+    $firstAnswer = $title . ' is best for ' . lcfirst($bestFor);
+    if (!str_ends_with($firstAnswer, '.')) {
+        $firstAnswer .= '.';
+    }
+
+    $fitQuestion = $categorySlug === 'accessories'
+        ? 'How do I know if ' . $title . ' fits my telescope?'
+        : 'Is ' . $title . ' a good beginner telescope?';
+    $fitAnswer = $categorySlug === 'accessories'
+        ? 'Check the accessory size, mounting standard, and whether it solves a real observing problem for your current setup before buying.'
+        : 'It can be a good beginner option if its setup, size, and price match how often you plan to observe and what you want to see.';
+
+    return [
+        [
+            'q' => 'Who is ' . $title . ' best for?',
+            'a' => $firstAnswer,
+        ],
+        [
+            'q' => $fitQuestion,
+            'a' => $fitAnswer,
+        ],
     ];
 }
