@@ -1,6 +1,25 @@
-﻿<?php
+<?php
 $products = $data['products'] ?? [];
 $tiers = pick_tier_products($products);
+$pagination = $data['category_pagination'] ?? [
+    'page' => 1,
+    'total_pages' => 1,
+    'total_items' => count($products),
+    'has_prev' => false,
+    'has_next' => false,
+    'prev_page' => 1,
+    'next_page' => 1,
+];
+$currentPage = max(1, (int) ($pagination['page'] ?? 1));
+$totalPages = max(1, (int) ($pagination['total_pages'] ?? 1));
+$totalItems = max(0, (int) ($pagination['total_items'] ?? 0));
+$pageWindow = pagination_window($currentPage, $totalPages, 2);
+$categorySlug = trim((string) ($data['categorySlug'] ?? slugify((string) ($data['categoryName'] ?? ''))));
+$categoryPath = in_array($categorySlug, ['telescopes', 'accessories'], true) ? '/' . $categorySlug : '/category/' . $categorySlug;
+$buildCategoryPageUrl = static function (int $page) use ($categoryPath): string {
+    $safePage = max(1, $page);
+    return $safePage === 1 ? url($categoryPath) : url($categoryPath . '?page=' . $safePage);
+};
 ?>
 <section class="hero">
     <span class="hero-kicker">Category Focus</span>
@@ -32,31 +51,28 @@ $tiers = pick_tier_products($products);
             <span class="tier-tag tier-top">Top Pick</span>
             <h4><?= e($tiers['top']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['top'])) ?></p>
-            
         </article>
         <article class="tier-card">
             <span class="tier-tag tier-budget">Budget Pick</span>
             <h4><?= e($tiers['budget']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['budget'])) ?></p>
-            
         </article>
         <article class="tier-card">
             <span class="tier-tag tier-premium">Premium Pick</span>
             <h4><?= e($tiers['premium']['title']) ?></h4>
             <p><?= e(product_best_for($tiers['premium'])) ?></p>
-            
         </article>
     </div>
 <?php endif; ?>
 
 <h2 class="section-title"><?= e($data['categoryName'] ?? 'Category') ?></h2>
-<p class="muted">Products currently published in this category.</p>
+<p class="muted">Products currently published in this category. Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?>.</p>
 
 <div class="grid">
     <?php foreach ($products as $idx => $item): ?>
         <article class="card">
             <a href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener" aria-label="<?= e($item['title']) ?> on Amazon">
-                <img src="<?= e(product_image_url($item)) ?>" alt="<?= e($item['title']) ?>" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';">
+                <img src="<?= e(product_image_url($item)) ?>" alt="<?= e($item['title']) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600" onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';">
             </a>
             <div class="body">
                 <span class="update-pill <?= e(sync_freshness_class($item['last_synced_at'] ?? null)) ?>">
@@ -65,14 +81,31 @@ $tiers = pick_tier_products($products);
                 <span class="badge"><?= e($item['category_name']) ?></span>
                 <h3><?= e($item['title']) ?></h3>
                 <p class="card-copy"><?= e($item['description']) ?></p>
-                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">
-                    <?= $idx === 0 ? 'View on Amazon' : 'View on Amazon' ?>
-                </a>
+                <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
                 <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
         </article>
     <?php endforeach; ?>
 </div>
+
+<?php if ($totalPages > 1): ?>
+    <div class="pagination" aria-label="<?= e((string) ($data['categoryName'] ?? 'Category')) ?> pagination">
+        <div class="pagination-info">
+            Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?> · <?= number_format($totalItems) ?> products
+        </div>
+        <div class="pagination-nav">
+            <?php if (!empty($pagination['has_prev'])): ?>
+                <a class="pagination-link" href="<?= e($buildCategoryPageUrl((int) $pagination['prev_page'])) ?>">Prev</a>
+            <?php endif; ?>
+            <?php for ($page = $pageWindow['start']; $page <= $pageWindow['end']; $page++): ?>
+                <a class="pagination-link <?= $page === $currentPage ? 'active' : '' ?>" href="<?= e($buildCategoryPageUrl($page)) ?>"><?= (int) $page ?></a>
+            <?php endfor; ?>
+            <?php if (!empty($pagination['has_next'])): ?>
+                <a class="pagination-link" href="<?= e($buildCategoryPageUrl((int) $pagination['next_page'])) ?>">Next</a>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endif; ?>
 
 <?php if ($tiers !== []): ?>
     <section class="panel" style="margin-top: 18px;">
@@ -123,4 +156,3 @@ $tiers = pick_tier_products($products);
         </details>
     <?php endif; ?>
 </section>
-

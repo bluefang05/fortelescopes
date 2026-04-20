@@ -49,6 +49,7 @@ if (count($segments) === 1 && $segments[0] === 'go') {
         header('Location: ' . url('/'), true, 302);
         exit;
     }
+
     $host = (string) (parse_url($target, PHP_URL_HOST) ?? '');
     if (!is_amazon_host($host)) {
         header('Location: ' . url('/'), true, 302);
@@ -93,7 +94,12 @@ if ($segments === []) {
     $jsonLd[] = json_ld_for_faq(seo_faq_for_page('home'));
 } elseif (count($segments) === 2 && $segments[0] === 'category') {
     $categorySlug = slugify($segments[1]);
-    $products = get_products_by_category($pdo, $categorySlug, 12);
+    $categoryPerPage = 12;
+    $requestedCategoryPage = max(1, (int) ($_GET['page'] ?? 1));
+    $categoryTotalItems = get_products_count($pdo, $categorySlug);
+    $categoryTotalPages = max(1, (int) ceil($categoryTotalItems / $categoryPerPage));
+    $categoryCurrentPage = min($requestedCategoryPage, $categoryTotalPages);
+    $products = get_products_by_category_paginated($pdo, $categorySlug, $categoryCurrentPage, $categoryPerPage);
     $canonicalPath = '/category/' . $categorySlug;
 
     if ($products === []) {
@@ -105,9 +111,23 @@ if ($segments === []) {
     } else {
         $data['products'] = $products;
         $data['categoryName'] = $products[0]['category_name'];
+        $data['categorySlug'] = $categorySlug;
+        $data['category_pagination'] = [
+            'page' => $categoryCurrentPage,
+            'per_page' => $categoryPerPage,
+            'total_items' => $categoryTotalItems,
+            'total_pages' => $categoryTotalPages,
+            'has_prev' => $categoryCurrentPage > 1,
+            'has_next' => $categoryCurrentPage < $categoryTotalPages,
+            'prev_page' => max(1, $categoryCurrentPage - 1),
+            'next_page' => min($categoryTotalPages, $categoryCurrentPage + 1),
+        ];
         $viewPageType = 'category';
         $viewPageSlug = $categorySlug;
         $pageTitle = $products[0]['category_name'] . ' | ' . APP_NAME;
+        if ($categoryCurrentPage > 1) {
+            $pageTitle = $products[0]['category_name'] . ' - Page ' . $categoryCurrentPage . ' | ' . APP_NAME;
+        }
         $template = __DIR__ . '/templates/category.php';
         $meta['description'] = 'Browse ' . $products[0]['category_name'] . ' recommendations, buying tips, and practical picks for astronomy sessions.';
         $meta['image'] = absolute_url('/assets/logo/1024.png');
@@ -118,10 +138,22 @@ if ($segments === []) {
         ]));
         $breadcrumbs[] = ['name' => 'Categories', 'url' => absolute_url('/telescopes')];
         $breadcrumbs[] = ['name' => $products[0]['category_name'], 'url' => absolute_url($canonicalPath)];
+        if ($categoryCurrentPage > 1) {
+            $meta['prev_url'] = absolute_url($canonicalPath . ($categoryCurrentPage === 2 ? '' : '?page=' . ($categoryCurrentPage - 1)));
+            $canonicalPath .= '?page=' . $categoryCurrentPage;
+        }
+        if ($categoryCurrentPage < $categoryTotalPages) {
+            $meta['next_url'] = absolute_url('/category/' . $categorySlug . '?page=' . ($categoryCurrentPage + 1));
+        }
     }
 } elseif (count($segments) === 1 && in_array($segments[0], ['telescopes', 'accessories'], true)) {
     $categorySlug = $segments[0];
-    $products = get_products_by_category($pdo, $categorySlug, 16);
+    $categoryPerPage = 12;
+    $requestedCategoryPage = max(1, (int) ($_GET['page'] ?? 1));
+    $categoryTotalItems = get_products_count($pdo, $categorySlug);
+    $categoryTotalPages = max(1, (int) ceil($categoryTotalItems / $categoryPerPage));
+    $categoryCurrentPage = min($requestedCategoryPage, $categoryTotalPages);
+    $products = get_products_by_category_paginated($pdo, $categorySlug, $categoryCurrentPage, $categoryPerPage);
     $canonicalPath = '/' . $categorySlug;
 
     if ($products === []) {
@@ -133,9 +165,23 @@ if ($segments === []) {
     } else {
         $data['products'] = $products;
         $data['categoryName'] = $products[0]['category_name'];
+        $data['categorySlug'] = $categorySlug;
+        $data['category_pagination'] = [
+            'page' => $categoryCurrentPage,
+            'per_page' => $categoryPerPage,
+            'total_items' => $categoryTotalItems,
+            'total_pages' => $categoryTotalPages,
+            'has_prev' => $categoryCurrentPage > 1,
+            'has_next' => $categoryCurrentPage < $categoryTotalPages,
+            'prev_page' => max(1, $categoryCurrentPage - 1),
+            'next_page' => min($categoryTotalPages, $categoryCurrentPage + 1),
+        ];
         $viewPageType = 'category';
         $viewPageSlug = $categorySlug;
         $pageTitle = $products[0]['category_name'] . ' | ' . APP_NAME;
+        if ($categoryCurrentPage > 1) {
+            $pageTitle = $products[0]['category_name'] . ' - Page ' . $categoryCurrentPage . ' | ' . APP_NAME;
+        }
         $template = __DIR__ . '/templates/category.php';
         $meta['description'] = 'Compare ' . strtolower($products[0]['category_name']) . ' with practical buying advice, use-case notes, and beginner-friendly recommendations.';
         $meta['image'] = absolute_url('/assets/logo/1024.png');
@@ -145,6 +191,13 @@ if ($segments === []) {
             'name' => $products[0]['category_name'],
         ]));
         $breadcrumbs[] = ['name' => $products[0]['category_name'], 'url' => absolute_url($canonicalPath)];
+        if ($categoryCurrentPage > 1) {
+            $meta['prev_url'] = absolute_url($canonicalPath . ($categoryCurrentPage === 2 ? '' : '?page=' . ($categoryCurrentPage - 1)));
+            $canonicalPath .= '?page=' . $categoryCurrentPage;
+        }
+        if ($categoryCurrentPage < $categoryTotalPages) {
+            $meta['next_url'] = absolute_url('/' . $categorySlug . '?page=' . ($categoryCurrentPage + 1));
+        }
     }
 } elseif (count($segments) === 2 && $segments[0] === 'product') {
     $productSlug = slugify($segments[1]);
@@ -207,9 +260,9 @@ if ($segments === []) {
         }
         $data['guide'] = $guide;
         $data['guideProducts'] = $guideProducts;
-        $data['otherGuides'] = array_filter(get_posts($pdo, 'guide', 4, $canPreviewDrafts), function($g) use ($guideSlug) {
-            return $g['slug'] !== $guideSlug;
-        });
+        $data['otherGuides'] = array_values(array_filter(get_posts($pdo, 'guide', 4, $canPreviewDrafts), static function (array $item) use ($guideSlug): bool {
+            return ($item['slug'] ?? '') !== $guideSlug;
+        }));
         $template = __DIR__ . '/templates/guide.php';
         $pageTitle = $guide['title'] . ' | ' . APP_NAME;
         $meta['description'] = $guide['description'] ?? site_meta_defaults()['description'];
@@ -232,11 +285,39 @@ if ($segments === []) {
     $viewPageType = 'guides';
     $viewPageSlug = 'guides-hub';
     $template = __DIR__ . '/templates/guides.php';
-    $data['guides'] = get_posts($pdo, 'guide', 10, $canPreviewDrafts);
+    $guidesPerPage = 9;
+    $requestedGuidesPage = max(1, (int) ($_GET['page'] ?? 1));
+    $guidesTotalItems = get_posts_count($pdo, 'guide', $canPreviewDrafts);
+    $guidesTotalPages = max(1, (int) ceil($guidesTotalItems / $guidesPerPage));
+    $guidesCurrentPage = min($requestedGuidesPage, $guidesTotalPages);
+    $data['guides'] = get_posts_paginated($pdo, 'guide', $guidesCurrentPage, $guidesPerPage, $canPreviewDrafts);
+    $data['guides_pagination'] = [
+        'page' => $guidesCurrentPage,
+        'per_page' => $guidesPerPage,
+        'total_items' => $guidesTotalItems,
+        'total_pages' => $guidesTotalPages,
+        'has_prev' => $guidesCurrentPage > 1,
+        'has_next' => $guidesCurrentPage < $guidesTotalPages,
+        'prev_page' => max(1, $guidesCurrentPage - 1),
+        'next_page' => min($guidesTotalPages, $guidesCurrentPage + 1),
+    ];
     $pageTitle = 'Astronomy Buying Guides | ' . APP_NAME;
+    if ($guidesCurrentPage > 1) {
+        $pageTitle = 'Astronomy Buying Guides - Page ' . $guidesCurrentPage . ' | ' . APP_NAME;
+    }
     $meta['description'] = 'Browse telescope buying guides, accessory recommendations, and budget-friendly astronomy advice for beginners.';
     $meta['image'] = absolute_url('/assets/logo/1024.png');
     $canonicalPath = '/guides';
+    if ($guidesCurrentPage > 1) {
+        $meta['prev_url'] = absolute_url('/guides' . ($guidesCurrentPage === 2 ? '' : '?page=' . ($guidesCurrentPage - 1)));
+        $canonicalPath .= '?page=' . $guidesCurrentPage;
+    }
+    if ($guidesCurrentPage < $guidesTotalPages) {
+        $meta['next_url'] = absolute_url('/guides?page=' . ($guidesCurrentPage + 1));
+    }
+    if ($canPreviewDrafts) {
+        $draftPreviewNotice = 'Preview privado activo: la lista incluye borradores visibles solo para tu sesión admin.';
+    }
     $jsonLd[] = json_ld_for_faq(seo_faq_for_page('guides'));
     $breadcrumbs[] = ['name' => 'Guides', 'url' => absolute_url('/guides')];
 } elseif (count($segments) === 1 && $segments[0] === 'blog') {

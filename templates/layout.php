@@ -3,6 +3,12 @@
 declare(strict_types=1);
 
 $uri = $_SERVER['REQUEST_URI'] ?? '/';
+$currentPath = parse_url($uri, PHP_URL_PATH) ?: '/';
+$navPath = rtrim((string) $currentPath, '/');
+$navPath = $navPath === '' ? '/' : $navPath;
+$isNavCurrent = static function (string $target) use ($navPath): bool {
+    return $navPath === $target;
+};
 ?>
 <!doctype html>
 <html lang="en">
@@ -28,7 +34,8 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
     <?php if (!empty($meta['next_url'])): ?>
         <link rel="next" href="<?= e((string) $meta['next_url']) ?>">
     <?php endif; ?>
-    <link rel="icon" type="image/png" href="<?= e(url('/assets/logo/logo.png')) ?>">
+    <meta name="theme-color" content="#081018">
+    <link rel="icon" type="image/png" href="<?= e(url('/assets/logo/32.png')) ?>">
     <link rel="icon" type="image/png" sizes="32x32" href="<?= e(url('/assets/logo/32.png')) ?>">
     <link rel="icon" type="image/png" sizes="192x192" href="<?= e(url('/assets/logo/192.png')) ?>">
     <link rel="apple-touch-icon" sizes="180x180" href="<?= e(url('/assets/logo/180.png')) ?>">
@@ -67,6 +74,24 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         }
 
         a { color: inherit; }
+
+        .skip-link {
+            position: absolute;
+            left: 18px;
+            top: -48px;
+            z-index: 30;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: #fff;
+            color: #081018;
+            font-weight: 800;
+            text-decoration: none;
+            box-shadow: 0 10px 22px rgba(10, 20, 34, 0.16);
+        }
+
+        .skip-link:focus {
+            top: 14px;
+        }
 
         .topbar {
             max-width: 1180px;
@@ -169,6 +194,18 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         nav a:hover {
             transform: translateY(-2px);
             background: rgba(255, 255, 255, 0.2);
+        }
+
+        nav a[aria-current="page"] {
+            background: rgba(255, 255, 255, 0.24);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        a:focus-visible,
+        button:focus-visible,
+        summary:focus-visible {
+            outline: 3px solid rgba(184, 255, 229, 0.9);
+            outline-offset: 3px;
         }
 
         main {
@@ -938,11 +975,12 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
     </style>
 </head>
 <body>
+<a class="skip-link" href="#content">Skip to content</a>
 <header class="topbar">
     <div class="brand-row">
         <a class="brand" href="<?= e(url('/')) ?>" aria-label="<?= e(APP_NAME) ?> home">
             <span class="brand-logo-wrap">
-                <img class="brand-logo" src="<?= e(url('/assets/logo/logo_original.png')) ?>" alt="<?= e(APP_NAME) ?> logo">
+                <img class="brand-logo" src="<?= e(url('/assets/logo/128.png')) ?>" alt="<?= e(APP_NAME) ?> logo" width="114" height="114" loading="eager" fetchpriority="high" decoding="async">
             </span>
             <span class="brand-text">
                 <span class="brand-title"><?= e(APP_NAME) ?></span>
@@ -951,20 +989,20 @@ $uri = $_SERVER['REQUEST_URI'] ?? '/';
         </a>
     </div>
     <p class="tagline">Buy smarter telescope accessories with practical shortlists, clear comparisons, and direct links to proven gear.</p>
-    <nav>
-        <a href="<?= e(url('/')) ?>">Home</a>
-        <a href="<?= e(url('/guides')) ?>">Guides</a>
-        <a href="<?= e(url('/blog')) ?>">Blog</a>
-        <a href="<?= e(url('/telescopes')) ?>">Telescopes</a>
-        <a href="<?= e(url('/accessories')) ?>">Accessories</a>
-        <a href="<?= e(url('/about')) ?>">About</a>
-        <a href="<?= e(url('/contact')) ?>">Contact</a>
+    <nav aria-label="Primary">
+        <a href="<?= e(url('/')) ?>" <?= $isNavCurrent('/') ? 'aria-current="page"' : '' ?>>Home</a>
+        <a href="<?= e(url('/guides')) ?>" <?= $isNavCurrent('/guides') ? 'aria-current="page"' : '' ?>>Guides</a>
+        <a href="<?= e(url('/blog')) ?>" <?= $isNavCurrent('/blog') ? 'aria-current="page"' : '' ?>>Blog</a>
+        <a href="<?= e(url('/telescopes')) ?>" <?= $isNavCurrent('/telescopes') ? 'aria-current="page"' : '' ?>>Telescopes</a>
+        <a href="<?= e(url('/accessories')) ?>" <?= $isNavCurrent('/accessories') ? 'aria-current="page"' : '' ?>>Accessories</a>
+        <a href="<?= e(url('/about')) ?>" <?= $isNavCurrent('/about') ? 'aria-current="page"' : '' ?>>About</a>
+        <a href="<?= e(url('/contact')) ?>" <?= $isNavCurrent('/contact') ? 'aria-current="page"' : '' ?>>Contact</a>
     </nav>
 </header>
 <?php if (!empty($draftPreviewNotice)): ?>
     <div class="draft-preview-bar"><?= e((string) $draftPreviewNotice) ?></div>
 <?php endif; ?>
-<main>
+<main id="content">
     <?php if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1): ?>
         <nav aria-label="Breadcrumb" style="margin: 0 0 12px; font-size: 13px; color: #334155;">
             <?php foreach ($breadcrumbs as $idx => $crumb): ?>

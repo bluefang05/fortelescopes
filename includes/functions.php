@@ -83,6 +83,9 @@ function get_sitemap_entries(PDO $pdo): array
     $nowIso = gmdate('c');
     $publishedGuides = get_posts($pdo, 'guide', 5000);
     $publishedPosts = get_posts($pdo, 'post', 5000);
+    $categories = get_categories($pdo);
+    $blogTotalPages = max(1, (int) ceil(get_posts_count($pdo, 'post') / 9));
+    $guidesTotalPages = max(1, (int) ceil(get_posts_count($pdo, 'guide') / 9));
 
     $latestGuideMod = $publishedGuides !== []
         ? sitemap_lastmod_value((string) ($publishedGuides[0]['updated_at'] ?? $publishedGuides[0]['published_at'] ?? ''), $nowIso)
@@ -104,6 +107,36 @@ function get_sitemap_entries(PDO $pdo): array
         ['loc' => absolute_url('/privacy-policy'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/terms-of-use'), 'lastmod' => $nowIso],
     ];
+
+    foreach ($categories as $category) {
+        $categorySlug = trim((string) ($category['category_slug'] ?? ''));
+        $categoryCount = (int) ($category['total'] ?? 0);
+        $categoryPages = max(1, (int) ceil($categoryCount / 12));
+        $basePath = in_array($categorySlug, ['telescopes', 'accessories'], true)
+            ? '/' . $categorySlug
+            : '/category/' . $categorySlug;
+
+        for ($page = 2; $page <= $categoryPages; $page++) {
+            $entries[] = [
+                'loc' => absolute_url($basePath . '?page=' . $page),
+                'lastmod' => $nowIso,
+            ];
+        }
+    }
+
+    for ($page = 2; $page <= $guidesTotalPages; $page++) {
+        $entries[] = [
+            'loc' => absolute_url('/guides?page=' . $page),
+            'lastmod' => $latestGuideMod,
+        ];
+    }
+
+    for ($page = 2; $page <= $blogTotalPages; $page++) {
+        $entries[] = [
+            'loc' => absolute_url('/blog?page=' . $page),
+            'lastmod' => $latestBlogMod,
+        ];
+    }
 
     foreach ($publishedGuides as $guide) {
         $slug = trim((string) ($guide['slug'] ?? ''));
@@ -404,6 +437,26 @@ function get_recent_products(PDO $pdo, int $limit = 12): array
     return $rows;
 }
 
+function get_products_count(PDO $pdo, ?string $slug = null): int
+{
+    if ($slug === null || trim($slug) === '') {
+        $stmt = $pdo->query(
+            'SELECT COUNT(*)
+             FROM products
+             WHERE status = "published"'
+        );
+        return (int) $stmt->fetchColumn();
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM products
+         WHERE status = "published" AND category_slug = :slug'
+    );
+    $stmt->execute([':slug' => $slug]);
+    return (int) $stmt->fetchColumn();
+}
+
 function get_products_by_category(PDO $pdo, string $slug, int $limit = 12): array
 {
     $stmt = $pdo->prepare(
@@ -414,6 +467,28 @@ function get_products_by_category(PDO $pdo, string $slug, int $limit = 12): arra
     );
     $stmt->bindValue(':slug', $slug, PDO::PARAM_STR);
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->execute();
+
+    $rows = $stmt->fetchAll();
+    usort($rows, 'compare_products_for_conversion');
+    return $rows;
+}
+
+function get_products_by_category_paginated(PDO $pdo, string $slug, int $page = 1, int $perPage = 12): array
+{
+    $safePage = max(1, $page);
+    $safePerPage = max(1, $perPage);
+    $offset = ($safePage - 1) * $safePerPage;
+
+    $stmt = $pdo->prepare(
+        'SELECT * FROM products
+         WHERE status = "published" AND category_slug = :slug
+         ORDER BY id DESC
+         LIMIT :limit OFFSET :offset'
+    );
+    $stmt->bindValue(':slug', $slug, PDO::PARAM_STR);
+    $stmt->bindValue(':limit', $safePerPage, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
     $stmt->execute();
 
     $rows = $stmt->fetchAll();
@@ -491,6 +566,18 @@ function get_posts_paginated(PDO $pdo, string $type = 'post', int $page = 1, int
     $rows = $stmt->fetchAll();
 
     return array_map('format_post_row', $rows);
+}
+
+function pagination_window(int $currentPage, int $totalPages, int $radius = 2): array
+{
+    $currentPage = max(1, $currentPage);
+    $totalPages = max(1, $totalPages);
+    $radius = max(1, $radius);
+
+    return [
+        'start' => max(1, $currentPage - $radius),
+        'end' => min($totalPages, $currentPage + $radius),
+    ];
 }
 
 function get_posts_by_types(PDO $pdo, array $types, int $limit = 10, bool $includeDraft = false): array

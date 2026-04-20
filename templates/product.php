@@ -7,7 +7,7 @@ $relativeUpdate = relative_time_label($product['last_synced_at'] ?? null);
 ?>
 <section class="panel" style="max-width: 980px; margin: 0 auto;">
     <a href="<?= e(outbound_url((string) $product['affiliate_url'], (int) ($product['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener" aria-label="<?= e($product['title']) ?> on Amazon">
-        <img src="<?= e(product_image_url($product)) ?>" alt="<?= e($product['title']) ?>" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';">
+        <img src="<?= e(product_image_url($product)) ?>" alt="<?= e($product['title']) ?>" loading="eager" decoding="async" fetchpriority="high" width="1200" height="900" onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';">
     </a>
     <div class="body" style="padding: 16px 4px 4px;">
         <span class="badge"><?= e($product['category_name']) ?></span>

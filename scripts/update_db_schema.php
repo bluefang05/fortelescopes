@@ -24,6 +24,24 @@ $tables = array_map(static function (array $row): string {
     return (string) $row['table_name'];
 }, $stmt->fetchAll());
 
+$adminUser = trim((string) (env_value('ADMIN_USER') ?? ''));
+$adminPass = trim((string) (env_value('ADMIN_PASS') ?? ''));
+$adminEmail = trim((string) (env_value('ADMIN_EMAIL') ?? ''));
+$seededAdmin = false;
+
+if (
+    $adminUser !== ''
+    && $adminPass !== ''
+    && !in_array(strtolower($adminPass), ['change-this-now', 'changeme', 'admin123'], true)
+) {
+    $seededAdmin = create_initial_admin_user($pdo, $adminUser, $adminPass, $adminEmail);
+}
+
 echo 'DB_DRIVER: ' . DB_DRIVER . PHP_EOL;
 echo 'Schema update: OK' . PHP_EOL;
 echo 'Tables: ' . implode(', ', $tables) . PHP_EOL;
+if ($seededAdmin) {
+    echo 'Admin user created: ' . $adminUser . PHP_EOL;
+} else {
+    echo 'Admin user created: NO' . PHP_EOL;
+}

@@ -7,8 +7,6 @@ declare(strict_types=1);
  * Handles login, logout and session management
  */
 
-enma_admin_init_schema($pdo);
-
 // Logout handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -72,7 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
                 $errors[] = 'Invalid credentials.';
             }
         } catch (Throwable $e) {
-            $errors[] = 'Login failed: ' . $e->getMessage();
+            error_log('[ENMA auth] ' . $e->getMessage());
+            $errors[] = 'Login failed. Verify that the schema is installed and try again.';
         }
     }
 

@@ -222,28 +222,6 @@ function init_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
 
-    $usersCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
-    if ($usersCount === 0) {
-        $stmt = $pdo->prepare(
-            'INSERT INTO users (
-                email, username, password_hash, display_name, role, status, created_at, updated_at
-            ) VALUES (
-                :email, :username, :password_hash, :display_name, :role, :status, :created_at, :updated_at
-            )'
-        );
-        $now = now_iso();
-        $stmt->execute([
-            ':email' => 'admin@fortelescopes.local',
-            ':username' => 'admin',
-            ':password_hash' => password_hash('change-this-now', PASSWORD_DEFAULT),
-            ':display_name' => 'Administrator',
-            ':role' => 'admin',
-            ':status' => 'active',
-            ':created_at' => $now,
-            ':updated_at' => $now,
-        ]);
-    }
-
     $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'post_type\'');
     $stmt->execute();
     if (!$stmt->fetch()) {
@@ -261,4 +239,45 @@ function init_schema(PDO $pdo): void
     if ($count > 0) {
         return;
     }
+}
+
+function create_initial_admin_user(PDO $pdo, string $username, string $password, string $email = ''): bool
+{
+    $username = trim($username);
+    $password = trim($password);
+    $email = trim($email);
+
+    if ($username === '' || $password === '') {
+        return false;
+    }
+
+    $usersCount = (int) $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
+    if ($usersCount > 0) {
+        return false;
+    }
+
+    if ($email === '') {
+        $email = $username . '@localhost';
+    }
+
+    $stmt = $pdo->prepare(
+        'INSERT INTO users (
+            email, username, password_hash, display_name, role, status, created_at, updated_at
+        ) VALUES (
+            :email, :username, :password_hash, :display_name, :role, :status, :created_at, :updated_at
+        )'
+    );
+    $now = now_iso();
+    $stmt->execute([
+        ':email' => $email,
+        ':username' => $username,
+        ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
+        ':display_name' => 'Administrator',
+        ':role' => 'admin',
+        ':status' => 'active',
+        ':created_at' => $now,
+        ':updated_at' => $now,
+    ]);
+
+    return true;
 }

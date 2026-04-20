@@ -1,5 +1,22 @@
 <?php
 $guides = $data['guides'] ?? [];
+$pagination = $data['guides_pagination'] ?? [
+    'page' => 1,
+    'total_pages' => 1,
+    'total_items' => count($guides),
+    'has_prev' => false,
+    'has_next' => false,
+    'prev_page' => 1,
+    'next_page' => 1,
+];
+$currentPage = max(1, (int) ($pagination['page'] ?? 1));
+$totalPages = max(1, (int) ($pagination['total_pages'] ?? 1));
+$totalItems = max(0, (int) ($pagination['total_items'] ?? 0));
+$pageWindow = pagination_window($currentPage, $totalPages, 2);
+$buildGuidesPageUrl = static function (int $page): string {
+    $safePage = max(1, $page);
+    return $safePage === 1 ? url('/guides') : url('/guides?page=' . $safePage);
+};
 ?>
 <section class="hero">
     <span class="hero-kicker">Guides Hub</span>
@@ -31,10 +48,10 @@ $guides = $data['guides'] ?? [];
 </section>
 
 <section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Featured guides</h2>
+    <h2 class="section-title" style="margin-top:0;">Buying guides</h2>
     <p class="muted">Start with the guide that matches your current purchase intent, then compare categories and product pages before checkout.</p>
     <div class="grid">
-        <?php foreach ($guides as $guide): ?>
+        <?php foreach ($guides as $idx => $guide): ?>
             <?php
             $guideImage = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
@@ -45,7 +62,7 @@ $guides = $data['guides'] ?? [];
             ?>
             <article class="card">
                 <?php if ($guideImage): ?>
-                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="lazy">
+                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
                 <?php else: ?>
                     <div style="height: 200px; background: #0f1c30; display: flex; align-items: center; justify-content: center; color: #fff;">No Image</div>
                 <?php endif; ?>
@@ -58,6 +75,24 @@ $guides = $data['guides'] ?? [];
             </article>
         <?php endforeach; ?>
     </div>
+    <?php if ($totalPages > 1): ?>
+        <div class="pagination" aria-label="Guides pagination">
+            <div class="pagination-info">
+                Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?> · <?= number_format($totalItems) ?> guides
+            </div>
+            <div class="pagination-nav">
+                <?php if (!empty($pagination['has_prev'])): ?>
+                    <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['prev_page'])) ?>">Prev</a>
+                <?php endif; ?>
+                <?php for ($page = $pageWindow['start']; $page <= $pageWindow['end']; $page++): ?>
+                    <a class="pagination-link <?= $page === $currentPage ? 'active' : '' ?>" href="<?= e($buildGuidesPageUrl($page)) ?>"><?= (int) $page ?></a>
+                <?php endfor; ?>
+                <?php if (!empty($pagination['has_next'])): ?>
+                    <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['next_page'])) ?>">Next</a>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endif; ?>
 </section>
 
 <section class="panel" style="margin-bottom: 18px;">

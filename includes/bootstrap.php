@@ -8,11 +8,12 @@ require_once __DIR__ . '/functions.php';
 
 try {
     $pdo = db();
-    init_schema($pdo);
 } catch (Throwable $e) {
+    error_log('[Fortelescopes bootstrap] ' . $e->getMessage());
     http_response_code(500);
     header('Content-Type: text/plain; charset=UTF-8');
-    echo "Application startup error.\n";
-    echo "Details: " . $e->getMessage() . "\n";
+    echo APP_DEBUG
+        ? "Application startup error.\nDetails: " . $e->getMessage() . "\n"
+        : "Application startup error.\n";
     exit(1);
 }

@@ -20,8 +20,7 @@ $buildBlogPageUrl = static function (int $page): string {
     $safePage = max(1, $page);
     return $safePage === 1 ? url('/blog') : url('/blog?page=' . $safePage);
 };
-$pageStart = max(1, $currentPage - 2);
-$pageEnd = min($totalPages, $currentPage + 2);
+$pageWindow = pagination_window($currentPage, $totalPages, 2);
 
 $isPlaceholderValue = static function (?string $value): bool {
     $normalized = strtolower(trim((string) $value));
@@ -75,7 +74,7 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
         <p class="muted">No posts found. Check back soon for new astronomy content.</p>
     <?php else: ?>
         <div class="grid blog-grid">
-            <?php foreach ($posts as $post): ?>
+            <?php foreach ($posts as $idx => $post): ?>
                 <?php
                 $slug = trim((string) ($post['slug'] ?? ''));
                 $isDraft = (($post['status'] ?? 'published') !== 'published');
@@ -88,7 +87,7 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
                 $postImage = trim((string) ($post['featured_image'] ?? '')) !== '' ? (string) $post['featured_image'] : '/assets/img/product-placeholder.svg';
                 ?>
                 <article class="card">
-                    <img src="<?= e(url($postImage)) ?>" alt="<?= e($title) ?>" loading="lazy">
+                    <img src="<?= e(url($postImage)) ?>" alt="<?= e($title) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
                     <div class="body">
                         <span class="badge"><?= $isDraft ? 'Draft' : 'Article' ?></span>
                         <h3><?= e($title) ?></h3>
@@ -110,7 +109,7 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
                     <?php if (!empty($pagination['has_prev'])): ?>
                         <a class="pagination-link" href="<?= e($buildBlogPageUrl((int) $pagination['prev_page'])) ?>">Prev</a>
                     <?php endif; ?>
-                    <?php for ($page = $pageStart; $page <= $pageEnd; $page++): ?>
+                    <?php for ($page = $pageWindow['start']; $page <= $pageWindow['end']; $page++): ?>
                         <a class="pagination-link <?= $page === $currentPage ? 'active' : '' ?>" href="<?= e($buildBlogPageUrl($page)) ?>"><?= (int) $page ?></a>
                     <?php endfor; ?>
                     <?php if (!empty($pagination['has_next'])): ?>
