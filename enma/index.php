@@ -380,6 +380,14 @@ if (!function_exists('enma_signed_number')) {
     }
 }
 
+if (!function_exists('enma_export_cell')) {
+    function enma_export_cell($value): string
+    {
+        $text = trim((string) $value);
+        return str_replace(["\r", "\n", "\t"], [' ', ' ', ' '], $text);
+    }
+}
+
 $productsPagination = $authenticated && $activeTab === 'products'
     ? enma_render_pagination('products', 'products_page', $productsPage, $productsTotalPages, $productQuery !== '' ? ['q' => $productQuery] : [])
     : '';
@@ -392,6 +400,242 @@ $usersPagination = $authenticated && $activeTab === 'users'
 $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
+$productsCopyText = '';
+if ($authenticated && $activeTab === 'products' && $allProducts !== []) {
+    $productLines = ['ID' . "\t" . 'ASIN' . "\t" . 'Title' . "\t" . 'Category' . "\t" . 'Affiliate URL'];
+    foreach ($allProducts as $item) {
+        $productLines[] = implode("\t", [
+            enma_export_cell($item['id'] ?? ''),
+            enma_export_cell($item['asin'] ?? ''),
+            enma_export_cell($item['title'] ?? ''),
+            enma_export_cell($item['category_name'] ?? ''),
+            enma_export_cell($item['affiliate_url'] ?? ''),
+        ]);
+    }
+    $productsCopyText = implode("\n", $productLines);
+}
+
+$postsCopyText = '';
+if ($authenticated && $activeTab === 'posts' && $allPosts !== []) {
+    $postLines = ['ID' . "\t" . 'Title' . "\t" . 'Slug' . "\t" . 'Type' . "\t" . 'Status' . "\t" . 'Published Date'];
+    foreach ($allPosts as $postRow) {
+        $postLines[] = implode("\t", [
+            enma_export_cell($postRow['id'] ?? ''),
+            enma_export_cell($postRow['title'] ?? ''),
+            enma_export_cell($postRow['slug'] ?? ''),
+            enma_export_cell($postRow['post_type'] ?? ''),
+            enma_export_cell($postRow['status'] ?? ''),
+            enma_export_cell(substr((string) ($postRow['published_at'] ?? ''), 0, 10)),
+        ]);
+    }
+    $postsCopyText = implode("\n", $postLines);
+}
+
+$maintenanceLogCopyText = '';
+if ($authenticated && $activeTab === 'maintenance' && $maintenanceLog !== []) {
+    $maintenanceLogCopyText = implode("\n", array_map(static fn($line): string => trim((string) $line), $maintenanceLog));
+}
+
+$dbSchemaCopyText = '';
+if ($authenticated && $activeTab === 'maintenance') {
+    $dbSchemaPath = __DIR__ . '/../db_schema.sql';
+    if (is_file($dbSchemaPath) && is_readable($dbSchemaPath)) {
+        $contents = file_get_contents($dbSchemaPath);
+        if (is_string($contents)) {
+            $dbSchemaCopyText = $contents;
+        }
+    }
+}
+
+$productsSqlCopyText = '';
+$postsJsonCopyText = '';
+$sitemapCopyText = '';
+$seoPromptTemplate = '';
+$promptPlusSitemapCopyText = '';
+if ($authenticated && $activeTab === 'maintenance') {
+    $sitemapPath = __DIR__ . '/../sitemap.xml';
+    if (is_file($sitemapPath) && is_readable($sitemapPath)) {
+        $sitemapContents = file_get_contents($sitemapPath);
+        if (is_string($sitemapContents) && trim($sitemapContents) !== '') {
+            $sitemapCopyText = $sitemapContents;
+        }
+    }
+    if ($sitemapCopyText === '') {
+        $sitemapCopyText = 'sitemap.xml not found or empty. Run "Generate Sitemap" first.';
+    }
+
+    $seoPromptTemplate = <<<'PROMPT'
+ROLE & CONTEXT
+
+Act as a Senior SEO Content Strategist and Conversion Rate Optimization (CRO) Expert for the astronomy niche.
+
+Current date: April 11, 2026.
+
+Your job: Analyze Fortelescopes and create a ready-to-publish affiliate article for the Fortelescopes CMS designed to rank, build trust, and maximize Amazon affiliate clicks using the tag fortelescopes-20.
+
+EXECUTION RULES
+
+Output ONLY the HTML that belongs inside <body></body>. Do NOT generate <html>, <head>, or <body> wrappers.
+If sitemap.xml is inaccessible, fall back to analyzing public site structure: homepage, guides, categories, and visible product pages.
+Do NOT guess coverage or invent product specs, ASINs, or availability. If unsure, use clear Amazon search links.
+All YouTube embeds must be relevant to the exact product or category discussed.
+Final article must feel human, commercially strong, SEO-aware, and trustworthy.
+
+SEO CHECKLIST (MANDATORY)
+
+Title length: 40-65 chars
+Meta title: 45-65 chars
+Meta description: 120-160 chars
+At least 2 H2 headings
+At least 600 words
+At least 2 internal links to relevant Fortelescopes content
+
+STEP 1: SITE ANALYSIS
+
+Analyze:
+https://fortelescopes.com/sitemap.xml
+If unavailable: homepage, guides, categories, and public product pages.
+
+Deliver:
+Main existing content clusters and categories.
+One high-intent commercial content gap not already well covered.
+Choose ONE topic most likely to convert affiliate clicks.
+
+Briefly explain:
+The chosen topic
+Why it fills a content gap
+Why it has buyer intent
+Why it fits Fortelescopes
+
+STEP 2: WRITE THE ARTICLE (RAW HTML ONLY)
+
+Write a complete, high-converting article of at least 1,500 words.
+Output: RAW HTML ONLY for the article body content.
+
+Critical Requirements:
+
+Affiliate Disclaimer
+Start with a styled <div> that says exactly:
+"As an Amazon Associate, I earn from qualifying purchases."
+
+Structure
+Use <h2> and <h3> headings
+Short <p> paragraphs for mobile readability
+Use <ul>, <ol>, <table>, and <strong> where helpful
+Simple explanations for technical terms
+Conversion-focused but trustworthy tone
+
+Internal Links (Minimum 2)
+Include at least 2 contextual internal links to relevant Fortelescopes content using descriptive anchor text.
+Example: <a href="/guides/beginner-telescope-setup">Como configurar tu primer telescopio</a>
+
+Product Coverage
+For every product recommendation:
+Explain what it is, who it's for, why it stands out, and realistic limitations
+Include a short "Why We Love It" subsection
+Include a Pros and Cons list using <ul>
+Include a relevant embedded YouTube video for that product
+Include a yellow Amazon CTA button immediately after the pros/cons
+
+YouTube Embeds
+Include 1 relevant YouTube embed per product (2 max for high-priority sections)
+Use proper responsive embed HTML
+Only embed videos that exist and are directly relevant to the exact telescope/product type discussed
+Verify video relevance before embedding; if uncertain, omit rather than guess
+
+Amazon Yellow CTA Buttons (SEARCH LINKS ONLY)
+Use button-style affiliate links with inline CSS.
+Do NOT use /dp/ASIN links unless 100% certain of a current, in-stock ASIN.
+DEFAULT TO AMAZON SEARCH LINKS.
+
+Amazon SEARCH link format (MANDATORY):
+https://www.amazon.com/s?k=[url-encoded-search-terms]&tag=fortelescopes-20
+
+Rules for search links:
+URL-encode search terms: replace spaces with + or %20
+Keep search terms specific enough to show relevant products (include brand + model when possible)
+Affiliate tag fortelescopes-20 MUST appear at the end of every Amazon link
+If unsure about availability or exact model, default to a broader but relevant search query
+Button text: "Check Prices on Amazon ->" (plural, since it leads to a results page)
+
+Comparison Table
+Include a responsive HTML <table> comparing 3-5 top picks with columns:
+Model
+Aperture
+Best For
+Check Price (with smaller yellow CTA button using Amazon search links)
+
+Conversion Requirements
+Include:
+A strong hook near the beginning
+Objection handling
+Practical buyer guidance
+A section for beginners if relevant
+Soft urgency only when justified
+At least one "Who should buy this?" section
+At least one "Who should skip this?" section
+A helpful FAQ section
+A strong conclusion with one final large yellow button
+
+SEO Requirements
+Use descriptive headings
+Keep keyword usage natural
+Include alt text on any images if included
+Make the article helpful enough to satisfy search intent, not just monetize
+Avoid keyword stuffing
+
+Source Handling
+If Reddit or another source inspired part of the post:
+Do not copy wording
+Summarize in original language
+Add a short "Further reading" or "Source inspiration" note with a placeholder URL if needed
+
+HTML Code Quality
+Output clean, minified HTML: remove unnecessary whitespace, redundant blank lines, and excessive indentation
+Preserve visual formatting and structure for CMS compatibility
+Use semantic HTML where possible without adding wrapper tags
+
+STEP 3: FINAL OUTPUT FORMAT
+
+Output in this exact order:
+
+Topic Rationale
+Plain text only. Short but clear.
+
+A single code block
+Inside it, provide the complete raw HTML article body only (clean, minified, no wrapper tags).
+
+Metadata
+Then provide:
+Title (40-65 chars)
+Excerpt (Short summary)
+Meta Title (45-65 chars)
+Meta Description (120-160 chars)
+
+Final line
+After everything is done, write exactly:
+ask me to redo this same html with proper relevant youtube videos and to make sure amazon links ensure some sort of comission
+PROMPT;
+    $promptPlusSitemapCopyText = $seoPromptTemplate . "\n\nCURRENT SITEMAP.XML\n\n" . $sitemapCopyText;
+
+    try {
+        if (function_exists('enma_maintenance_build_products_export_sql')) {
+            $productsSqlExport = enma_maintenance_build_products_export_sql($pdo);
+            $productsSqlCopyText = (string) ($productsSqlExport['content'] ?? '');
+        }
+    } catch (Throwable $e) {
+        $productsSqlCopyText = '';
+    }
+
+    try {
+        if (function_exists('enma_maintenance_build_posts_export_json')) {
+            $postsJsonExport = enma_maintenance_build_posts_export_json($pdo);
+            $postsJsonCopyText = (string) ($postsJsonExport['content'] ?? '');
+        }
+    } catch (Throwable $e) {
+        $postsJsonCopyText = '';
+    }
+}
 
 $viewsSectionPerPage = 10;
 $viewsTopPagesPage = $authenticated ? enma_page_value('views_top_pages_page') : 1;
@@ -521,6 +765,17 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           return urls;
         }
 
+        function slugifyPreview(value) {
+          return (value || '')
+            .toString()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .replace(/-{2,}/g, '-');
+        }
+
         function getContentHtml($form) {
           var $content = $form.find('textarea[name="content_html"]');
           if ($content.length === 0) {
@@ -542,13 +797,17 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
           var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
           var imageUrl = ($form.find('input[name="featured_image"]').val() || '').trim();
+          var postType = ($form.find('select[name="post_type"]').val() || 'post').trim();
           var html = getContentHtml($form);
           var plainBody = stripPreviewHtml(html);
           var serpTitle = metaTitle || title || 'Post title preview';
           var serpDescription = metaDescription || excerpt || plainBody || 'Meta description preview';
           var cardTitle = title || 'Post title preview';
           var cardExcerpt = excerpt || metaDescription || plainBody || 'Post excerpt preview';
+          var previewSlug = slugifyPreview(title) || 'preview-post';
+          var previewPath = postType === 'guide' ? '/' + previewSlug : '/blog/' + previewSlug;
 
+          $form.find('[data-preview="serp-url"]').text(window.location.origin + <?= json_encode(url('/')) ?>.replace(/\/$/, '') + previewPath);
           $form.find('[data-preview="serp-title"]').text(serpTitle);
           $form.find('[data-preview="serp-description"]').text(serpDescription.substring(0, 170));
           $form.find('[data-preview="hero-title"]').text(cardTitle);
@@ -712,6 +971,69 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           });
         }
 
+        function updateCopyStatus(statusId, message, isError) {
+          if (!statusId) {
+            return;
+          }
+          var $status = $('#' + statusId);
+          if ($status.length === 0) {
+            return;
+          }
+          $status.text(message).css('color', isError ? '#9a2f15' : '#1a6f35');
+        }
+
+        function fallbackCopyText(text) {
+          var temp = document.createElement('textarea');
+          temp.value = text;
+          temp.setAttribute('readonly', '');
+          temp.style.position = 'absolute';
+          temp.style.left = '-9999px';
+          document.body.appendChild(temp);
+          temp.select();
+          var ok = false;
+          try {
+            ok = document.execCommand('copy');
+          } catch (err) {
+            ok = false;
+          }
+          document.body.removeChild(temp);
+          return ok;
+        }
+
+        $('[data-copy-target]').on('click', function () {
+          var $btn = $(this);
+          var sourceId = ($btn.attr('data-copy-target') || '').trim();
+          var statusId = ($btn.attr('data-copy-status') || '').trim();
+          if (sourceId === '') {
+            return;
+          }
+
+          var source = document.getElementById(sourceId);
+          if (!source) {
+            updateCopyStatus(statusId, 'Source not found', true);
+            return;
+          }
+
+          var text = typeof source.value === 'string' ? source.value : (source.textContent || '');
+          if (text.trim() === '') {
+            updateCopyStatus(statusId, 'Nothing to copy', true);
+            return;
+          }
+
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function () {
+              updateCopyStatus(statusId, 'Copied', false);
+            }).catch(function () {
+              var copied = fallbackCopyText(text);
+              updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
+            });
+            return;
+          }
+
+          var copied = fallbackCopyText(text);
+          updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
+        });
+
         $('form').on('submit', function () {
           var $form = $(this);
           var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
@@ -833,6 +1155,42 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         .muted { color: var(--muted); font-size:13px; }
         .toolbar { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
         .toolbar .field { max-width:280px; }
+        .copy-toolbar {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:10px;
+            flex-wrap:wrap;
+            margin-bottom:8px;
+        }
+        .copy-toolbar h2,
+        .copy-toolbar h3 {
+            margin:0;
+        }
+        .copy-actions {
+            display:flex;
+            align-items:center;
+            gap:8px;
+            flex-wrap:wrap;
+        }
+        .btn-copy {
+            padding:8px 12px;
+            font-size:12px;
+            border-radius:8px;
+        }
+        .copy-status {
+            font-size:12px;
+            color:#5d6f86;
+            min-height:16px;
+        }
+        .copy-source {
+            position:absolute;
+            left:-9999px;
+            width:1px;
+            height:1px;
+            opacity:0;
+            pointer-events:none;
+        }
         .empty { padding:14px; border:1px dashed #d8e2ee; border-radius:8px; color:#5d6f86; background:#f9fbfe; }
         .note-editor { margin-bottom: 12px; }
         .maintenance-grid {
@@ -1205,7 +1563,13 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         </section>
 
         <section class="box">
-            <h2>Products</h2>
+            <div class="copy-toolbar">
+                <h2>Products</h2>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="products_copy_source" data-copy-status="products_copy_status">Copy Product List</button>
+                    <span id="products_copy_status" class="copy-status"></span>
+                </div>
+            </div>
             <form method="get" class="toolbar">
                 <input type="hidden" name="tab" value="products">
                 <input type="hidden" name="products_page" value="1">
@@ -1218,6 +1582,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php if ($allProducts === []): ?>
                 <div class="empty">No products found for this filter.</div>
             <?php else: ?>
+            <textarea id="products_copy_source" class="copy-source" readonly><?= e($productsCopyText) ?></textarea>
             <p class="muted">Showing <?= number_format(count($allProducts)) ?> of <?= number_format($productsTotal) ?> products.</p>
             <table>
                 <thead>
@@ -1321,7 +1686,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                <div class="post-preview-grid" style="margin:8px 0 14px;">
 	                    <div class="post-preview-card">
 	                        <h3 style="margin:0 0 10px;">Google Preview</h3>
-	                        <div class="serp-preview-url"><?= e(absolute_url('/blog/' . ((string) ($editingPost['slug'] ?? 'preview-post')))) ?></div>
+	                        <div class="serp-preview-url" data-preview="serp-url"><?= e(absolute_url(enma_post_public_path($editingPost ?: ['slug' => 'preview-post', 'post_type' => 'post']) ?: '/blog/preview-post')) ?></div>
 	                        <div class="serp-preview-title" data-preview="serp-title"><?= e((string) (($editingPost['meta_title'] ?? '') !== '' ? $editingPost['meta_title'] : $editingPost['title'])) ?></div>
 	                        <p class="serp-preview-desc" data-preview="serp-description"><?= e((string) (($editingPost['meta_description'] ?? '') !== '' ? $editingPost['meta_description'] : ($editingPost['excerpt'] ?? ''))) ?></p>
 	                    </div>
@@ -1430,7 +1795,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                <div class="post-preview-grid" style="margin:8px 0 14px;">
 	                    <div class="post-preview-card">
 	                        <h3 style="margin:0 0 10px;">Google Preview</h3>
-	                        <div class="serp-preview-url"><?= e(absolute_url('/blog/preview-post')) ?></div>
+	                        <div class="serp-preview-url" data-preview="serp-url"><?= e(absolute_url('/blog/preview-post')) ?></div>
 	                        <div class="serp-preview-title" data-preview="serp-title">Post title preview</div>
 	                        <p class="serp-preview-desc" data-preview="serp-description">Meta description preview</p>
 	                    </div>
@@ -1491,7 +1856,13 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	        </section>
 
         <section class="box">
-            <h2>Existing Posts</h2>
+            <div class="copy-toolbar">
+                <h2>Existing Posts</h2>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="posts_copy_source" data-copy-status="posts_copy_status">Copy Post List</button>
+                    <span id="posts_copy_status" class="copy-status"></span>
+                </div>
+            </div>
             <form method="get" class="toolbar" style="margin-bottom:8px;">
                 <input type="hidden" name="tab" value="posts">
                 <input type="hidden" name="posts_page" value="1">
@@ -1508,6 +1879,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php if ($allPosts === []): ?>
                 <div class="empty">No posts or guides found in database.</div>
             <?php else: ?>
+                <textarea id="posts_copy_source" class="copy-source" readonly><?= e($postsCopyText) ?></textarea>
                 <p class="muted">Showing <?= number_format(count($allPosts)) ?> of <?= number_format($postsTotal) ?> posts<?= $postsStatusFilter !== 'all' ? ' (' . e($postsStatusFilter) . ')' : '' ?>. Drafts are prioritized at the top.</p>
                 <table>
                     <thead>
@@ -2054,6 +2426,23 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section class="box">
             <h2>Maintenance Tools</h2>
             <p class="muted" style="margin: 0 0 10px;">Only available/working tasks are shown. Last usage is tracked automatically.</p>
+            <textarea id="sitemap_public_url_source" class="copy-source" readonly><?= e($sitemapCopyText) ?></textarea>
+            <textarea id="db_schema_copy_source" class="copy-source" readonly><?= e($dbSchemaCopyText) ?></textarea>
+            <textarea id="products_sql_copy_source" class="copy-source" readonly><?= e($productsSqlCopyText) ?></textarea>
+            <textarea id="posts_json_copy_source" class="copy-source" readonly><?= e($postsJsonCopyText) ?></textarea>
+            <textarea id="seo_prompt_copy_source" class="copy-source" readonly><?= e($seoPromptTemplate) ?></textarea>
+            <textarea id="seo_prompt_sitemap_copy_source" class="copy-source" readonly><?= e($promptPlusSitemapCopyText) ?></textarea>
+            <div class="copy-toolbar" style="margin-bottom:12px;">
+                <h3>Prompt Tools</h3>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_copy_source" data-copy-status="seo_prompt_copy_status">Copy Prompt</button>
+                    <span id="seo_prompt_copy_status" class="copy-status"></span>
+                </div>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_sitemap_copy_source" data-copy-status="seo_prompt_sitemap_copy_status">Copy Prompt + Sitemap</button>
+                    <span id="seo_prompt_sitemap_copy_status" class="copy-status"></span>
+                </div>
+            </div>
             <div class="box" style="margin-top:12px; margin-bottom:12px;">
                 <h3 style="margin:0 0 8px;">AI Draft Generator (Gemini)</h3>
                 <p class="muted" style="margin:0 0 10px;">One click in Auto mode will pick a commercial gap and create a draft. No auto-publish.</p>
@@ -2171,6 +2560,30 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                         <?= $singleUseConsumed ? 'Already used' : e((string) ($taskMeta['label'] ?? 'Run task')) ?>
                                     </button>
                                 </form>
+                                <?php if ((string) $taskKey === 'generate_sitemap'): ?>
+                                    <div class="copy-actions" style="margin-top:8px;">
+                                        <button class="btn btn-copy" type="button" data-copy-target="sitemap_public_url_source" data-copy-status="generate_sitemap_copy_status">Copy Updated Sitemap</button>
+                                        <span id="generate_sitemap_copy_status" class="copy-status"></span>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ((string) $taskKey === 'export_db_schema'): ?>
+                                    <div class="copy-actions" style="margin-top:8px;">
+                                        <button class="btn btn-copy" type="button" data-copy-target="db_schema_copy_source" data-copy-status="db_schema_copy_status">Copy DB Schema</button>
+                                        <span id="db_schema_copy_status" class="copy-status"></span>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ((string) $taskKey === 'export_products_sql'): ?>
+                                    <div class="copy-actions" style="margin-top:8px;">
+                                        <button class="btn btn-copy" type="button" data-copy-target="products_sql_copy_source" data-copy-status="products_sql_copy_status">Copy Products SQL</button>
+                                        <span id="products_sql_copy_status" class="copy-status"></span>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if ((string) $taskKey === 'export_posts_pastebin'): ?>
+                                    <div class="copy-actions" style="margin-top:8px;">
+                                        <button class="btn btn-copy" type="button" data-copy-target="posts_json_copy_source" data-copy-status="posts_json_copy_status">Copy Posts JSON</button>
+                                        <span id="posts_json_copy_status" class="copy-status"></span>
+                                    </div>
+                                <?php endif; ?>
                             </article>
                         <?php endforeach; ?>
                     </div>
@@ -2180,6 +2593,14 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 
             <?php if ($maintenanceLog !== []): ?>
                 <div style="background:#f6f9fc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
+                    <div class="copy-toolbar" style="margin-bottom:10px;">
+                        <h3>Latest Task Output</h3>
+                        <div class="copy-actions">
+                            <button class="btn btn-copy" type="button" data-copy-target="maintenance_sitemap_copy_source" data-copy-status="maintenance_task_copy_status">Copy Task Output</button>
+                            <span id="maintenance_task_copy_status" class="copy-status"></span>
+                        </div>
+                    </div>
+                    <textarea id="maintenance_sitemap_copy_source" class="copy-source" readonly><?= e($maintenanceLogCopyText) ?></textarea>
                     <?php foreach ($maintenanceLog as $line): ?>
                         <div style="font-family:monospace;font-size:13px;"><?= e($line) ?></div>
                     <?php endforeach; ?>

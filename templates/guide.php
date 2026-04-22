@@ -49,7 +49,7 @@ if ($fullGuideHtmlRaw !== '') {
         <span class="hero-kicker" style="background:#7d2d00;margin-left:8px;">Draft Preview</span>
     <?php endif; ?>
     <h1><?= e($guide['title']) ?></h1>
-    <p><?= e($guide['description']) ?></p>
+    <p><?= e((string) (($guide['description'] ?? '') !== '' ? $guide['description'] : ($guide['excerpt'] ?? ''))) ?></p>
     <?php
     $heroImage = (string) ($guide['featured_image'] ?? '');
     $heroTitle = (string) ($guide['title'] ?? '');

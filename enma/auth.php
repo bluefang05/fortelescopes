@@ -7,6 +7,36 @@ declare(strict_types=1);
  * Handles login, logout and session management
  */
 
+if (!function_exists('enma_set_owner_tracking_cookie')) {
+    function enma_set_owner_tracking_cookie(bool $enabled): void
+    {
+        $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+        $expires = $enabled ? (time() + (86400 * 30)) : (time() - 3600);
+        $value = $enabled ? '1' : '';
+
+        if (PHP_VERSION_ID >= 70300) {
+            setcookie('ft_owner_visit', $value, [
+                'expires' => $expires,
+                'path' => '/',
+                'secure' => $https,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+            return;
+        }
+
+        setcookie(
+            'ft_owner_visit',
+            $value,
+            $expires,
+            '/; samesite=Lax',
+            '',
+            $https,
+            true
+        );
+    }
+}
+
 // Logout handler
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logout') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -15,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'logou
         enma_record_activity($pdo, 'auth.logout', 'session', null, [
             'username' => (string) ($_SESSION['admin_username'] ?? ''),
         ]);
+        enma_set_owner_tracking_cookie(false);
         $_SESSION = [];
         session_destroy();
         header('Location: ' . url('/enma/'));
@@ -55,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
                     $_SESSION['admin_role'] = $row['role'];
                     $_SESSION['login_attempts'] = 0;
                     $_SESSION['login_locked_until'] = 0;
+                    enma_set_owner_tracking_cookie(true);
                     
                     // Update last login time
                     $updateStmt = $pdo->prepare('UPDATE users SET last_login_at = :now WHERE id = :id');

@@ -75,24 +75,22 @@ $buildGuidesPageUrl = static function (int $page): string {
             </article>
         <?php endforeach; ?>
     </div>
-    <?php if ($totalPages > 1): ?>
-        <div class="pagination" aria-label="Guides pagination">
-            <div class="pagination-info">
-                Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?> · <?= number_format($totalItems) ?> guides
-            </div>
-            <div class="pagination-nav">
-                <?php if (!empty($pagination['has_prev'])): ?>
-                    <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['prev_page'])) ?>">Prev</a>
-                <?php endif; ?>
-                <?php for ($page = $pageWindow['start']; $page <= $pageWindow['end']; $page++): ?>
-                    <a class="pagination-link <?= $page === $currentPage ? 'active' : '' ?>" href="<?= e($buildGuidesPageUrl($page)) ?>"><?= (int) $page ?></a>
-                <?php endfor; ?>
-                <?php if (!empty($pagination['has_next'])): ?>
-                    <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['next_page'])) ?>">Next</a>
-                <?php endif; ?>
-            </div>
+    <div class="pagination" aria-label="Guides pagination">
+        <div class="pagination-info">
+            Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?> · <?= number_format($totalItems) ?> guides
         </div>
-    <?php endif; ?>
+        <div class="pagination-nav">
+            <?php if (!empty($pagination['has_prev'])): ?>
+                <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['prev_page'])) ?>">Prev</a>
+            <?php endif; ?>
+            <?php for ($page = $pageWindow['start']; $page <= $pageWindow['end']; $page++): ?>
+                <a class="pagination-link <?= $page === $currentPage ? 'active' : '' ?>" href="<?= e($buildGuidesPageUrl($page)) ?>"><?= (int) $page ?></a>
+            <?php endfor; ?>
+            <?php if (!empty($pagination['has_next'])): ?>
+                <a class="pagination-link" href="<?= e($buildGuidesPageUrl((int) $pagination['next_page'])) ?>">Next</a>
+            <?php endif; ?>
+        </div>
+    </div>
 </section>
 
 <section class="panel" style="margin-bottom: 18px;">

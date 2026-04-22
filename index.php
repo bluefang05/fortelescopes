@@ -265,13 +265,15 @@ if ($segments === []) {
         }));
         $template = __DIR__ . '/templates/guide.php';
         $pageTitle = $guide['title'] . ' | ' . APP_NAME;
-        $meta['description'] = $guide['description'] ?? site_meta_defaults()['description'];
+        $meta['description'] = trim((string) ($guide['description'] ?? '')) !== ''
+            ? (string) $guide['description']
+            : (trim((string) ($guide['excerpt'] ?? '')) !== '' ? (string) $guide['excerpt'] : site_meta_defaults()['description']);
         $meta['image'] = !empty($guide['featured_image']) ? absolute_url($guide['featured_image']) : absolute_url('/assets/logo/1024.png');
         $canonicalPath = '/' . $guideSlug;
         $jsonLd[] = json_ld_for_itemlist($guideProducts, $guide['title']);
         $jsonLd[] = json_ld_for_article(
             $guide['title'],
-            $guide['description'],
+            (string) $meta['description'],
             absolute_url($canonicalPath),
             (string) ($guide['updated_at'] ?? $guide['published_at'] ?? gmdate('c'))
         );

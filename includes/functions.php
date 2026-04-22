@@ -646,6 +646,41 @@ function format_post_row(array $row): array
             $row = array_merge($extra, $row);
         }
     }
+
+    $postType = trim((string) ($row['post_type'] ?? 'post'));
+    $excerpt = trim((string) ($row['excerpt'] ?? ''));
+    $metaDescription = trim((string) ($row['meta_description'] ?? ''));
+
+    if (!isset($row['description']) || trim((string) $row['description']) === '') {
+        $row['description'] = $metaDescription !== '' ? $metaDescription : $excerpt;
+    }
+
+    if ($postType === 'guide') {
+        if (!isset($row['intro']) || trim((string) $row['intro']) === '') {
+            $row['intro'] = $row['description'];
+        }
+
+        if (!isset($row['faq']) || !is_array($row['faq'])) {
+            $row['faq'] = [];
+        }
+
+        if (!isset($row['best_for_map']) || !is_array($row['best_for_map'])) {
+            $row['best_for_map'] = [];
+        }
+
+        if (!isset($row['framework']) || !is_array($row['framework'])) {
+            $row['framework'] = [];
+        }
+
+        if (!isset($row['mistakes']) || !is_array($row['mistakes'])) {
+            $row['mistakes'] = [];
+        }
+
+        if (!isset($row['key_factors']) || !is_array($row['key_factors'])) {
+            $row['key_factors'] = [];
+        }
+    }
+
     unset($row['extra_data']);
     return $row;
 }
@@ -951,8 +986,17 @@ function anonymized_ip_hash(): string
     return hash('sha256', SITE_DOMAIN . '|' . $ip);
 }
 
+function is_owner_visit(): bool
+{
+    return ($_COOKIE['ft_owner_visit'] ?? '') === '1';
+}
+
 function track_page_view(PDO $pdo, string $path, string $pageType, string $pageSlug = '', int $productId = 0): void
 {
+    if (is_owner_visit()) {
+        return;
+    }
+
     $path = '/' . ltrim(trim($path), '/');
     $path = substr($path, 0, 255) ?: '/';
     $pageType = substr(trim($pageType), 0, 40) ?: 'page';
