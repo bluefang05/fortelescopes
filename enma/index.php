@@ -149,6 +149,37 @@ $productsPerPage = 25;
 $productsTotal = 0;
 $productsTotalPages = 1;
 if ($authenticated && $activeTab === 'products') {
+    $productLinkChecksAvailable = false;
+    try {
+        $productLinkChecksAvailable = (bool) $pdo->query(
+            'SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = ' . $pdo->quote(DB_NAME) . '
+               AND table_name = "product_link_checks"
+             LIMIT 1'
+        )->fetchColumn();
+    } catch (Throwable $e) {
+        $productLinkChecksAvailable = false;
+    }
+
+    $productSelectSql = 'SELECT
+            p.id,
+            p.asin,
+            p.slug,
+            p.title,
+            p.category_name,
+            p.status,
+            p.image_url,
+            p.last_synced_at,
+            p.affiliate_url';
+    $productFromSql = ' FROM products p';
+    if ($productLinkChecksAvailable) {
+        $productSelectSql .= ',
+            plc.state AS link_state,
+            plc.http_status AS link_http_status';
+        $productFromSql .= ' LEFT JOIN product_link_checks plc ON plc.product_id = p.id';
+    }
+
     if ($productQuery !== '') {
         $countStmt = $pdo->prepare(
             'SELECT COUNT(*)
@@ -160,11 +191,11 @@ if ($authenticated && $activeTab === 'products') {
         $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
         $productsPage = min($productsPage, $productsTotalPages);
         $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, last_synced_at, affiliate_url
-             FROM products
-             WHERE asin LIKE :q OR title LIKE :q OR category_name LIKE :q
-             ORDER BY id DESC
-             LIMIT :limit OFFSET :offset'
+            $productSelectSql
+            . $productFromSql
+            . ' WHERE p.asin LIKE :q OR p.title LIKE :q OR p.category_name LIKE :q
+                ORDER BY p.id DESC
+                LIMIT :limit OFFSET :offset'
         );
         $stmt->bindValue(':q', '%' . $productQuery . '%', PDO::PARAM_STR);
         $stmt->bindValue(':limit', $productsPerPage, PDO::PARAM_INT);
@@ -176,10 +207,10 @@ if ($authenticated && $activeTab === 'products') {
         $productsTotalPages = enma_total_pages($productsTotal, $productsPerPage);
         $productsPage = min($productsPage, $productsTotalPages);
         $stmt = $pdo->prepare(
-            'SELECT id, asin, title, category_name, last_synced_at, affiliate_url
-             FROM products
-             ORDER BY id DESC
-             LIMIT :limit OFFSET :offset'
+            $productSelectSql
+            . $productFromSql
+            . ' ORDER BY p.id DESC
+                LIMIT :limit OFFSET :offset'
         );
         $stmt->bindValue(':limit', $productsPerPage, PDO::PARAM_INT);
         $stmt->bindValue(':offset', ($productsPage - 1) * $productsPerPage, PDO::PARAM_INT);
@@ -1767,8 +1798,43 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <div class="ops-nav">
                 <a class="ops-link" href="#products-add">Add Product</a>
                 <a class="ops-link" href="#products-list">Product List</a>
+                <a class="ops-link" href="#products-not-found-actions">Not Found Cleanup</a>
                 <a class="ops-link" href="#products-ai-import">AI New Products</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-catalog')) ?>">Full Catalog Mode</a>
+            </div>
+        </section>
+        <section id="products-not-found-actions" class="box ops-anchor-offset">
+            <?php
+            $notFoundFlaggedTotal = 0;
+            try {
+                $notFoundFlaggedTotal = (int) $pdo->query(
+                    'SELECT COUNT(*)
+                     FROM product_link_checks
+                     WHERE state = "not_found"'
+                )->fetchColumn();
+            } catch (Throwable $e) {
+                $notFoundFlaggedTotal = 0;
+            }
+            ?>
+            <h2>Not Found Cleanup</h2>
+            <p class="muted" style="margin:0 0 10px;">
+                <strong>Clean Not Found</strong> archives broken products. <strong>Delete Not Found</strong> permanently removes products flagged as not found.
+                Current flagged as <code>not_found</code>: <?= number_format($notFoundFlaggedTotal) ?>.
+            </p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <form method="post" style="margin:0;">
+                    <input type="hidden" name="action" value="maintenance_run">
+                    <input type="hidden" name="task" value="clean_not_found_products">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button class="btn" type="submit">Clean Not Found (Archive)</button>
+                </form>
+                <form method="post" style="margin:0;" onsubmit="return confirm('Delete permanently all products flagged as not_found? This cannot be undone.');">
+                    <input type="hidden" name="action" value="maintenance_run">
+                    <input type="hidden" name="task" value="delete_not_found_products">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button type="submit" style="background:#b91c1c;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;">Delete Not Found (Permanent)</button>
+                </form>
+                <a class="tab" href="<?= e(url('/enma/?tab=maintenance#ops-not-found-review')) ?>">Open Not Found Review</a>
             </div>
         </section>
         <section id="products-ai-import" class="box ops-anchor-offset">
@@ -1919,22 +1985,58 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <tr>
                         <th>ID</th>
                         <th>ASIN</th>
+                        <th>Image</th>
                         <th>Title</th>
                         <th>Category</th>
-                        <th>Price</th>
+                        <th>Available</th>
                         <th>Tag</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php foreach ($allProducts as $item): ?>
+                    <?php
+                    $affiliateUrl = trim((string) ($item['affiliate_url'] ?? ''));
+                    $isPublished = strtolower(trim((string) ($item['status'] ?? 'published'))) === 'published';
+                    $hasAffiliateUrl = $affiliateUrl !== '' && filter_var($affiliateUrl, FILTER_VALIDATE_URL) !== false;
+                    $linkState = strtolower(trim((string) ($item['link_state'] ?? '')));
+                    $isLinkNotFound = $linkState === 'not_found' || $linkState === 'warning';
+                    $isAvailable = $isPublished && $hasAffiliateUrl && !$isLinkNotFound;
+                    $availabilityLabel = $isAvailable ? 'Available' : 'Not available';
+                    $availabilityColor = $isAvailable ? '#16a34a' : '#dc2626';
+                    $productSlug = trim((string) ($item['slug'] ?? ''));
+                    $productViewUrl = $productSlug !== ''
+                        ? url('/product/' . $productSlug)
+                        : ($hasAffiliateUrl ? outbound_url($affiliateUrl, (int) ($item['id'] ?? 0)) : '');
+                    ?>
                     <tr>
                         <td><?= (int) $item['id'] ?></td>
                         <td><?= e($item['asin']) ?></td>
+                        <td style="width:84px;">
+                            <img
+                                src="<?= e(product_image_url((array) $item)) ?>"
+                                alt="<?= e((string) ($item['title'] ?? 'Product image')) ?>"
+                                loading="lazy"
+                                decoding="async"
+                                style="display:block;width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;"
+                                onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';"
+                            >
+                        </td>
                         <td><?= e($item['title']) ?></td>
                         <td><?= e($item['category_name']) ?></td>
-                        <td><?= amazon_tag_present((string) ($item['affiliate_url'] ?? '')) ? 'OK' : 'Missing' ?></td>
                         <td>
+                            <span style="display:inline-flex;align-items:center;gap:6px;font-weight:700;">
+                                <span style="width:9px;height:9px;border-radius:50%;display:inline-block;background:<?= e($availabilityColor) ?>;"></span>
+                                <?= e($availabilityLabel) ?>
+                            </span>
+                        </td>
+                        <td>
+                            <?= amazon_tag_present($affiliateUrl) ? '<span style="color:#16a34a;font-weight:700;">OK</span>' : '<span style="color:#dc2626;font-weight:700;">Missing</span>' ?>
+                        </td>
+                        <td>
+                            <?php if ($productViewUrl !== ''): ?>
+                                <a href="<?= e($productViewUrl) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">View</a>
+                            <?php endif; ?>
                             <a href="<?= e(url('/enma/?tab=products&edit_product=' . $item['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
                             <form method="post" style="display:inline;" onsubmit="return confirm('Delete this product?');">
                                 <input type="hidden" name="action" value="delete_product">
@@ -3063,6 +3165,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <tr>
                             <th>ID</th>
                             <th>ASIN</th>
+                            <th>Image</th>
                             <th>Title</th>
                             <th>State</th>
                             <th>HTTP</th>
@@ -3075,6 +3178,16 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                             <tr>
                                 <td><?= (int) ($row['id'] ?? 0) ?></td>
                                 <td><?= e((string) ($row['asin'] ?? '')) ?></td>
+                                <td style="width:84px;">
+                                    <img
+                                        src="<?= e(product_image_url((array) $row)) ?>"
+                                        alt="<?= e((string) ($row['title'] ?? 'Product image')) ?>"
+                                        loading="lazy"
+                                        decoding="async"
+                                        style="display:block;width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;"
+                                        onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';"
+                                    >
+                                </td>
                                 <td>
                                     <div><?= e((string) ($row['title'] ?? '')) ?></div>
                                     <div class="muted" style="font-size:12px;"><a href="<?= e((string) ($row['affiliate_url'] ?? '#')) ?>" target="_blank" rel="noopener noreferrer">Open link</a></div>
@@ -3093,7 +3206,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                         <input type="hidden" name="action" value="maintenance_delete_review_product">
                                         <input type="hidden" name="product_id" value="<?= (int) ($row['id'] ?? 0) ?>">
                                         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                        <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0 0 0 8px;font-size:12px;">Delete</button>
+                                        <button type="submit" style="background:#b91c1c;border:none;color:#fff;cursor:pointer;padding:6px 10px;font-size:12px;border-radius:6px;margin-left:8px;">Delete</button>
                                     </form>
                                 </td>
                             </tr>

@@ -377,6 +377,12 @@ $maintenanceTaskMeta = [
         'group' => 'as_needed',
         'script' => 'scripts/clean_not_found_products.php',
     ],
+    'delete_not_found_products' => [
+        'label' => 'Delete Not Found Products',
+        'description' => 'Elimina permanentemente productos marcados como not_found en product_link_checks.',
+        'frequency' => 'As needed',
+        'group' => 'as_needed',
+    ],
     'generate_sitemap' => [
         'label' => 'Generate Sitemap',
         'description' => 'Genera sitemap.xml solo con URLs publicas del sitio.',
@@ -524,6 +530,7 @@ try {
             p.asin,
             p.title,
             p.status,
+            p.image_url,
             p.affiliate_url,
             plc.http_status,
             plc.state,
@@ -1102,6 +1109,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             } catch (Throwable $e) {
                 ob_end_clean();
                 $taskRunMessage = 'Not-found cleanup failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'delete_not_found_products') {
+            try {
+                $deleteStmt = $pdo->prepare(
+                    'DELETE p
+                     FROM products p
+                     INNER JOIN product_link_checks plc ON plc.product_id = p.id
+                     WHERE plc.state = "not_found"'
+                );
+                $deleteStmt->execute();
+                $deletedProducts = (int) $deleteStmt->rowCount();
+
+                $cleanupStmt = $pdo->prepare(
+                    'DELETE plc
+                     FROM product_link_checks plc
+                     LEFT JOIN products p ON p.id = plc.product_id
+                     WHERE plc.state = "not_found" OR p.id IS NULL'
+                );
+                $cleanupStmt->execute();
+                $cleanedChecks = (int) $cleanupStmt->rowCount();
+
+                $flash = 'Not-found delete completed. Products deleted: ' . $deletedProducts;
+                $taskRunOk = true;
+                $taskRunMessage = $flash;
+                $maintenanceLog[] = 'Task: delete_not_found_products';
+                $maintenanceLog[] = 'Deleted products: ' . $deletedProducts;
+                $maintenanceLog[] = 'Cleaned product_link_checks rows: ' . $cleanedChecks;
+            } catch (Throwable $e) {
+                $taskRunMessage = 'Not-found delete failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_sitemap') {

@@ -9,6 +9,7 @@ $navPath = $navPath === '' ? '/' : $navPath;
 $isNavCurrent = static function (string $target) use ($navPath): bool {
     return $navPath === $target;
 };
+$showAdminNav = frontend_admin_preview_enabled();
 ?>
 <!doctype html>
 <html lang="en">
@@ -997,6 +998,9 @@ $isNavCurrent = static function (string $target) use ($navPath): bool {
         <a href="<?= e(url('/accessories')) ?>" <?= $isNavCurrent('/accessories') ? 'aria-current="page"' : '' ?>>Accessories</a>
         <a href="<?= e(url('/about')) ?>" <?= $isNavCurrent('/about') ? 'aria-current="page"' : '' ?>>About</a>
         <a href="<?= e(url('/contact')) ?>" <?= $isNavCurrent('/contact') ? 'aria-current="page"' : '' ?>>Contact</a>
+        <?php if ($showAdminNav): ?>
+            <a href="<?= e(url('/enma/?tab=maintenance')) ?>">ENMA</a>
+        <?php endif; ?>
     </nav>
 </header>
 <?php if (!empty($draftPreviewNotice)): ?>
