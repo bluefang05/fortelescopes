@@ -1,24 +1,10 @@
-```
-# Compiled and build artifacts
-*.pyc
-__pycache__/
-*.o
-*.obj
-*.class
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
+```gitignore
 # Dependencies
 vendor/
-composer.lock
 
 # Logs and temp files
 *.log
 *.tmp
-*.swp
 
 # Environment
 .env
@@ -28,41 +14,18 @@ composer.lock
 # Editors
 .vscode/
 .idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# PHP specific
+*.php~
 *.swp
 *.swo
 
-# Distribution / build artifacts
-dist/
+# Build artifacts
 build/
-target/
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python specific
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-.Python
-*.so
-.Python
-*.egg-info/
-.eggs/
-.mypy_cache/
-.pytest_cache/
-.tox/
-.coverage
-coverage.xml
-instance/
-.webassets-cache
-.sass-cache/
-celerybeat-schedule
-celerybeat.pid
-
-# System files
-.DS_Store
-Thumbs.db
+dist/
+*.phar
 ```
