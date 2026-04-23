@@ -10,6 +10,75 @@ if (PHP_SAPI !== 'cli' && !defined('ENMA_ALLOW_WEB_RUN')) {
     exit(1);
 }
 
+function parse_cli_args(array $argv): array
+{
+    $args = [];
+    foreach ($argv as $arg) {
+        if (!is_string($arg) || !str_starts_with($arg, '--')) {
+            continue;
+        }
+        $raw = substr($arg, 2);
+        if ($raw === '') {
+            continue;
+        }
+        $pair = explode('=', $raw, 2);
+        $key = trim($pair[0]);
+        if ($key === '') {
+            continue;
+        }
+        $args[$key] = isset($pair[1]) ? (string) $pair[1] : '1';
+    }
+    return $args;
+}
+
+function extract_products_array_expression(string $input): string
+{
+    $raw = trim($input);
+    if ($raw === '') {
+        return '';
+    }
+
+    $raw = preg_replace('/^\s*```(?:php)?\s*/i', '', $raw) ?? $raw;
+    $raw = preg_replace('/\s*```\s*$/', '', $raw) ?? $raw;
+    $raw = trim(str_replace('<?php', '', $raw));
+
+    if (preg_match('/\$products\s*=\s*(\[.*\]);/is', $raw, $m) === 1) {
+        return trim((string) $m[1]);
+    }
+
+    if (preg_match('/(\[.*\])\s*$/is', $raw, $m) === 1) {
+        return trim((string) $m[1]);
+    }
+
+    return '';
+}
+
+function parse_products_payload(string $input): array
+{
+    $expr = extract_products_array_expression($input);
+    if ($expr === '') {
+        throw new RuntimeException('Could not find a valid $products array in payload.');
+    }
+
+    $parsed = @eval('return ' . $expr . ';');
+    if (!is_array($parsed)) {
+        throw new RuntimeException('Payload did not evaluate to a PHP array.');
+    }
+
+    return $parsed;
+}
+
+/**
+ * Paste Claude output here.
+ *
+ * Supported keys per item (Spanish/English aliases):
+ * - asin
+ * - nombre | name | title
+ * - categoria | category | type
+ * - descripcion | description | focus
+ * - imagen | image | image_url | img
+ * - url | affiliate_url
+ */
 $products = [
     ['asin' => 'B0007UQNNQ', 'title' => 'Celestron PowerSeeker 127EQ', 'type' => 'telescope', 'focus' => 'Beginner reflector telescope with equatorial mount.', 'url' => 'https://www.amazon.com/dp/B0007UQNNQ', 'img' => 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80'],
     ['asin' => 'B07C8ZQF9Q', 'title' => 'Gskyer 70mm Telescope', 'type' => 'telescope', 'focus' => 'Entry-level refractor often chosen as a first gift telescope.', 'url' => 'https://www.amazon.com/dp/B07C8ZQF9Q', 'img' => 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1200&q=80'],
@@ -32,7 +101,111 @@ $products = [
     ['asin' => 'B07VZ7W5Z9', 'title' => 'Telescope Carrying Bag', 'type' => 'accessory', 'focus' => 'Transport and storage bag for protecting gear between sessions.', 'url' => 'https://www.amazon.com/dp/B07VZ7W5Z9', 'img' => 'https://images.unsplash.com/photo-1520175480921-4edfa2983e0f?auto=format&fit=crop&w=1200&q=80'],
 ];
 
-$knownAsins = array_map(static fn(array $p): string => $p['asin'], $products);
+$cliArgs = parse_cli_args($argv ?? []);
+$payloadFile = trim((string) ($cliArgs['payload_file'] ?? ''));
+if ($payloadFile !== '') {
+    if (!is_file($payloadFile) || !is_readable($payloadFile)) {
+        throw new RuntimeException('Payload file is missing or unreadable: ' . $payloadFile);
+    }
+    $payloadRaw = file_get_contents($payloadFile);
+    if (!is_string($payloadRaw) || trim($payloadRaw) === '') {
+        throw new RuntimeException('Payload file is empty: ' . $payloadFile);
+    }
+    $products = parse_products_payload($payloadRaw);
+}
+
+function normalize_catalog_category(string $raw): string
+{
+    $value = strtolower(trim($raw));
+    if ($value === '') {
+        return 'accessory';
+    }
+
+    if (
+        str_contains($value, 'telescope')
+        || str_contains($value, 'telescopio')
+        || str_contains($value, 'scope')
+    ) {
+        return 'telescope';
+    }
+
+    if (str_contains($value, 'accessor')) {
+        return 'accessory';
+    }
+
+    return in_array($value, ['telescopes', 'telescope'], true) ? 'telescope' : 'accessory';
+}
+
+function normalize_catalog_item(array $raw): ?array
+{
+    $asin = strtoupper(trim((string) ($raw['asin'] ?? '')));
+    if (!preg_match('/^[A-Z0-9]{10}$/', $asin)) {
+        return null;
+    }
+
+    $title = trim((string) ($raw['title'] ?? $raw['name'] ?? $raw['nombre'] ?? ''));
+    if ($title === '') {
+        return null;
+    }
+
+    $categoryRaw = (string) ($raw['type'] ?? $raw['category'] ?? $raw['categoria'] ?? '');
+    $type = normalize_catalog_category($categoryRaw);
+
+    $description = trim((string) ($raw['focus'] ?? $raw['description'] ?? $raw['descripcion'] ?? ''));
+    if ($description === '') {
+        $description = 'Curated product synced from master catalog update.';
+    }
+
+    $image = trim((string) ($raw['img'] ?? $raw['image'] ?? $raw['image_url'] ?? $raw['imagen'] ?? ''));
+
+    $url = trim((string) ($raw['url'] ?? $raw['affiliate_url'] ?? ''));
+    if ($url === '') {
+        $url = 'https://www.amazon.com/dp/' . $asin;
+    }
+    $url = amazon_affiliate_url($url);
+
+    return [
+        'asin' => $asin,
+        'title' => $title,
+        'type' => $type,
+        'focus' => mb_substr($description, 0, 500),
+        'img' => $image,
+        'url' => $url,
+    ];
+}
+
+$normalizedProducts = [];
+$seenAsins = [];
+$skippedInvalid = 0;
+$skippedDuplicate = 0;
+
+foreach ($products as $row) {
+    if (!is_array($row)) {
+        $skippedInvalid++;
+        continue;
+    }
+
+    $normalized = normalize_catalog_item($row);
+    if ($normalized === null) {
+        $skippedInvalid++;
+        continue;
+    }
+
+    $asin = $normalized['asin'];
+    if (isset($seenAsins[$asin])) {
+        $skippedDuplicate++;
+        continue;
+    }
+
+    $seenAsins[$asin] = true;
+    $normalizedProducts[] = $normalized;
+}
+
+if ($normalizedProducts === []) {
+    throw new RuntimeException('No valid products found in $products. Check ASIN/title fields.');
+}
+
+$knownAsins = array_map(static fn(array $p): string => $p['asin'], $normalizedProducts);
 $placeholders = implode(',', array_fill(0, count($knownAsins), '?'));
 
 $archive = $pdo->prepare("UPDATE products SET status='archived', updated_at=? WHERE asin NOT IN ($placeholders)");
@@ -89,7 +262,7 @@ if (DB_DRIVER === 'mysql') {
 $now = gmdate('c');
 $count = 0;
 
-foreach ($products as $p) {
+foreach ($normalizedProducts as $p) {
     $isTelescope = $p['type'] === 'telescope';
     $categorySlug = $isTelescope ? 'telescopes' : 'accessories';
     $categoryName = $isTelescope ? 'Telescopes' : 'Accessories';
@@ -113,3 +286,5 @@ foreach ($products as $p) {
 }
 
 echo "Catalog upsert completed. Products processed: $count" . PHP_EOL;
+echo "Skipped invalid rows: $skippedInvalid" . PHP_EOL;
+echo "Skipped duplicate ASIN rows: $skippedDuplicate" . PHP_EOL;

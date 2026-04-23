@@ -227,7 +227,12 @@ $usersPage = $authenticated ? enma_page_value('users_page') : 1;
 $usersPerPage = 20;
 $usersTotal = 0;
 $usersTotalPages = 1;
+$usersActiveCount = 0;
+$usersInactiveCount = 0;
 if ($authenticated && $activeTab === 'users') {
+    $usersActiveCount = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status = 'active'")->fetchColumn();
+    $usersInactiveCount = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE status = 'inactive'")->fetchColumn();
+
     if ($userSearch !== '') {
         $countStmt = $pdo->prepare(
             'SELECT COUNT(*)
@@ -271,12 +276,17 @@ $postsPage = $authenticated ? enma_page_value('posts_page') : 1;
 $postsPerPage = 20;
 $postsTotal = 0;
 $postsTotalPages = 1;
+$postsDraftCount = 0;
+$postsPublishedCount = 0;
 $allPosts = [];
 $postsStatusFilter = $authenticated ? strtolower(trim((string) ($_GET['posts_status'] ?? 'all'))) : 'all';
 if (!in_array($postsStatusFilter, ['all', 'published', 'draft'], true)) {
     $postsStatusFilter = 'all';
 }
 if ($authenticated && $activeTab === 'posts') {
+    $postsDraftCount = (int) $pdo->query("SELECT COUNT(*) FROM posts WHERE status = 'draft'")->fetchColumn();
+    $postsPublishedCount = (int) $pdo->query("SELECT COUNT(*) FROM posts WHERE status = 'published'")->fetchColumn();
+
     $whereSql = '';
     if ($postsStatusFilter !== 'all') {
         $whereSql = ' WHERE status = :status';
@@ -400,6 +410,9 @@ $usersPagination = $authenticated && $activeTab === 'users'
 $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
+$notFoundReviewPagination = $authenticated && $activeTab === 'maintenance'
+    ? enma_render_pagination('maintenance', 'nf_review_page', (int) ($notFoundReviewPage ?? 1), (int) ($notFoundReviewTotalPages ?? 1))
+    : '';
 $productsCopyText = '';
 if ($authenticated && $activeTab === 'products' && $allProducts !== []) {
     $productLines = ['ID' . "\t" . 'ASIN' . "\t" . 'Title' . "\t" . 'Category' . "\t" . 'Affiliate URL'];
@@ -452,6 +465,72 @@ $postsJsonCopyText = '';
 $sitemapCopyText = '';
 $seoPromptTemplate = '';
 $promptPlusSitemapCopyText = '';
+$catalogPromptTemplate = '';
+$productsNewPromptTemplate = '';
+if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance')) {
+    $baseline = [];
+    $baselineAsins = [];
+    try {
+        $rows = $pdo->query(
+            'SELECT asin, title, category_slug
+             FROM products
+             WHERE status = "published"
+             ORDER BY id ASC'
+        )->fetchAll();
+        foreach ($rows as $row) {
+            $asin = strtoupper(trim((string) ($row['asin'] ?? '')));
+            if ($asin === '') {
+                continue;
+            }
+            $title = trim((string) ($row['title'] ?? ''));
+            $category = trim((string) ($row['category_slug'] ?? ''));
+            $baselineAsins[] = $asin;
+            $baseline[] = '- ' . $asin . ' | ' . ($title !== '' ? $title : '(no-title)') . ' | category=' . ($category !== '' ? $category : 'unknown');
+        }
+    } catch (Throwable $e) {
+        $baseline = [];
+        $baselineAsins = [];
+    }
+
+    $baselineText = $baseline !== [] ? implode("\n", $baseline) : '- No published products in current DB.';
+    $asinCsv = $baselineAsins !== [] ? implode(', ', $baselineAsins) : 'none';
+    $productsNewPromptTemplate =
+        "You are a catalog expansion assistant for fortelescopes.com.\n\n"
+        . "Goal:\n"
+        . "Propose ONLY NEW products worth adding now (seasonal relevance + buyer intent), excluding everything already in DB baseline.\n\n"
+        . "Current date: " . gmdate('F j, Y') . ".\n\n"
+        . "Rules:\n"
+        . "1) Never return products whose ASIN is already in DB baseline.\n"
+        . "2) Prioritize products likely to perform this season (gift cycles, beginner demand, current smart/portable trends).\n"
+        . "3) Keep recommendations practical for first-time buyers and affiliate conversion.\n"
+        . "4) Verify ASIN + title from accessible sources (Amazon search/pages).\n"
+        . "5) Do not invent ASINs or URLs.\n"
+        . "6) Return between 6 and 15 NEW items.\n\n"
+        . "Output format:\n"
+        . "- Return ONLY one PHP code block.\n"
+        . "- Use exactly:\n"
+        . "\$products = [\n"
+        . "  [\n"
+        . "    'asin' => 'B000000000',\n"
+        . "    'nombre' => 'Exact title',\n"
+        . "    'categoria' => 'telescopes',\n"
+        . "    'descripcion' => 'Short factual value description (max 180 chars).',\n"
+        . "    'imagen' => 'https://...',\n"
+        . "    'url' => 'https://www.amazon.com/dp/B000000000?tag=fortelescopes-20',\n"
+        . "  ],\n"
+        . "];\n\n"
+        . "Allowed categories: 'telescopes' or 'accessories'.\n\n"
+        . "Amazon source hints:\n"
+        . "- https://www.amazon.com/s?k=best+beginner+telescope\n"
+        . "- https://www.amazon.com/s?k=smart+telescope\n"
+        . "- https://www.amazon.com/s?k=dobsonian+telescope\n"
+        . "- https://www.amazon.com/s?k=telescope+accessories\n\n"
+        . "DB baseline ASINs (must be excluded):\n"
+        . $asinCsv . "\n\n"
+        . "DB baseline details:\n"
+        . $baselineText . "\n\n"
+        . "Return only the PHP code block.\n";
+}
 if ($authenticated && $activeTab === 'maintenance') {
     $sitemapPath = __DIR__ . '/../sitemap.xml';
     if (is_file($sitemapPath) && is_readable($sitemapPath)) {
@@ -594,6 +673,7 @@ HTML Code Quality
 Output clean, minified HTML: remove unnecessary whitespace, redundant blank lines, and excessive indentation
 Preserve visual formatting and structure for CMS compatibility
 Use semantic HTML where possible without adding wrapper tags
+Before final output, normalize spacing aggressively: remove repeated spaces, tabs, and extra line breaks that do not add meaning
 
 STEP 3: FINAL OUTPUT FORMAT
 
@@ -617,6 +697,96 @@ After everything is done, write exactly:
 ask me to redo this same html with proper relevant youtube videos and to make sure amazon links ensure some sort of comission
 PROMPT;
     $promptPlusSitemapCopyText = $seoPromptTemplate . "\n\nCURRENT SITEMAP.XML\n\n" . $sitemapCopyText;
+    $catalogSources = [
+        'https://www.amazon.com/s?k=best+beginner+telescope',
+        'https://www.amazon.com/s?k=smart+telescope',
+        'https://www.amazon.com/s?k=dobsonian+telescope',
+        'https://www.amazon.com/s?k=telescope+accessories',
+        absolute_url('/'),
+        absolute_url('/sitemap.xml'),
+        absolute_url('/telescopes'),
+        absolute_url('/accessories'),
+        absolute_url('/guides'),
+        absolute_url('/blog'),
+    ];
+
+    $catalogBaselineLines = [];
+    try {
+        $catalogRows = $pdo->query(
+            'SELECT asin, title, category_slug, description, image_url, affiliate_url, slug
+             FROM products
+             WHERE status = "published"
+             ORDER BY id ASC'
+        )->fetchAll();
+        foreach ($catalogRows as $row) {
+            $asin = strtoupper(trim((string) ($row['asin'] ?? '')));
+            if ($asin === '') {
+                continue;
+            }
+
+            $title = trim((string) ($row['title'] ?? ''));
+            $category = trim((string) ($row['category_slug'] ?? ''));
+            $description = trim((string) ($row['description'] ?? ''));
+            $image = trim((string) ($row['image_url'] ?? ''));
+            $affiliate = trim((string) ($row['affiliate_url'] ?? ''));
+            $slug = trim((string) ($row['slug'] ?? ''));
+
+            $catalogBaselineLines[] =
+                '- ' . $asin
+                . ' | ' . ($title !== '' ? $title : '(no-title)')
+                . ' | category=' . ($category !== '' ? $category : 'unknown')
+                . ' | image=' . ($image !== '' ? $image : 'missing')
+                . ' | url=' . ($affiliate !== '' ? $affiliate : 'missing')
+                . ' | note=' . ($description !== '' ? mb_substr($description, 0, 120) : 'missing');
+        }
+    } catch (Throwable $e) {
+        $catalogBaselineLines = [];
+    }
+
+    $catalogSources = array_values(array_unique(array_filter(array_map('trim', $catalogSources), static fn(string $u): bool => $u !== '')));
+    $catalogSourceText = implode("\n", array_map(static fn(string $u): string => '- ' . $u, $catalogSources));
+    $catalogBaselineText = $catalogBaselineLines !== []
+        ? implode("\n", $catalogBaselineLines)
+        : '- No published products found in DB baseline.';
+
+    $catalogPromptTemplate =
+        "You are a product data extraction assistant.\n\n"
+        . "Goal:\n"
+        . "Update the Fortelescopes catalog using the current DB list as baseline, and return ONLY a PHP array to paste directly into scripts/seed_real_catalog.php.\n\n"
+        . "Current date: April 22, 2026.\n\n"
+        . "Execution rules:\n"
+        . "1) Use the source URLs below (already provided). Do NOT ask for more URLs.\n"
+        . "2) If fortelescopes.com returns 403/blocked, continue using accessible sources (especially Amazon search URLs).\n"
+        . "3) Start from CURRENT DB BASELINE and update entries only when needed (title/image/url/description/category).\n"
+        . "4) Keep existing ASINs unless clearly discontinued/unavailable.\n"
+        . "5) You may add new relevant products only when ASIN + title are verifiable from an accessible source.\n"
+        . "6) Deduplicate strictly by ASIN.\n"
+        . "7) Do not invent ASINs, names, URLs, or images.\n"
+        . "8) Return a FULL final catalog array (existing + updated + new), not partial deltas.\n\n"
+        . "Required output format:\n"
+        . "- Output ONLY one PHP code block.\n"
+        . "- Inside the code block output ONLY:\n"
+        . "\$products = [\n"
+        . "  [\n"
+        . "    'asin' => 'B000000000',\n"
+        . "    'nombre' => 'Exact product title',\n"
+        . "    'categoria' => 'telescopes',\n"
+        . "    'descripcion' => 'Short practical description (max 180 chars).',\n"
+        . "    'imagen' => 'https://...',\n"
+        . "    'url' => 'https://www.amazon.com/dp/B000000000',\n"
+        . "  ],\n"
+        . "];\n\n"
+        . "Field rules:\n"
+        . "- asin: exactly 10 uppercase alphanumeric chars.\n"
+        . "- categoria: only 'telescopes' or 'accessories'.\n"
+        . "- descripcion: concise, factual, no hype.\n"
+        . "- imagen: full https URL.\n"
+        . "- url: full https URL.\n\n"
+        . "SOURCE URLS (crawl these):\n"
+        . $catalogSourceText . "\n\n"
+        . "CURRENT DB BASELINE (use this as update reference):\n"
+        . $catalogBaselineText . "\n\n"
+        . "Return only the PHP code block, no explanations.\n";
 
     try {
         if (function_exists('enma_maintenance_build_products_export_sql')) {
@@ -1034,6 +1204,50 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
         });
 
+        $('[data-paste-import-target]').on('click', function () {
+          var $btn = $(this);
+          var targetId = ($btn.attr('data-paste-import-target') || '').trim();
+          var formId = ($btn.attr('data-paste-import-form') || '').trim();
+          var statusId = ($btn.attr('data-paste-import-status') || '').trim();
+
+          if (targetId === '' || formId === '') {
+            return;
+          }
+
+          var target = document.getElementById(targetId);
+          var form = document.getElementById(formId);
+          if (!target || !form) {
+            updateCopyStatus(statusId, 'Target/form not found', true);
+            return;
+          }
+
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.focus();
+
+          if (!(navigator.clipboard && window.isSecureContext && typeof navigator.clipboard.readText === 'function')) {
+            updateCopyStatus(statusId, 'Clipboard read unavailable. Paste manually.', true);
+            return;
+          }
+
+          navigator.clipboard.readText().then(function (text) {
+            var value = (text || '').trim();
+            if (value === '') {
+              updateCopyStatus(statusId, 'Clipboard is empty', true);
+              return;
+            }
+
+            target.value = text;
+            updateCopyStatus(statusId, 'Pasted. Importing...', false);
+            if (typeof form.requestSubmit === 'function') {
+              form.requestSubmit();
+            } else {
+              form.submit();
+            }
+          }).catch(function () {
+            updateCopyStatus(statusId, 'Clipboard blocked. Paste manually.', true);
+          });
+        });
+
         $('form').on('submit', function () {
           var $form = $(this);
           var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
@@ -1226,6 +1440,61 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         }
         .maintenance-last strong.ok { color: #1e6a31; background: transparent; padding: 0; }
         .maintenance-last strong.fail { color: #9b1c1c; background: transparent; padding: 0; }
+        .ops-nav {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 10px;
+            border: 1px solid #dbe6f4;
+            border-radius: 10px;
+            background: #f6faff;
+            margin: 0 0 12px;
+        }
+        .ops-link {
+            display: inline-flex;
+            align-items: center;
+            text-decoration: none;
+            border: 1px solid #c9d8ee;
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #1c3b67;
+            background: #fff;
+        }
+        .ops-link:hover {
+            border-color: #8fb0dd;
+            color: #0f2f59;
+        }
+        .ops-kpis {
+            display:grid;
+            grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+            gap:10px;
+            margin: 0 0 12px;
+        }
+        .ops-kpi {
+            border:1px solid #dbe6f4;
+            border-radius:10px;
+            background:#f8fbff;
+            padding:10px;
+        }
+        .ops-kpi .k {
+            font-size:12px;
+            color:#4e6280;
+            margin-bottom:4px;
+        }
+        .ops-kpi .v {
+            font-size:20px;
+            font-weight:800;
+            color:#0d2a53;
+        }
+        .ops-section-title {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+        .ops-anchor-offset {
+            scroll-margin-top: 88px;
+        }
 	        .maintenance-badge {
 	            display: inline-block;
 	            font-size: 11px;
@@ -1395,6 +1664,14 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            .post-preview-grid {
 	                grid-template-columns:1fr;
 	            }
+                .ops-nav {
+                    gap: 6px;
+                    padding: 8px;
+                }
+                .ops-link {
+                    font-size: 11px;
+                    padding: 5px 8px;
+                }
 	        }
 	    </style>
 </head>
@@ -1478,8 +1755,61 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php endif; ?>
         </section>
         <?php elseif ($activeTab === 'products'): ?>
-        <?php if ($editingProduct): ?>
         <section class="box">
+            <h2>Products Workspace</h2>
+            <p class="muted" style="margin:0 0 10px;">Add/edit catalog entries, filter quickly, and jump to AI-assisted catalog refresh tools.</p>
+            <div class="ops-kpis">
+                <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allProducts)) ?></div></div>
+                <div class="ops-kpi"><div class="k">Total Products</div><div class="v"><?= number_format($productsTotal) ?></div></div>
+                <div class="ops-kpi"><div class="k">Current Page</div><div class="v"><?= number_format($productsPage) ?>/<?= number_format($productsTotalPages) ?></div></div>
+                <div class="ops-kpi"><div class="k">Search Filter</div><div class="v" style="font-size:14px;line-height:1.3;"><?= e($productQuery !== '' ? $productQuery : 'none') ?></div></div>
+            </div>
+            <div class="ops-nav">
+                <a class="ops-link" href="#products-add">Add Product</a>
+                <a class="ops-link" href="#products-list">Product List</a>
+                <a class="ops-link" href="#products-ai-import">AI New Products</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-catalog')) ?>">Full Catalog Mode</a>
+            </div>
+        </section>
+        <section id="products-ai-import" class="box ops-anchor-offset">
+            <textarea id="products_new_prompt_copy_source" class="copy-source" readonly><?= e($productsNewPromptTemplate) ?></textarea>
+            <div class="copy-toolbar" style="margin-bottom:10px;">
+                <h2>AI New Products (Fast Flow)</h2>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="products_new_prompt_copy_source" data-copy-status="products_new_prompt_copy_status">Copy Prompt For Claude</button>
+                    <span id="products_new_prompt_copy_status" class="copy-status"></span>
+                </div>
+            </div>
+            <p class="muted" style="margin:0 0 10px;">One-click prompt -> paste in Claude -> copy returned array -> paste below -> import only NEW ASINs (existing products are preserved).</p>
+            <?php $productsAiImportForm = is_array($productsAiImportForm ?? null) ? $productsAiImportForm : ['payload' => '']; ?>
+            <form id="products_ai_import_form" method="post" style="margin:0;">
+                <input type="hidden" name="action" value="import_products_ai">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <label for="products_ai_payload">Paste Claude PHP array (new products only)</label>
+                <textarea id="products_ai_payload" name="products_ai_payload" rows="12" placeholder="$products = [ ... ];"><?= e((string) ($productsAiImportForm['payload'] ?? '')) ?></textarea>
+                <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+                    <button class="btn" type="button" data-paste-import-target="products_ai_payload" data-paste-import-form="products_ai_import_form" data-paste-import-status="products_ai_paste_import_status">Paste & Import</button>
+                    <button class="btn" type="submit">Import New Products</button>
+                    <span id="products_ai_paste_import_status" class="copy-status"></span>
+                </div>
+            </form>
+            <?php if (is_array($productsAiImportResult ?? null)): ?>
+                <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+                    <?php if (!empty($productsAiImportResult['ok'])): ?>
+                        <p style="margin:0 0 8px;font-size:13px;">Result: <strong class="ok">OK</strong></p>
+                        <div style="font-family:monospace;font-size:12px;">Inserted: <?= number_format((int) ($productsAiImportResult['inserted'] ?? 0)) ?></div>
+                        <div style="font-family:monospace;font-size:12px;">Skipped existing ASIN: <?= number_format((int) ($productsAiImportResult['skipped_existing'] ?? 0)) ?></div>
+                        <div style="font-family:monospace;font-size:12px;">Skipped invalid rows: <?= number_format((int) ($productsAiImportResult['skipped_invalid'] ?? 0)) ?></div>
+                        <div style="font-family:monospace;font-size:12px;">Skipped duplicate rows in payload: <?= number_format((int) ($productsAiImportResult['skipped_duplicate_payload'] ?? 0)) ?></div>
+                    <?php else: ?>
+                        <p style="margin:0 0 8px;font-size:13px;">Result: <strong class="fail">FAIL</strong></p>
+                        <div style="font-family:monospace;font-size:12px;"><?= e((string) ($productsAiImportResult['message'] ?? 'Unknown error')) ?></div>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php if ($editingProduct): ?>
+        <section id="products-edit" class="box ops-anchor-offset">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                 <h2 style="margin:0;">Edit Product: <?= e($editingProduct['title']) ?></h2>
                 <a href="<?= e(url('/enma/?tab=products')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
@@ -1523,7 +1853,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         </section>
         <?php endif; ?>
 
-        <section class="box">
+        <section id="products-add" class="box ops-anchor-offset">
             <h2>Add Product</h2>
             <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="add_product">
@@ -1562,7 +1892,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             </form>
         </section>
 
-        <section class="box">
+        <section id="products-list" class="box ops-anchor-offset">
             <div class="copy-toolbar">
                 <h2>Products</h2>
                 <div class="copy-actions">
@@ -1621,8 +1951,24 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
               <?php endif; ?>
           </section>
         <?php elseif ($activeTab === 'posts'): ?>
-        <?php if ($editingPost): ?>
         <section class="box">
+            <h2>Posts Workspace</h2>
+            <p class="muted" style="margin:0 0 10px;">Draft faster with SEO helpers, filter content state, and keep editorial flow focused.</p>
+            <div class="ops-kpis">
+                <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allPosts)) ?></div></div>
+                <div class="ops-kpi"><div class="k">Total Posts</div><div class="v"><?= number_format($postsTotal) ?></div></div>
+                <div class="ops-kpi"><div class="k">Drafts</div><div class="v"><?= number_format($postsDraftCount) ?></div></div>
+                <div class="ops-kpi"><div class="k">Published</div><div class="v"><?= number_format($postsPublishedCount) ?></div></div>
+            </div>
+            <div class="ops-nav">
+                <a class="ops-link" href="#posts-add">Add Post</a>
+                <a class="ops-link" href="#posts-list">Post List</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-ai-draft')) ?>">Go to AI Draft Tool</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-prompts')) ?>">Go to Prompt Tools</a>
+            </div>
+        </section>
+        <?php if ($editingPost): ?>
+        <section id="posts-edit" class="box ops-anchor-offset">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
                 <h2 style="margin:0;">Edit Post: <?= e($editingPost['title']) ?></h2>
                 <div style="display:flex;align-items:center;gap:12px;">
@@ -1747,7 +2093,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	        </section>
         <?php endif; ?>
 
-        <section class="box">
+        <section id="posts-add" class="box ops-anchor-offset">
             <h2>Add New Post</h2>
                 <?php $newDraftKey = 'new-' . substr(hash('sha256', (string) session_id() . '|add-post'), 0, 24); ?>
 	            <form method="post" enctype="multipart/form-data" class="post-editor-form" data-autosave-enabled="<?= $postAutosaveEnabled ? '1' : '0' ?>">
@@ -1855,7 +2201,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            </form>
 	        </section>
 
-        <section class="box">
+        <section id="posts-list" class="box ops-anchor-offset">
             <div class="copy-toolbar">
                 <h2>Existing Posts</h2>
                 <div class="copy-actions">
@@ -1922,8 +2268,23 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
               <?php endif; ?>
   	        </section>
 	        <?php elseif ($activeTab === 'users'): ?>
+            <section class="box">
+                <h2>Users Workspace</h2>
+                <p class="muted" style="margin:0 0 10px;">Manage access, roles, and user status with quick filtering and activity visibility.</p>
+                <div class="ops-kpis">
+                    <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allUsers)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Total Users</div><div class="v"><?= number_format($usersTotal) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Active</div><div class="v"><?= number_format($usersActiveCount) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Inactive</div><div class="v"><?= number_format($usersInactiveCount) ?></div></div>
+                </div>
+                <div class="ops-nav">
+                    <a class="ops-link" href="#users-add">Add User</a>
+                    <a class="ops-link" href="#users-list">User List</a>
+                    <a class="ops-link" href="#users-activity">Activity Log</a>
+                </div>
+            </section>
 	        <?php if ($editingUser): ?>
-	        <section class="box">
+	        <section id="users-edit" class="box ops-anchor-offset">
 	            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
 	                <h2 style="margin:0;">Edit User: <?= e($editingUser['username']) ?></h2>
 	                <a href="<?= e(url('/enma/?tab=users')) ?>" style="font-size:13px;">&larr; Cancel Edit</a>
@@ -1973,7 +2334,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	        </section>
 	        <?php endif; ?>
 
-	        <section class="box">
+	        <section id="users-add" class="box ops-anchor-offset">
 	            <h2>Add User</h2>
 	            <form method="post">
 	                <input type="hidden" name="action" value="add_user">
@@ -2018,7 +2379,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            </form>
 	        </section>
 
-	        <section class="box">
+	        <section id="users-list" class="box ops-anchor-offset">
  	            <h2>Users</h2>
   	            <form method="get" class="toolbar">
   	                <input type="hidden" name="tab" value="users">
@@ -2072,10 +2433,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
   	            <?php endif; ?>
   	        </section>
 
-	        <section class="box">
+	        <section id="users-activity" class="box ops-anchor-offset">
 	            <h2>Admin Activity Log</h2>
   	            <?php if ($recentAdminActivity === []): ?>
-  	                <div class="empty">No admin activity recorded yet.</div>
+ 	                <div class="empty">No admin activity recorded yet.</div>
   	            <?php else: ?>
                     <p class="muted">Showing <?= number_format(count($recentAdminActivity)) ?> of <?= number_format($activityTotal) ?> activity records.</p>
   	                <table>
@@ -2194,6 +2555,23 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 
         <?php elseif ($activeTab === 'views'): ?>
         <section class="box">
+            <h2>Views Workspace</h2>
+            <p class="muted" style="margin:0 0 10px;">Analyze traffic window, compare deltas, and jump directly to funnel/top pages/sources.</p>
+            <div class="ops-kpis">
+                <div class="ops-kpi"><div class="k">Window</div><div class="v"><?= number_format((int) ($viewsDashboard['days'] ?? $viewDays)) ?>d</div></div>
+                <div class="ops-kpi"><div class="k">Total Views</div><div class="v"><?= number_format((int) (($viewsDashboard['totals']['total_views'] ?? 0))) ?></div></div>
+                <div class="ops-kpi"><div class="k">Outbound Clicks</div><div class="v"><?= number_format((int) (($viewsDashboard['clicks']['total_clicks'] ?? 0))) ?></div></div>
+                <div class="ops-kpi"><div class="k">CTR</div><div class="v"><?= number_format((float) (($viewsDashboard['clicks']['ctr_percent'] ?? 0.0)), 2) ?>%</div></div>
+            </div>
+            <div class="ops-nav">
+                <a class="ops-link" href="#views-overview">Overview</a>
+                <a class="ops-link" href="#views-funnel">Funnel</a>
+                <a class="ops-link" href="#views-top-pages">Top Pages</a>
+                <a class="ops-link" href="#views-sources">Sources</a>
+                <a class="ops-link" href="#views-referrers">Referrers</a>
+            </div>
+        </section>
+        <section id="views-overview" class="box ops-anchor-offset">
             <h2>Views Dashboard</h2>
             <p style="margin: 0 0 10px; font-size: 14px; color: #334155;">Tracking window: last <?= (int) ($viewsDashboard['days'] ?? $viewDays) ?> days (from <?= e((string) ($viewsDashboard['from_date'] ?? '')) ?> UTC)</p>
             <p class="muted" style="margin: 0 0 10px;">Compared against previous window: <?= e((string) ($viewsDashboard['previous_range']['from_date'] ?? '-')) ?> to <?= e((string) ($viewsDashboard['previous_range']['to_date'] ?? '-')) ?>.</p>
@@ -2234,7 +2612,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <p style="margin: 0; font-size: 12px; color: #5b6678;">Country is best-effort from server/CDN geo headers (fallback: Accept-Language).</p>
         </section>
 
-        <section class="box">
+        <section id="views-funnel" class="box ops-anchor-offset">
             <h2>Traffic Funnel</h2>
             <div class="stats">
                 <div class="stat">
@@ -2304,7 +2682,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             </div>
         </section>
 
-        <section class="box">
+        <section id="views-top-pages" class="box ops-anchor-offset">
             <h2>Top Pages</h2>
             <p class="muted">Showing <?= number_format(count($viewsTopPagesRows)) ?> of <?= number_format(count($viewsTopPagesAll)) ?> rows.</p>
             <table>
@@ -2376,7 +2754,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?= $viewsTopClickedPagination ?>
         </section>
 
-        <section class="box">
+        <section id="views-sources" class="box ops-anchor-offset">
             <h2>Traffic Source Breakdown</h2>
             <table>
                 <thead>
@@ -2416,7 +2794,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             </table>
         </section>
 
-        <section class="box">
+        <section id="views-referrers" class="box ops-anchor-offset">
             <h2>Top Referrers</h2>
             <p class="muted">Showing <?= number_format(count($viewsReferrersRows)) ?> of <?= number_format(count($viewsReferrersAll)) ?> rows.</p>
             <table>
@@ -2440,17 +2818,46 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?= $viewsReferrersPagination ?>
         </section>
         <?php else: ?>
+        <?php
+        $availableMaintenanceTasks = $availableMaintenanceTasks ?? [];
+        $availableAdvancedTasks = $availableAdvancedTasks ?? [];
+        $maintenanceUsageMap = $maintenanceUsageMap ?? [];
+        $promptToolsCount = 3;
+        $automationToolsCount = 2;
+        $routineToolsCount = count($availableMaintenanceTasks);
+        $advancedToolsCount = count($availableAdvancedTasks);
+        ?>
         <section class="box">
-            <h2>Maintenance Tools</h2>
-            <p class="muted" style="margin: 0 0 10px;">Only available/working tasks are shown. Last usage is tracked automatically.</p>
+            <h2>Maintenance Workspace</h2>
+            <p class="muted" style="margin: 0 0 10px;">Workflow focused: copy prompt, paste AI result, run update, then execute routine tasks. Last usage is tracked automatically.</p>
+            <div class="ops-kpis">
+                <div class="ops-kpi"><div class="k">Prompt Tools</div><div class="v"><?= number_format($promptToolsCount) ?></div></div>
+                <div class="ops-kpi"><div class="k">AI Actions</div><div class="v"><?= number_format($automationToolsCount) ?></div></div>
+                <div class="ops-kpi"><div class="k">Routine Tasks</div><div class="v"><?= number_format($routineToolsCount) ?></div></div>
+                <div class="ops-kpi"><div class="k">Advanced Tasks</div><div class="v"><?= number_format($advancedToolsCount) ?></div></div>
+            </div>
+            <div class="ops-nav">
+                <a class="ops-link" href="#ops-prompts">Prompts</a>
+                <a class="ops-link" href="#ops-catalog">Catalog Import</a>
+                <a class="ops-link" href="#ops-ai-draft">AI Draft</a>
+                <a class="ops-link" href="#ops-routines">Routine Tasks</a>
+                <a class="ops-link" href="#ops-not-found-review">Not Found Review</a>
+                <a class="ops-link" href="#ops-output">Task Output</a>
+                <a class="ops-link" href="#ops-db">DB Snapshot</a>
+                <?php if ($advancedEnabled): ?>
+                    <a class="ops-link" href="#ops-advanced">Advanced</a>
+                <?php endif; ?>
+            </div>
             <textarea id="sitemap_public_url_source" class="copy-source" readonly><?= e($sitemapCopyText) ?></textarea>
             <textarea id="db_schema_copy_source" class="copy-source" readonly><?= e($dbSchemaCopyText) ?></textarea>
             <textarea id="products_sql_copy_source" class="copy-source" readonly><?= e($productsSqlCopyText) ?></textarea>
             <textarea id="posts_json_copy_source" class="copy-source" readonly><?= e($postsJsonCopyText) ?></textarea>
             <textarea id="seo_prompt_copy_source" class="copy-source" readonly><?= e($seoPromptTemplate) ?></textarea>
             <textarea id="seo_prompt_sitemap_copy_source" class="copy-source" readonly><?= e($promptPlusSitemapCopyText) ?></textarea>
+            <textarea id="catalog_prompt_copy_source" class="copy-source" readonly><?= e($catalogPromptTemplate) ?></textarea>
+            <h3 id="ops-prompts" class="ops-section-title ops-anchor-offset">Prompt Tools</h3>
             <div class="copy-toolbar" style="margin-bottom:12px;">
-                <h3>Prompt Tools</h3>
+                <h3 style="margin:0;">Copy Ready-to-Use Prompts</h3>
                 <div class="copy-actions">
                     <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_copy_source" data-copy-status="seo_prompt_copy_status">Copy Prompt</button>
                     <span id="seo_prompt_copy_status" class="copy-status"></span>
@@ -2459,8 +2866,45 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_sitemap_copy_source" data-copy-status="seo_prompt_sitemap_copy_status">Copy Prompt + Sitemap</button>
                     <span id="seo_prompt_sitemap_copy_status" class="copy-status"></span>
                 </div>
+                <div class="copy-actions">
+                    <button class="btn btn-copy" type="button" data-copy-target="catalog_prompt_copy_source" data-copy-status="catalog_prompt_copy_status">Copy Catalog Master Prompt</button>
+                    <span id="catalog_prompt_copy_status" class="copy-status"></span>
+                </div>
             </div>
-            <div class="box" style="margin-top:12px; margin-bottom:12px;">
+            <div id="ops-catalog" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">Claude Catalog Import (2 Steps)</h3>
+                <p class="muted" style="margin:0 0 10px;">1) Copy Catalog Master Prompt, paste in Claude and copy the returned <code>$products</code> array. 2) Paste it below and run update.</p>
+                <?php $catalogImportForm = is_array($catalogImportForm ?? null) ? $catalogImportForm : ['payload' => '']; ?>
+                <form method="post" style="margin:0;">
+                    <input type="hidden" name="action" value="maintenance_import_catalog_array">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <label for="catalog_payload">Paste Claude PHP array</label>
+                    <textarea id="catalog_payload" name="catalog_payload" rows="12" placeholder="$products = [ ... ];"><?= e((string) ($catalogImportForm['payload'] ?? '')) ?></textarea>
+                    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+                        <button class="btn" type="submit">Update Catalog DB</button>
+                    </div>
+                </form>
+                <?php if (is_array($catalogImportResult ?? null)): ?>
+                    <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+                        <p style="margin:0 0 8px;font-size:13px;">
+                            Result:
+                            <strong class="<?= !empty($catalogImportResult['ok']) ? 'ok' : 'fail' ?>">
+                                <?= !empty($catalogImportResult['ok']) ? 'OK' : 'FAIL' ?>
+                            </strong>
+                            | Exit code: <?= (int) ($catalogImportResult['exit_code'] ?? 1) ?>
+                        </p>
+                        <?php if (!empty($catalogImportResult['php_binary'])): ?>
+                            <p class="muted" style="margin:0 0 8px;font-size:12px;">PHP CLI used: <code><?= e((string) $catalogImportResult['php_binary']) ?></code></p>
+                        <?php endif; ?>
+                        <?php if (!empty($catalogImportResult['output_lines']) && is_array($catalogImportResult['output_lines'])): ?>
+                            <?php foreach ($catalogImportResult['output_lines'] as $line): ?>
+                                <div style="font-family:monospace;font-size:12px;"><?= e((string) $line) ?></div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+            <div id="ops-ai-draft" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
                 <h3 style="margin:0 0 8px;">AI Draft Generator (Gemini)</h3>
                 <p class="muted" style="margin:0 0 10px;">One click in Auto mode will pick a commercial gap and create a draft. No auto-publish.</p>
                 <?php $affiliateDraftForm = is_array($affiliateDraftForm ?? null) ? $affiliateDraftForm : ['auto_mode' => '1', 'topic' => '', 'keyword' => '', 'product' => '', 'category' => '', 'model' => 'gemini-2.0-flash']; ?>
@@ -2529,9 +2973,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 'weekly' => 'Weekly',
                 'as_needed' => 'As Needed',
             ];
-            $availableMaintenanceTasks = $availableMaintenanceTasks ?? [];
-            $maintenanceUsageMap = $maintenanceUsageMap ?? [];
             ?>
+            <h3 id="ops-routines" class="ops-section-title ops-anchor-offset">Routine Tasks</h3>
             <?php foreach ($maintenanceGroups as $groupKey => $groupLabel): ?>
                 <?php
                 $groupTasks = array_filter(
@@ -2608,8 +3051,61 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <?php endif; ?>
             <?php endforeach; ?>
 
+            <div id="ops-not-found-review" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">Not Found Review (Manual Eyeball)</h3>
+                <p class="muted" style="margin:0 0 10px;">Rows flagged by link checks as <code>not_found</code> or <code>warning</code>. Use this for manual cleanup when auto-detection is uncertain.</p>
+                <?php if (($notFoundReviewRows ?? []) === []): ?>
+                    <div class="empty">No flagged products found. Run <strong>Clean Not Found Products</strong> first.</div>
+                <?php else: ?>
+                    <p class="muted">Showing <?= number_format(count((array) $notFoundReviewRows)) ?> of <?= number_format((int) ($notFoundReviewTotal ?? 0)) ?> flagged rows.</p>
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>ASIN</th>
+                            <th>Title</th>
+                            <th>State</th>
+                            <th>HTTP</th>
+                            <th>Checked</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ((array) $notFoundReviewRows as $row): ?>
+                            <tr>
+                                <td><?= (int) ($row['id'] ?? 0) ?></td>
+                                <td><?= e((string) ($row['asin'] ?? '')) ?></td>
+                                <td>
+                                    <div><?= e((string) ($row['title'] ?? '')) ?></div>
+                                    <div class="muted" style="font-size:12px;"><a href="<?= e((string) ($row['affiliate_url'] ?? '#')) ?>" target="_blank" rel="noopener noreferrer">Open link</a></div>
+                                </td>
+                                <td><?= e((string) ($row['state'] ?? 'unknown')) ?></td>
+                                <td><?= (int) ($row['http_status'] ?? 0) ?></td>
+                                <td><?= e((string) ($row['checked_at'] ?? '')) ?></td>
+                                <td>
+                                    <form method="post" style="display:inline;" onsubmit="return confirm('Archive this product?');">
+                                        <input type="hidden" name="action" value="maintenance_archive_review_product">
+                                        <input type="hidden" name="product_id" value="<?= (int) ($row['id'] ?? 0) ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;">Archive</button>
+                                    </form>
+                                    <form method="post" style="display:inline;" onsubmit="return confirm('Delete this product permanently?');">
+                                        <input type="hidden" name="action" value="maintenance_delete_review_product">
+                                        <input type="hidden" name="product_id" value="<?= (int) ($row['id'] ?? 0) ?>">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0 0 0 8px;font-size:12px;">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                    <?= $notFoundReviewPagination ?>
+                <?php endif; ?>
+            </div>
+
             <?php if ($maintenanceLog !== []): ?>
-                <div style="background:#f6f9fc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
+                <div id="ops-output" class="ops-anchor-offset" style="background:#f6f9fc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
                     <div class="copy-toolbar" style="margin-bottom:10px;">
                         <h3>Latest Task Output</h3>
                         <div class="copy-actions">
@@ -2625,7 +3121,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php endif; ?>
         </section>
 
-        <section class="box">
+        <section id="ops-db" class="box ops-anchor-offset">
             <h2>Database Snapshot</h2>
             <table>
                 <thead>
@@ -2643,7 +3139,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         </section>
 
         <?php if ($advancedEnabled): ?>
-        <section class="box">
+        <section id="ops-advanced" class="box ops-anchor-offset">
             <h2>Advanced Mode</h2>
             <p style="margin: 0 0 12px; font-size: 14px; color: #8a1f1f;">
                 High-impact tasks. Use only if you understand the effect on catalog data.

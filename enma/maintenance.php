@@ -40,6 +40,24 @@ if (!function_exists('enma_maintenance_init_usage_table')) {
     }
 }
 
+if (!function_exists('enma_maintenance_init_product_link_checks_table')) {
+    function enma_maintenance_init_product_link_checks_table(PDO $pdo): void
+    {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS product_link_checks (
+                product_id INT UNSIGNED NOT NULL PRIMARY KEY,
+                asin VARCHAR(32) NOT NULL DEFAULT "",
+                affiliate_url TEXT NULL,
+                http_status INT NOT NULL DEFAULT 0,
+                state VARCHAR(20) NOT NULL DEFAULT "unknown",
+                final_url TEXT NULL,
+                error_message VARCHAR(255) NOT NULL DEFAULT "",
+                checked_at VARCHAR(40) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+        );
+    }
+}
+
 if (!function_exists('enma_maintenance_record_usage')) {
     function enma_maintenance_record_usage(PDO $pdo, string $taskKey, string $status, string $message = ''): void
     {
@@ -352,6 +370,13 @@ $maintenanceTaskMeta = [
         'group' => 'weekly',
         'script' => 'scripts/check_links.php',
     ],
+    'clean_not_found_products' => [
+        'label' => 'Clean Not Found Products',
+        'description' => 'Revisa affiliate URLs y archiva productos publicados que devuelven not found (404/410 o página Amazon inexistente).',
+        'frequency' => 'As needed',
+        'group' => 'as_needed',
+        'script' => 'scripts/clean_not_found_products.php',
+    ],
     'generate_sitemap' => [
         'label' => 'Generate Sitemap',
         'description' => 'Genera sitemap.xml solo con URLs publicas del sitio.',
@@ -471,6 +496,53 @@ $affiliateDraftForm = [
     'model' => 'gemini-2.0-flash',
 ];
 $affiliateDraftResult = null;
+$catalogImportForm = [
+    'payload' => '',
+];
+$catalogImportResult = null;
+$notFoundReviewRows = [];
+$notFoundReviewPage = max(1, (int) ($_GET['nf_review_page'] ?? 1));
+$notFoundReviewPerPage = 15;
+$notFoundReviewTotal = 0;
+$notFoundReviewTotalPages = 1;
+
+try {
+    enma_maintenance_init_product_link_checks_table($pdo);
+    $countStmt = $pdo->query(
+        'SELECT COUNT(*)
+         FROM product_link_checks plc
+         JOIN products p ON p.id = plc.product_id
+         WHERE plc.state IN ("not_found", "warning")'
+    );
+    $notFoundReviewTotal = (int) $countStmt->fetchColumn();
+    $notFoundReviewTotalPages = max(1, (int) ceil(max(0, $notFoundReviewTotal) / $notFoundReviewPerPage));
+    $notFoundReviewPage = min($notFoundReviewPage, $notFoundReviewTotalPages);
+
+    $rowsStmt = $pdo->prepare(
+        'SELECT
+            p.id,
+            p.asin,
+            p.title,
+            p.status,
+            p.affiliate_url,
+            plc.http_status,
+            plc.state,
+            plc.final_url,
+            plc.error_message,
+            plc.checked_at
+         FROM product_link_checks plc
+         JOIN products p ON p.id = plc.product_id
+         WHERE plc.state IN ("not_found", "warning")
+         ORDER BY plc.checked_at DESC, p.id DESC
+         LIMIT :limit OFFSET :offset'
+    );
+    $rowsStmt->bindValue(':limit', $notFoundReviewPerPage, PDO::PARAM_INT);
+    $rowsStmt->bindValue(':offset', ($notFoundReviewPage - 1) * $notFoundReviewPerPage, PDO::PARAM_INT);
+    $rowsStmt->execute();
+    $notFoundReviewRows = $rowsStmt->fetchAll();
+} catch (Throwable $e) {
+    $maintenanceLog[] = 'Not-found review unavailable: ' . $e->getMessage();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_generate_affiliate_post') {
     $affiliateDraftForm['auto_mode'] = !empty($_POST['auto_mode']) ? '1' : '0';
@@ -548,6 +620,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             }
         } catch (Throwable $e) {
             $taskRunMessage = 'Affiliate draft generation failed: ' . $e->getMessage();
+            $errors[] = $taskRunMessage;
+        }
+    }
+
+    try {
+        enma_maintenance_record_usage($pdo, $taskKey, $taskRunOk ? 'ok' : 'fail', $taskRunMessage);
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_import_catalog_array') {
+    $catalogImportForm['payload'] = trim((string) ($_POST['catalog_payload'] ?? ''));
+    $taskKey = 'maintenance_import_catalog_array';
+    $taskRunOk = false;
+    $taskRunMessage = '';
+    $scriptPath = enma_maintenance_resolve_script('scripts/seed_real_catalog.php');
+
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+        $taskRunMessage = 'Invalid request token.';
+    } elseif ($catalogImportForm['payload'] === '') {
+        $errors[] = 'Paste a PHP $products array first.';
+        $taskRunMessage = 'Empty catalog payload.';
+    } elseif ($scriptPath === null) {
+        $errors[] = 'Catalog seed script is unavailable.';
+        $taskRunMessage = 'Catalog seed script is unavailable.';
+    } else {
+        $tmpDir = __DIR__ . '/../data/tmp';
+        if (!is_dir($tmpDir) && !mkdir($tmpDir, 0775, true) && !is_dir($tmpDir)) {
+            $errors[] = 'Could not create temporary directory for payload import.';
+            $taskRunMessage = 'Temp directory creation failed.';
+        } else {
+            $tmpFile = $tmpDir . '/catalog_payload_' . gmdate('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.txt';
+            try {
+                file_put_contents($tmpFile, $catalogImportForm['payload']);
+                $run = enma_maintenance_run_cli((string) $scriptPath, ['payload_file' => $tmpFile]);
+                $exitCode = (int) ($run['exit_code'] ?? 1);
+                $outputLines = array_values(array_filter(array_map('trim', (array) ($run['output_lines'] ?? [])), static fn(string $line): bool => $line !== ''));
+
+                $catalogImportResult = [
+                    'ok' => $exitCode === 0,
+                    'exit_code' => $exitCode,
+                    'php_binary' => (string) ($run['php_binary'] ?? ''),
+                    'output_lines' => $outputLines,
+                ];
+
+                if ($exitCode === 0) {
+                    $flash = 'Catalog import completed and database updated.';
+                    $taskRunOk = true;
+                    $taskRunMessage = $flash;
+                    $catalogImportForm['payload'] = '';
+                    $maintenanceLog[] = 'Task: maintenance_import_catalog_array';
+                    $maintenanceLog[] = 'Script: scripts/seed_real_catalog.php';
+                    $maintenanceLog[] = 'Mode: pasted Claude array';
+                    $maintenanceLog[] = 'PHP CLI: ' . (string) ($run['php_binary'] ?? 'php');
+                    foreach ($outputLines as $line) {
+                        $maintenanceLog[] = $line;
+                    }
+                } else {
+                    $taskRunMessage = 'Catalog import failed (exit code ' . $exitCode . ').';
+                    $errors[] = $taskRunMessage;
+                    $maintenanceLog[] = 'PHP CLI: ' . (string) ($run['php_binary'] ?? 'php');
+                    foreach ($outputLines as $line) {
+                        $maintenanceLog[] = $line;
+                    }
+                }
+            } catch (Throwable $e) {
+                $taskRunMessage = 'Catalog import failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            } finally {
+                if (isset($tmpFile) && is_file($tmpFile)) {
+                    @unlink($tmpFile);
+                }
+            }
+        }
+    }
+
+    try {
+        enma_maintenance_record_usage($pdo, $taskKey, $taskRunOk ? 'ok' : 'fail', $taskRunMessage);
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_archive_review_product') {
+    $taskKey = 'maintenance_archive_review_product';
+    $taskRunOk = false;
+    $taskRunMessage = '';
+    $productId = (int) ($_POST['product_id'] ?? 0);
+
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+        $taskRunMessage = 'Invalid request token.';
+    } elseif ($productId <= 0) {
+        $errors[] = 'Invalid product id.';
+        $taskRunMessage = 'Invalid product id.';
+    } else {
+        try {
+            $stmt = $pdo->prepare('UPDATE products SET status = "archived", updated_at = :updated_at WHERE id = :id');
+            $stmt->execute([
+                ':updated_at' => now_iso(),
+                ':id' => $productId,
+            ]);
+            enma_record_activity($pdo, 'product.archive.from_review', 'product', $productId, []);
+            $flash = 'Product archived from not-found review.';
+            $taskRunOk = true;
+            $taskRunMessage = $flash;
+        } catch (Throwable $e) {
+            $taskRunMessage = 'Archive from review failed: ' . $e->getMessage();
+            $errors[] = $taskRunMessage;
+        }
+    }
+
+    try {
+        enma_maintenance_record_usage($pdo, $taskKey, $taskRunOk ? 'ok' : 'fail', $taskRunMessage);
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_delete_review_product') {
+    $taskKey = 'maintenance_delete_review_product';
+    $taskRunOk = false;
+    $taskRunMessage = '';
+    $productId = (int) ($_POST['product_id'] ?? 0);
+
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+        $taskRunMessage = 'Invalid request token.';
+    } elseif ($productId <= 0) {
+        $errors[] = 'Invalid product id.';
+        $taskRunMessage = 'Invalid product id.';
+    } else {
+        try {
+            $stmt = $pdo->prepare('DELETE FROM products WHERE id = :id');
+            $stmt->execute([':id' => $productId]);
+            $cleanupStmt = $pdo->prepare('DELETE FROM product_link_checks WHERE product_id = :id');
+            $cleanupStmt->execute([':id' => $productId]);
+            enma_record_activity($pdo, 'product.delete.from_review', 'product', $productId, []);
+            $flash = 'Product deleted from not-found review.';
+            $taskRunOk = true;
+            $taskRunMessage = $flash;
+        } catch (Throwable $e) {
+            $taskRunMessage = 'Delete from review failed: ' . $e->getMessage();
             $errors[] = $taskRunMessage;
         }
     }
@@ -859,6 +1076,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             } catch (Throwable $e) {
                 ob_end_clean();
                 $taskRunMessage = 'Link check failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
+        } elseif ($task === 'clean_not_found_products') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                if (!defined('ENMA_ALLOW_WEB_RUN')) {
+                    define('ENMA_ALLOW_WEB_RUN', true);
+                }
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Not-found products cleanup completed.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                }
+                $maintenanceLog[] = 'Task: clean_not_found_products';
+                $maintenanceLog[] = 'Mode: archive published products that resolve as not found';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Not-found cleanup failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'generate_sitemap') {
