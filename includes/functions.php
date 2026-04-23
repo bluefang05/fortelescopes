@@ -1537,6 +1537,10 @@ function outbound_url(string $externalUrl, int $productId = 0, ?string $fromPath
 
 function track_outbound_click(PDO $pdo, string $targetUrl, int $productId = 0, string $fromPath = '/'): void
 {
+    if (is_owner_visit()) {
+        return;
+    }
+
     $targetUrl = trim($targetUrl);
     if ($targetUrl === '' || filter_var($targetUrl, FILTER_VALIDATE_URL) === false) {
         return;

@@ -105,6 +105,162 @@ class Analytics {
         return null;
     }
 
+    private function standardPeriodsUtc(): array {
+        $today = gmdate('Y-m-d');
+        $weekDay = (int) gmdate('N');
+        $weekStart = gmdate('Y-m-d', strtotime($today . ' -' . ($weekDay - 1) . ' days'));
+        $monthStart = gmdate('Y-m-01');
+
+        return [
+            'today' => [
+                'label' => 'Today',
+                'from' => $today,
+                'to' => $today,
+            ],
+            'this_week' => [
+                'label' => 'This Week',
+                'from' => $weekStart,
+                'to' => $today,
+            ],
+            'this_month' => [
+                'label' => 'This Month',
+                'from' => $monthStart,
+                'to' => $today,
+            ],
+        ];
+    }
+
+    private function viewsBetween(string $fromDate, string $toDate): int {
+        $table = $this->analyticsTable();
+
+        if (
+            $table === 'page_views'
+            && $this->columnExists('page_views', 'views')
+            && $this->columnExists('page_views', 'view_date')
+        ) {
+            $stmt = $this->db->prepare(
+                'SELECT COALESCE(SUM(views), 0)
+                 FROM page_views
+                 WHERE view_date BETWEEN :from_date AND :to_date'
+            );
+            $stmt->execute([
+                ':from_date' => $fromDate,
+                ':to_date' => $toDate,
+            ]);
+            return (int) $stmt->fetchColumn();
+        }
+
+        $dateCol = $this->columnExists($table, 'view_date') ? 'view_date' : $this->createdAtColumn($table);
+        if ($dateCol === null) {
+            return 0;
+        }
+
+        $where = $dateCol === 'view_date'
+            ? '`view_date` BETWEEN :from_date AND :to_date'
+            : "DATE(`$dateCol`) BETWEEN :from_date AND :to_date";
+
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*)
+             FROM `$table`
+             WHERE $where"
+        );
+        $stmt->execute([
+            ':from_date' => $fromDate,
+            ':to_date' => $toDate,
+        ]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function uniqueVisitorsBetween(string $fromDate, string $toDate): int {
+        $table = $this->analyticsTable();
+        $ipCol = $this->ipColumn($table);
+        if ($ipCol === null) {
+            return 0;
+        }
+
+        $dateCol = $this->columnExists($table, 'view_date') ? 'view_date' : $this->createdAtColumn($table);
+        if ($dateCol === null) {
+            return 0;
+        }
+
+        $where = $dateCol === 'view_date'
+            ? '`view_date` BETWEEN :from_date AND :to_date'
+            : "DATE(`$dateCol`) BETWEEN :from_date AND :to_date";
+
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(DISTINCT `$ipCol`)
+             FROM `$table`
+             WHERE $where"
+        );
+        $stmt->execute([
+            ':from_date' => $fromDate,
+            ':to_date' => $toDate,
+        ]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function clicksBetween(string $fromDate, string $toDate): int {
+        if (!$this->tableExists('outbound_clicks')) {
+            return 0;
+        }
+
+        if ($this->columnExists('outbound_clicks', 'click_date')) {
+            $stmt = $this->db->prepare(
+                'SELECT COUNT(*)
+                 FROM outbound_clicks
+                 WHERE click_date BETWEEN :from_date AND :to_date'
+            );
+            $stmt->execute([
+                ':from_date' => $fromDate,
+                ':to_date' => $toDate,
+            ]);
+            return (int) $stmt->fetchColumn();
+        }
+
+        $dateCol = null;
+        if ($this->columnExists('outbound_clicks', 'clicked_at')) {
+            $dateCol = 'clicked_at';
+        } elseif ($this->columnExists('outbound_clicks', 'created_at')) {
+            $dateCol = 'created_at';
+        }
+
+        if ($dateCol === null) {
+            return 0;
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*)
+             FROM outbound_clicks
+             WHERE DATE(`$dateCol`) BETWEEN :from_date AND :to_date"
+        );
+        $stmt->execute([
+            ':from_date' => $fromDate,
+            ':to_date' => $toDate,
+        ]);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    private function buildStandardPeriodsStats(): array {
+        $result = [];
+        foreach ($this->standardPeriodsUtc() as $key => $period) {
+            $fromDate = (string) ($period['from'] ?? '');
+            $toDate = (string) ($period['to'] ?? '');
+            $result[$key] = [
+                'label' => (string) ($period['label'] ?? ''),
+                'from' => $fromDate,
+                'to' => $toDate,
+                'views' => $this->viewsBetween($fromDate, $toDate),
+                'unique_visitors' => $this->uniqueVisitorsBetween($fromDate, $toDate),
+                'clicks' => $this->clicksBetween($fromDate, $toDate),
+            ];
+        }
+
+        return $result;
+    }
+
     /**
      * Obtiene estadisticas generales y de seguridad.
      */
@@ -127,6 +283,7 @@ class Analytics {
         $stats['suspected_bots'] = (int) $this->countSuspectedBots();
         $stats['suspected_attacks'] = (int) $this->countSuspectedAttacks();
         $stats['human_traffic'] = max(0, $stats['total_views'] - $stats['suspected_bots'] - $stats['suspected_attacks']);
+        $stats['periods'] = $this->buildStandardPeriodsStats();
 
         return $stats;
     }

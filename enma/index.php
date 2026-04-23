@@ -2113,6 +2113,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
   	            <?php endif; ?>
 	        </section>
 	        <?php elseif ($activeTab === 'analytics'): ?>
+        <?php $analyticsPeriods = $analyticsDashboard['stats']['periods'] ?? []; ?>
         <section class="box">
             <h2>Analytics & Seguridad</h2>
             <div class="stats">
@@ -2124,6 +2125,22 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div class="stat"><div class="stat-k">Suspected Attacks</div><div class="stat-v"><?= number_format((int) ($analyticsDashboard['stats']['suspected_attacks'] ?? 0)) ?></div></div>
             </div>
             <p class="muted">This analytics panel now runs inside the same ENMA layout to avoid theme/page jumps.</p>
+        </section>
+
+        <section class="box">
+            <h2>Standard Windows (UTC)</h2>
+            <div class="stats">
+                <?php foreach (['today', 'this_week', 'this_month'] as $periodKey): ?>
+                    <?php $period = $analyticsPeriods[$periodKey] ?? []; ?>
+                    <div class="stat">
+                        <div class="stat-k"><?= e((string) ($period['label'] ?? strtoupper($periodKey))) ?></div>
+                        <div class="stat-v"><?= number_format((int) ($period['views'] ?? 0)) ?> views</div>
+                        <div class="muted"><?= number_format((int) ($period['unique_visitors'] ?? 0)) ?> unique visitors</div>
+                        <div class="muted"><?= number_format((int) ($period['clicks'] ?? 0)) ?> outbound clicks</div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <p class="muted">Owner/admin traffic is excluded from new tracking events after login.</p>
         </section>
 
         <section class="box">
