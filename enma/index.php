@@ -66,15 +66,16 @@ $editingUser = null;
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/posts_handler.php';
 require_once __DIR__ . '/products_handler.php';
+require_once __DIR__ . '/media_handler.php';
 require_once __DIR__ . '/users_handler.php';
 require_once __DIR__ . '/maintenance.php';
 
 // Refresh auth state in case auth.php changed the session
 $authenticated = !empty($_SESSION['admin_ok']);
 
-$activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'overview') : 'overview';
-if (!in_array($activeTab, ['overview', 'products', 'posts', 'users', 'views', 'analytics', 'maintenance'], true)) {
-    $activeTab = 'overview';
+$activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'control') : 'overview';
+if (!in_array($activeTab, ['control', 'overview', 'products', 'media', 'posts', 'indexation', 'prompts', 'users', 'views', 'analytics', 'maintenance'], true)) {
+    $activeTab = 'control';
 }
 $viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
 $viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
@@ -141,6 +142,8 @@ if (!function_exists('enma_post_public_path')) {
         return $postType === 'guide' ? '/' . $slug : '/blog/' . $slug;
     }
 }
+require_once __DIR__ . '/indexation_handler.php';
+require_once __DIR__ . '/operator_handler.php';
 
 $productQuery = $authenticated ? trim((string) ($_GET['q'] ?? '')) : '';
 $allProducts = [];
@@ -435,14 +438,60 @@ $productsPagination = $authenticated && $activeTab === 'products'
 $postsPagination = $authenticated && $activeTab === 'posts'
     ? enma_render_pagination('posts', 'posts_page', $postsPage, $postsTotalPages, $postsStatusFilter !== 'all' ? ['posts_status' => $postsStatusFilter] : [])
     : '';
+$indexationPagination = $authenticated && $activeTab === 'indexation'
+    ? enma_render_pagination(
+        'indexation',
+        'indexation_page',
+        $indexationPage,
+        $indexationTotalPages,
+        array_filter([
+            'idx_state' => $indexationStateFilter !== 'all' ? $indexationStateFilter : null,
+            'idx_type' => $indexationTypeFilter !== 'all' ? $indexationTypeFilter : null,
+            'idx_indexed' => $indexationIndexedFilter !== 'all' ? $indexationIndexedFilter : null,
+            'idx_sort' => $indexationSort !== 'priority' ? $indexationSort : null,
+        ], static fn($value): bool => $value !== null && $value !== '')
+    )
+    : '';
 $usersPagination = $authenticated && $activeTab === 'users'
     ? enma_render_pagination('users', 'users_page', $usersPage, $usersTotalPages, $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
 $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
+$allMedia = [];
+$mediaPage = $authenticated ? enma_page_value('media_page') : 1;
+$mediaPerPage = 24;
+$mediaTotal = 0;
+$mediaTotalPages = 1;
+$mediaTableReady = false;
+if ($authenticated && $activeTab === 'media') {
+    try {
+        $mediaTableReady = function_exists('enma_media_table_exists') && enma_media_table_exists($pdo);
+        if ($mediaTableReady) {
+            $mediaTotal = (int) $pdo->query('SELECT COUNT(*) FROM media_library')->fetchColumn();
+            $mediaTotalPages = enma_total_pages($mediaTotal, $mediaPerPage);
+            $mediaPage = min($mediaPage, $mediaTotalPages);
+            $stmt = $pdo->prepare(
+                'SELECT id, media_type, mime_type, file_ext, original_name, stored_name, file_url, file_size, title, alt_text, notes, status, created_at
+                 FROM media_library
+                 ORDER BY id DESC
+                 LIMIT :limit OFFSET :offset'
+            );
+            $stmt->bindValue(':limit', $mediaPerPage, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', ($mediaPage - 1) * $mediaPerPage, PDO::PARAM_INT);
+            $stmt->execute();
+            $allMedia = $stmt->fetchAll();
+        }
+    } catch (Throwable $e) {
+        $mediaTableReady = false;
+        $errors[] = 'Media library load failed: ' . $e->getMessage();
+    }
+}
 $notFoundReviewPagination = $authenticated && $activeTab === 'maintenance'
     ? enma_render_pagination('maintenance', 'nf_review_page', (int) ($notFoundReviewPage ?? 1), (int) ($notFoundReviewTotalPages ?? 1))
+    : '';
+$mediaPagination = $authenticated && $activeTab === 'media'
+    ? enma_render_pagination('media', 'media_page', $mediaPage, $mediaTotalPages)
     : '';
 $productsCopyText = '';
 if ($authenticated && $activeTab === 'products' && $allProducts !== []) {
@@ -495,10 +544,19 @@ $productsSqlCopyText = '';
 $postsJsonCopyText = '';
 $sitemapCopyText = '';
 $seoPromptTemplate = '';
+$blogPostPromptTemplate = '';
+$guidePromptTemplate = '';
+$productPostPromptTemplate = '';
+$productSingleReviewPromptTemplate = '';
+$productVersusPromptTemplate = '';
+$bestForYPromptTemplate = '';
+$updateExistingPostPromptTemplate = '';
+$existingPostsBaselineCopyText = '';
+$existingPostsWithIndexationCopyText = '';
 $promptPlusSitemapCopyText = '';
 $catalogPromptTemplate = '';
 $productsNewPromptTemplate = '';
-if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance')) {
+if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance' || $activeTab === 'prompts')) {
     $baseline = [];
     $baselineAsins = [];
     try {
@@ -562,7 +620,7 @@ if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance'
         . $baselineText . "\n\n"
         . "Return only the PHP code block.\n";
 }
-if ($authenticated && $activeTab === 'maintenance') {
+if ($authenticated && ($activeTab === 'maintenance' || $activeTab === 'prompts')) {
     $sitemapPath = __DIR__ . '/../sitemap.xml';
     if (is_file($sitemapPath) && is_readable($sitemapPath)) {
         $sitemapContents = file_get_contents($sitemapPath);
@@ -574,160 +632,278 @@ if ($authenticated && $activeTab === 'maintenance') {
         $sitemapCopyText = 'sitemap.xml not found or empty. Run "Generate Sitemap" first.';
     }
 
-    $seoPromptTemplate = <<<'PROMPT'
+    $blogPostPromptTemplate = <<<'PROMPT'
 ROLE & CONTEXT
 
-Act as a Senior SEO Content Strategist and Conversion Rate Optimization (CRO) Expert for the astronomy niche.
+Act as a Senior SEO Blog Writer + CRO Specialist for astronomy affiliate content.
 
 Current date: April 11, 2026.
 
-Your job: Analyze Fortelescopes and create a ready-to-publish affiliate article for the Fortelescopes CMS designed to rank, build trust, and maximize Amazon affiliate clicks using the tag fortelescopes-20.
+Write ONE blog post for Fortelescopes designed to rank and convert affiliate clicks with tag fortelescopes-20.
 
 EXECUTION RULES
 
 Output ONLY the HTML that belongs inside <body></body>. Do NOT generate <html>, <head>, or <body> wrappers.
-If sitemap.xml is inaccessible, fall back to analyzing public site structure: homepage, guides, categories, and visible product pages.
-Do NOT guess coverage or invent product specs, ASINs, or availability. If unsure, use clear Amazon search links.
-All YouTube embeds must be relevant to the exact product or category discussed.
-Final article must feel human, commercially strong, SEO-aware, and trustworthy.
+Prefer Amazon search links when ASIN certainty is low.
+Do not invent specs or fake availability.
 
-SEO CHECKLIST (MANDATORY)
+MANDATORY:
+- Word count: 1400-1900
+- At least 2 internal links to fortelescopes URLs
+- At least 2 H2 and 3 H3
+- Include FAQ section
+- Include comparison table (3-5 items)
+- Include 3 CTA buttons minimum
 
-Title length: 40-65 chars
-Meta title: 45-65 chars
-Meta description: 120-160 chars
-At least 2 H2 headings
-At least 600 words
-At least 2 internal links to relevant Fortelescopes content
-
-STEP 1: SITE ANALYSIS
-
-Analyze:
-https://fortelescopes.com/sitemap.xml
-If unavailable: homepage, guides, categories, and public product pages.
-
-Deliver:
-Main existing content clusters and categories.
-One high-intent commercial content gap not already well covered.
-Choose ONE topic most likely to convert affiliate clicks.
-
-Briefly explain:
-The chosen topic
-Why it fills a content gap
-Why it has buyer intent
-Why it fits Fortelescopes
-
-STEP 2: WRITE THE ARTICLE (RAW HTML ONLY)
-
-Write a complete, high-converting article of at least 1,500 words.
-Output: RAW HTML ONLY for the article body content.
-
-Critical Requirements:
-
-Affiliate Disclaimer
-Start with a styled <div> that says exactly:
+Start with this exact disclaimer inside a styled <div>:
 "As an Amazon Associate, I earn from qualifying purchases."
 
-Structure
-Use <h2> and <h3> headings
-Short <p> paragraphs for mobile readability
-Use <ul>, <ol>, <table>, and <strong> where helpful
-Simple explanations for technical terms
-Conversion-focused but trustworthy tone
-
-Internal Links (Minimum 2)
-Include at least 2 contextual internal links to relevant Fortelescopes content using descriptive anchor text.
-Example: <a href="/guides/beginner-telescope-setup">Como configurar tu primer telescopio</a>
-
-Product Coverage
-For every product recommendation:
-Explain what it is, who it's for, why it stands out, and realistic limitations
-Include a short "Why We Love It" subsection
-Include a Pros and Cons list using <ul>
-Include a relevant embedded YouTube video for that product
-Include a yellow Amazon CTA button immediately after the pros/cons
-
-YouTube Embeds
-Include 1 relevant YouTube embed per product (2 max for high-priority sections)
-Use proper responsive embed HTML
-Only embed videos that exist and are directly relevant to the exact telescope/product type discussed
-Verify video relevance before embedding; if uncertain, omit rather than guess
-
-Amazon Yellow CTA Buttons (SEARCH LINKS ONLY)
-Use button-style affiliate links with inline CSS.
-Do NOT use /dp/ASIN links unless 100% certain of a current, in-stock ASIN.
-DEFAULT TO AMAZON SEARCH LINKS.
-
-Amazon SEARCH link format (MANDATORY):
-https://www.amazon.com/s?k=[url-encoded-search-terms]&tag=fortelescopes-20
-
-Rules for search links:
-URL-encode search terms: replace spaces with + or %20
-Keep search terms specific enough to show relevant products (include brand + model when possible)
-Affiliate tag fortelescopes-20 MUST appear at the end of every Amazon link
-If unsure about availability or exact model, default to a broader but relevant search query
-Button text: "Check Prices on Amazon ->" (plural, since it leads to a results page)
-
-Comparison Table
-Include a responsive HTML <table> comparing 3-5 top picks with columns:
-Model
-Aperture
-Best For
-Check Price (with smaller yellow CTA button using Amazon search links)
-
-Conversion Requirements
-Include:
-A strong hook near the beginning
-Objection handling
-Practical buyer guidance
-A section for beginners if relevant
-Soft urgency only when justified
-At least one "Who should buy this?" section
-At least one "Who should skip this?" section
-A helpful FAQ section
-A strong conclusion with one final large yellow button
-
-SEO Requirements
-Use descriptive headings
-Keep keyword usage natural
-Include alt text on any images if included
-Make the article helpful enough to satisfy search intent, not just monetize
-Avoid keyword stuffing
-
-Source Handling
-If Reddit or another source inspired part of the post:
-Do not copy wording
-Summarize in original language
-Add a short "Further reading" or "Source inspiration" note with a placeholder URL if needed
-
-HTML Code Quality
-Output clean, minified HTML: remove unnecessary whitespace, redundant blank lines, and excessive indentation
-Preserve visual formatting and structure for CMS compatibility
-Use semantic HTML where possible without adding wrapper tags
-Before final output, normalize spacing aggressively: remove repeated spaces, tabs, and extra line breaks that do not add meaning
-
-STEP 3: FINAL OUTPUT FORMAT
-
-Output in this exact order:
-
-Topic Rationale
-Plain text only. Short but clear.
-
-A single code block
-Inside it, provide the complete raw HTML article body only (clean, minified, no wrapper tags).
-
-Metadata
-Then provide:
-Title (40-65 chars)
-Excerpt (Short summary)
-Meta Title (45-65 chars)
-Meta Description (120-160 chars)
-
-Final line
-After everything is done, write exactly:
-ask me to redo this same html with proper relevant youtube videos and to make sure amazon links ensure some sort of comission
+Output format:
+1) Topic rationale (short plain text)
+2) Single code block with RAW HTML only
+3) Metadata:
+   - Title (40-65)
+   - Excerpt
+   - Meta Title (45-65)
+   - Meta Description (120-160)
 PROMPT;
-    $promptPlusSitemapCopyText = $seoPromptTemplate . "\n\nCURRENT SITEMAP.XML\n\n" . $sitemapCopyText;
+    $guidePromptTemplate = <<<'PROMPT'
+ROLE:
+Act as an astronomy educator + SEO guide writer for Fortelescopes.
+
+OBJECTIVE:
+Create one long-form GUIDE (not a generic blog post) that teaches a complete workflow and naturally monetizes with affiliate links.
+
+REQUIREMENTS:
+- RAW HTML only (body content)
+- 1800-2600 words
+- Start with disclaimer: "As an Amazon Associate, I earn from qualifying purchases."
+- Structure with clear steps:
+  1) Who this guide is for
+  2) Tools/gear checklist
+  3) Step-by-step setup/use
+  4) Common mistakes + fixes
+  5) Recommended products by budget
+  6) FAQ
+  7) Final action plan
+- At least 3 internal links to Fortelescopes.
+- At least 3 CTA buttons to Amazon (search links if uncertain).
+- Include one compact comparison table.
+- Tone: practical, clear, no fluff.
+
+OUTPUT:
+1) Guide angle rationale
+2) Single code block with RAW HTML
+3) Metadata (Title, Excerpt, Meta Title, Meta Description)
+PROMPT;
+    $productSingleReviewPromptTemplate = <<<'PROMPT'
+ROLE:
+You are a conversion-focused affiliate reviewer for telescope buyers.
+
+OBJECTIVE:
+Write ONE single-product review post designed to maximize qualified clicks.
+
+MANDATORY STRUCTURE:
+- Disclaimer at top: "As an Amazon Associate, I earn from qualifying purchases."
+- Decision summary box above the fold:
+  - Best for
+  - Avoid if
+  - Quick verdict
+- Specs snapshot table (single product)
+- Pros and cons
+- Alternatives section (2-3 alternatives with short reasons)
+- "Who should buy this?" and "Who should skip this?"
+- FAQ (buyer objections)
+- Final recommendation + CTA
+
+CONVERSION RULES:
+- Minimum 1200 words
+- At least 2 internal links
+- At least 3 CTA buttons
+- Amazon links should include tag=fortelescopes-20
+- If ASIN certainty is low, use search URL format:
+  https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
+- Do not invent specs.
+
+OUTPUT:
+1) Product post angle rationale
+2) Single code block with RAW HTML body only
+3) Metadata (Title, Excerpt, Meta Title, Meta Description)
+PROMPT;
+    $productVersusPromptTemplate = <<<'PROMPT'
+ROLE:
+You are a conversion-focused affiliate reviewer for telescope buyers.
+
+OBJECTIVE:
+Write ONE versus post (A vs B) designed to help buyers decide quickly and click through.
+
+MANDATORY STRUCTURE:
+- Disclaimer at top: "As an Amazon Associate, I earn from qualifying purchases."
+- Above-the-fold decision box:
+  - Winner for beginners
+  - Winner for value
+  - Winner for portability
+  - One-line final verdict
+- Side-by-side comparison table:
+  - Feature
+  - Product A
+  - Product B
+  - Why it matters
+- Round-by-round verdict sections (optics, mount, portability, value)
+- Pros/cons for each product
+- "Choose A if..." and "Choose B if..."
+- FAQ
+- Final recommendation + CTA buttons for both options
+
+CONVERSION RULES:
+- Minimum 1300 words
+- At least 2 internal links
+- At least 4 CTA buttons total
+- Amazon links must include tag=fortelescopes-20
+- If ASIN certainty is low, use search URL format:
+  https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
+- Do not invent specs.
+
+OUTPUT:
+1) Versus angle rationale
+2) Single code block with RAW HTML body only
+3) Metadata (Title, Excerpt, Meta Title, Meta Description)
+PROMPT;
+    $productPostPromptTemplate = $productSingleReviewPromptTemplate;
+    $seoPromptTemplate = $blogPostPromptTemplate;
+    $promptPlusSitemapCopyText = $blogPostPromptTemplate . "\n\nCURRENT SITEMAP.XML\n\n" . $sitemapCopyText;
+    $postsBaselineLines = [];
+    try {
+        $postRows = $pdo->query(
+            'SELECT id, title, slug, post_type, status, published_at, updated_at
+             FROM posts
+             ORDER BY id DESC'
+        )->fetchAll();
+        foreach ($postRows as $postRow) {
+            $postPath = enma_post_public_path((array) $postRow);
+            $postUrl = $postPath !== '' ? absolute_url($postPath) : '';
+            $postsBaselineLines[] =
+                '- id=' . (int) ($postRow['id'] ?? 0)
+                . ' | type=' . trim((string) ($postRow['post_type'] ?? 'post'))
+                . ' | status=' . trim((string) ($postRow['status'] ?? 'draft'))
+                . ' | title=' . trim((string) ($postRow['title'] ?? ''))
+                . ' | slug=' . trim((string) ($postRow['slug'] ?? ''))
+                . ' | url=' . ($postUrl !== '' ? $postUrl : 'n/a')
+                . ' | published=' . substr((string) ($postRow['published_at'] ?? ''), 0, 10)
+                . ' | updated=' . substr((string) ($postRow['updated_at'] ?? ''), 0, 10);
+        }
+    } catch (Throwable $e) {
+        $postsBaselineLines = [];
+    }
+    $existingPostsBaselineCopyText = $postsBaselineLines !== []
+        ? implode("\n", $postsBaselineLines)
+        : '- No posts found in DB baseline.';
+    $postsWithIndexationLines = [];
+    try {
+        if (function_exists('enma_indexation_init_table')) {
+            enma_indexation_init_table($pdo);
+        }
+        $postIndexRows = $pdo->query(
+            'SELECT
+                p.id,
+                p.title,
+                p.slug,
+                p.post_type,
+                p.status,
+                p.published_at,
+                p.updated_at,
+                COALESCE(pit.index_state, "pending") AS index_state,
+                COALESCE(pit.is_indexed, 0) AS is_indexed,
+                COALESCE(pit.last_checked_at, "") AS last_checked_at,
+                COALESCE(pit.next_check_at, "") AS next_check_at
+             FROM posts p
+             LEFT JOIN post_indexation_tracker pit ON pit.post_id = p.id
+             ORDER BY p.id DESC'
+        )->fetchAll();
+        foreach ($postIndexRows as $postRow) {
+            $postPath = enma_post_public_path((array) $postRow);
+            $postUrl = $postPath !== '' ? absolute_url($postPath) : '';
+            $postsWithIndexationLines[] =
+                '- id=' . (int) ($postRow['id'] ?? 0)
+                . ' | type=' . trim((string) ($postRow['post_type'] ?? 'post'))
+                . ' | status=' . trim((string) ($postRow['status'] ?? 'draft'))
+                . ' | index_state=' . trim((string) ($postRow['index_state'] ?? 'pending'))
+                . ' | is_indexed=' . ((int) ($postRow['is_indexed'] ?? 0) === 1 ? 'yes' : 'no')
+                . ' | title=' . trim((string) ($postRow['title'] ?? ''))
+                . ' | slug=' . trim((string) ($postRow['slug'] ?? ''))
+                . ' | url=' . ($postUrl !== '' ? $postUrl : 'n/a')
+                . ' | last_checked=' . trim((string) ($postRow['last_checked_at'] ?? ''))
+                . ' | next_check=' . trim((string) ($postRow['next_check_at'] ?? ''))
+                . ' | published=' . substr((string) ($postRow['published_at'] ?? ''), 0, 10)
+                . ' | updated=' . substr((string) ($postRow['updated_at'] ?? ''), 0, 10);
+        }
+    } catch (Throwable $e) {
+        $postsWithIndexationLines = [];
+    }
+    $existingPostsWithIndexationCopyText = $postsWithIndexationLines !== []
+        ? implode("\n", $postsWithIndexationLines)
+        : '- No posts/indexation rows found.';
+
+    $bestForYPromptTemplate = <<<'PROMPT'
+ROLE:
+You are a commercial SEO writer for Fortelescopes.
+
+OBJECTIVE:
+Create one "Best X for Y" post that ranks for buyer intent and maximizes affiliate clicks.
+
+MANDATORY FORMAT:
+- RAW HTML only (body content)
+- 1500-2200 words
+- Start with disclaimer: "As an Amazon Associate, I earn from qualifying purchases."
+- Include:
+  - Quick picks box (best overall, best budget, best upgrade)
+  - Comparison table (3-6 options)
+  - Buyer segmentation (for beginner / for city / for portability / for AP)
+  - FAQ
+  - Final recommendation
+- At least 3 Amazon CTA buttons with tag=fortelescopes-20
+- At least 2 internal links to Fortelescopes pages
+- Use Amazon search links if ASIN certainty is low.
+
+RULES:
+- Do not invent specs.
+- Keep tone practical and conversion-focused.
+- Avoid repeating topics already covered in existing posts baseline.
+
+OUTPUT:
+1) Topic + intent rationale
+2) Single code block with RAW HTML
+3) Metadata (Title, Excerpt, Meta Title, Meta Description)
+PROMPT;
+    $updateExistingPostPromptTemplate =
+        "ROLE:\n"
+        . "You are a content strategist for Fortelescopes focused on updating existing posts to increase traffic and affiliate clicks.\n\n"
+        . "OBJECTIVE:\n"
+        . "Using the existing posts baseline below, decide which current posts should be updated now (not new posts).\n\n"
+        . "CURRENT DATE: " . gmdate('F j, Y') . "\n\n"
+        . "TASK:\n"
+        . "1) Identify top 10 posts to update first.\n"
+        . "2) For each, output:\n"
+        . "   - id\n"
+        . "   - title\n"
+        . "   - reason to update now\n"
+        . "   - update priority (high/medium/low)\n"
+        . "   - exact update plan (headline/meta/CTA/table/FAQ/internal links)\n"
+        . "3) Also output 5 posts that should NOT be touched now.\n\n"
+        . "RULES:\n"
+        . "- Prefer commercial-intent URLs.\n"
+        . "- Do not propose writing completely new topics in this task.\n"
+        . "- If baseline is small, still prioritize what exists.\n"
+        . "- Keep output practical for one-person workflow.\n\n"
+        . "OUTPUT FORMAT:\n"
+        . "- Section A: \"Update Now\" (table)\n"
+        . "- Section B: \"Skip for now\" (list)\n"
+        . "- Section C: \"This week plan\" (day by day, 7 days)\n\n"
+        . "EXISTING POSTS BASELINE:\n"
+        . $existingPostsBaselineCopyText . "\n\n"
+        . "EXISTING POSTS + INDEXATION BASELINE:\n"
+        . $existingPostsWithIndexationCopyText . "\n";
+
     $catalogSources = [
         'https://www.amazon.com/s?k=best+beginner+telescope',
         'https://www.amazon.com/s?k=smart+telescope',
@@ -783,17 +959,19 @@ PROMPT;
     $catalogPromptTemplate =
         "You are a product data extraction assistant.\n\n"
         . "Goal:\n"
-        . "Update the Fortelescopes catalog using the current DB list as baseline, and return ONLY a PHP array to paste directly into scripts/seed_real_catalog.php.\n\n"
-        . "Current date: April 22, 2026.\n\n"
+        . "Expand and refresh the Fortelescopes catalog using the current DB list as baseline, and return ONLY a PHP array to paste directly into scripts/seed_real_catalog.php.\n\n"
+        . "Current date: " . gmdate('F j, Y') . ".\n\n"
         . "Execution rules:\n"
         . "1) Use the source URLs below (already provided). Do NOT ask for more URLs.\n"
         . "2) If fortelescopes.com returns 403/blocked, continue using accessible sources (especially Amazon search URLs).\n"
-        . "3) Start from CURRENT DB BASELINE and update entries only when needed (title/image/url/description/category).\n"
-        . "4) Keep existing ASINs unless clearly discontinued/unavailable.\n"
-        . "5) You may add new relevant products only when ASIN + title are verifiable from an accessible source.\n"
-        . "6) Deduplicate strictly by ASIN.\n"
-        . "7) Do not invent ASINs, names, URLs, or images.\n"
-        . "8) Return a FULL final catalog array (existing + updated + new), not partial deltas.\n\n"
+        . "3) Start from CURRENT DB BASELINE and preserve existing valid products, but you MUST add NEW verified products.\n"
+        . "4) Add between 8 and 20 NEW ASINs that are NOT present in baseline (seasonal + buyer intent).\n"
+        . "5) Keep existing ASINs unless clearly discontinued/unavailable.\n"
+        . "6) Add new products only when ASIN + title are verifiable from accessible sources.\n"
+        . "7) Deduplicate strictly by ASIN.\n"
+        . "8) Do not invent ASINs, names, URLs, or images.\n"
+        . "9) Return a FULL final catalog array (existing + updated + new), not partial deltas.\n"
+        . "10) If fewer than 8 new verified items are found, continue broader Amazon search queries until you reach at least 8.\n\n"
         . "Required output format:\n"
         . "- Output ONLY one PHP code block.\n"
         . "- Inside the code block output ONLY:\n"
@@ -813,6 +991,9 @@ PROMPT;
         . "- descripcion: concise, factual, no hype.\n"
         . "- imagen: full https URL.\n"
         . "- url: full https URL.\n\n"
+        . "New items requirement:\n"
+        . "- At least 8 rows in final output must have ASIN not present in baseline list.\n"
+        . "- Prioritize beginner telescopes, smart telescopes, dobsonians, and high-intent accessories.\n\n"
         . "SOURCE URLS (crawl these):\n"
         . $catalogSourceText . "\n\n"
         . "CURRENT DB BASELINE (use this as update reference):\n"
@@ -1201,6 +1382,65 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           return ok;
         }
 
+        $('[data-copy-text]').on('click', function () {
+          var $btn = $(this);
+          if ($btn.attr('data-copy-open-url')) {
+            return;
+          }
+          var text = ($btn.attr('data-copy-text') || '').toString();
+          var statusId = ($btn.attr('data-copy-status') || '').trim();
+          if (text.trim() === '') {
+            updateCopyStatus(statusId, 'Nothing to copy', true);
+            return;
+          }
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function () {
+              updateCopyStatus(statusId, 'Copied', false);
+            }).catch(function () {
+              var copied = fallbackCopyText(text);
+              updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
+            });
+            return;
+          }
+          var copied = fallbackCopyText(text);
+          updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
+        });
+
+        $('[data-copy-open-url]').on('click', function () {
+          var $btn = $(this);
+          var text = ($btn.attr('data-copy-text') || '').toString();
+          var statusId = ($btn.attr('data-copy-status') || '').trim();
+          var openUrl = ($btn.attr('data-copy-open-url') || '').trim();
+
+          if (openUrl !== '') {
+            window.open(openUrl, '_blank', 'noopener');
+          }
+
+          if (text.trim() === '') {
+            updateCopyStatus(statusId, 'Opened Search Console. Nothing to copy.', true);
+            return;
+          }
+
+          function notifyCopied(ok) {
+            if (ok) {
+              updateCopyStatus(statusId, 'Copied. Paste URL in Search Console inspect box.', false);
+            } else {
+              updateCopyStatus(statusId, 'Opened Search Console. Copy failed.', true);
+            }
+          }
+
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function () {
+              notifyCopied(true);
+            }).catch(function () {
+              notifyCopied(fallbackCopyText(text));
+            });
+            return;
+          }
+
+          notifyCopied(fallbackCopyText(text));
+        });
+
         $('[data-copy-target]').on('click', function () {
           var $btn = $(this);
           var sourceId = ($btn.attr('data-copy-target') || '').trim();
@@ -1279,6 +1519,48 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           });
         });
 
+        $('#availability_safe_check_form').on('submit', function () {
+          var $button = $('#availability_safe_check_button');
+          var $status = $('#availability_safe_check_status');
+          if ($button.length) {
+            $button.prop('disabled', true).text('Checking...');
+          }
+          if ($status.length) {
+            $status.show().text('Checking... please wait (safe delay 3-6s + request)');
+          }
+        });
+
+        $('#products_check_all').on('change', function () {
+          var checked = $(this).is(':checked');
+          $('.products-check').prop('checked', checked);
+          $('#products_bulk_status').text(checked ? 'All visible rows selected.' : '');
+        });
+
+        $('.products-check').on('change', function () {
+          var total = $('.products-check').length;
+          var checked = $('.products-check:checked').length;
+          $('#products_check_all').prop('checked', total > 0 && total === checked);
+          $('#products_bulk_status').text(checked > 0 ? (checked + ' selected') : '');
+        });
+
+        $('#products_bulk_form').on('submit', function (event) {
+          var ids = $('.products-check:checked').map(function () { return $(this).val(); }).get();
+          if (!ids.length) {
+            event.preventDefault();
+            $('#products_bulk_status').text('Select at least one product.');
+            return;
+          }
+
+          $('#products_bulk_selected_ids').val(ids.join(','));
+          var action = ($(this).find('select[name="bulk_action"]').val() || '').toLowerCase();
+          if (action === 'delete') {
+            var ok = window.confirm('Delete selected products permanently?');
+            if (!ok) {
+              event.preventDefault();
+            }
+          }
+        });
+
         $('form').on('submit', function () {
           var $form = $(this);
           var action = ($form.find('input[name="action"]').val() || '').toLowerCase();
@@ -1328,6 +1610,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             --line: #d7e0ed;
             --brand: #0e2a57;
             --brand-2: #144488;
+            --focus: #2f7ae5;
         }
         body {
             margin: 0;
@@ -1338,7 +1621,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 radial-gradient(700px 350px at -10% -15%, #d6fff0 0%, transparent 55%),
                 var(--bg);
         }
-        .wrap { max-width: 1180px; margin: 26px auto; padding: 0 14px 28px; }
+        .wrap { max-width: 1260px; margin: 26px auto; padding: 0 14px 28px; }
         .box {
             background: var(--panel);
             border-radius: 14px;
@@ -1346,6 +1629,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             box-shadow: 0 10px 30px rgba(8, 29, 66, 0.08);
             padding: 18px;
             margin-bottom: 16px;
+            overflow-x: auto;
+        }
+        .box h2 {
+            margin: 0 0 12px;
+            font-size: 22px;
+            line-height: 1.2;
         }
         input, textarea, select {
             width: 100%;
@@ -1370,13 +1659,28 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             cursor: pointer;
             font-weight: 700;
         }
-        table { width: 100%; border-collapse: collapse; }
+        table { width: 100%; min-width: 720px; border-collapse: collapse; }
         th, td { text-align: left; border-bottom: 1px solid #e9eef6; padding: 10px 8px; font-size: 14px; }
-        th { color: #2c3e57; background: #f6f9fd; }
+        th { color: #2c3e57; background: #f6f9fd; position: sticky; top: 0; z-index: 1; }
+        tbody tr:nth-child(even) { background: #fbfdff; }
+        tbody tr:hover { background: #eef4fd; }
         .error { background: #ffe5e5; color: #8a1f1f; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
         .ok { background: #e4f8ea; color: #165f2b; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
         .toplink { display: inline-block; margin-bottom: 12px; color: var(--brand); font-weight: 700; text-decoration: none; }
-        .tabs { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+        .tabs {
+            display:flex;
+            gap:10px;
+            margin-bottom:14px;
+            flex-wrap:wrap;
+            position: sticky;
+            top: 10px;
+            z-index: 20;
+            padding: 8px;
+            border-radius: 12px;
+            border: 1px solid #dbe6f4;
+            background: rgba(248, 251, 255, 0.92);
+            backdrop-filter: blur(6px);
+        }
         .tab {
             display:inline-block;
             text-decoration:none;
@@ -1387,6 +1691,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             color:#1c365d;
             font-weight:700;
             font-size:13px;
+        }
+        .tab:hover {
+            border-color:#a7bee0;
+            color:#112e56;
         }
         .tab.active {
             background: linear-gradient(180deg, var(--brand-2), var(--brand));
@@ -1427,6 +1735,24 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             font-size:12px;
             color:#5d6f86;
             min-height:16px;
+        }
+        .help-icon {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            width:18px;
+            height:18px;
+            border-radius:999px;
+            border:1px solid #9fb7da;
+            color:#1f4f8e;
+            background:#eef4ff;
+            font-size:11px;
+            font-weight:800;
+            line-height:1;
+            cursor:help;
+            user-select:none;
+            vertical-align:middle;
+            margin-left:6px;
         }
         .copy-source {
             position:absolute;
@@ -1496,6 +1822,28 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         .ops-link:hover {
             border-color: #8fb0dd;
             color: #0f2f59;
+        }
+        .quick-actions {
+            display:flex;
+            flex-wrap:wrap;
+            gap:8px;
+            align-items:center;
+        }
+        a, button, input, textarea, select {
+            transition: box-shadow .15s ease, border-color .15s ease, background-color .15s ease, color .15s ease;
+        }
+        a:focus-visible,
+        button:focus-visible,
+        input:focus-visible,
+        textarea:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--focus);
+            outline-offset: 2px;
+        }
+        div[style="display:grid;grid-template-columns:1fr 1fr;gap:15px;"] {
+            display:grid !important;
+            grid-template-columns:repeat(2, minmax(0, 1fr)) !important;
+            gap:15px !important;
         }
         .ops-kpis {
             display:grid;
@@ -1691,10 +2039,17 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            opacity: 0.55;
 	            cursor: not-allowed;
 	        }
-	        @media (max-width: 980px) {
+        @media (max-width: 980px) {
+            .tabs {
+                position: static;
+                backdrop-filter: none;
+            }
 	            .post-preview-grid {
 	                grid-template-columns:1fr;
 	            }
+                div[style="display:grid;grid-template-columns:1fr 1fr;gap:15px;"] {
+                    grid-template-columns:1fr !important;
+                }
                 .ops-nav {
                     gap: 6px;
                     padding: 8px;
@@ -1708,7 +2063,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 </head>
 <body>
 <div class="wrap">
-    <a class="toplink" href="<?= e(url('/')) ?>">Back to site</a>
+    <a class="toplink" href="<?= e(url('/')) ?>">Volver al sitio</a>
 
     <?php foreach ($errors as $error): ?>
         <div class="error"><?= e($error) ?></div>
@@ -1733,16 +2088,35 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	        </section>
     <?php else: ?>
         <div class="tabs">
-            <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Overview</a>
-            <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Products</a>
-            <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Posts</a>
-            <a class="tab <?= $activeTab === 'users' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=users')) ?>">Users</a>
-            <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Views</a>
+            <a class="tab <?= $activeTab === 'control' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=control')) ?>">Control</a>
+            <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Resumen</a>
+            <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Productos</a>
+            <a class="tab <?= $activeTab === 'media' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=media')) ?>">Media</a>
+            <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Publicaciones</a>
+            <a class="tab <?= $activeTab === 'indexation' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=indexation')) ?>">Indexacion</a>
+            <a class="tab <?= $activeTab === 'prompts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=prompts')) ?>">Prompts</a>
+            <a class="tab <?= $activeTab === 'users' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=users')) ?>">Usuarios</a>
+            <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Visitas</a>
             <a class="tab <?= $activeTab === 'analytics' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=analytics')) ?>">Analytics & Seguridad</a>
-            <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Maintenance</a>
+            <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Mantenimiento</a>
         </div>
+        <section class="box" style="padding:12px 14px;">
+            <div class="quick-actions">
+                <span class="muted" style="margin:0;font-size:12px;font-weight:700;">Accesos rapidos:</span>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=products#products-list')) ?>">Lista de productos</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=products#products-not-found-actions')) ?>">Limpieza not found</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=indexation')) ?>">Seguimiento indexacion</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Workspace prompts</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-progress')) ?>">Progreso mantenimiento</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-safe-check')) ?>">Chequeo seguro</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-not-found-review')) ?>">Cola de revision</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Importar catalogo</a>
+            </div>
+        </section>
 
-        <?php if ($activeTab === 'overview'): ?>
+        <?php if ($activeTab === 'control'): ?>
+        <?php require __DIR__ . '/views/tabs/control.php'; ?>
+        <?php elseif ($activeTab === 'overview'): ?>
         <section class="box">
             <h2>Admin Overview</h2>
             <div class="stats">
@@ -1800,7 +2174,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <a class="ops-link" href="#products-list">Product List</a>
                 <a class="ops-link" href="#products-not-found-actions">Not Found Cleanup</a>
                 <a class="ops-link" href="#products-ai-import">AI New Products</a>
-                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-catalog')) ?>">Full Catalog Mode</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Full Catalog Mode</a>
             </div>
         </section>
         <section id="products-not-found-actions" class="box ops-anchor-offset">
@@ -1980,12 +2354,30 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php else: ?>
             <textarea id="products_copy_source" class="copy-source" readonly><?= e($productsCopyText) ?></textarea>
             <p class="muted">Showing <?= number_format(count($allProducts)) ?> of <?= number_format($productsTotal) ?> products.</p>
+            <form id="products_bulk_form" method="post" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:0 0 10px;">
+                <input type="hidden" name="action" value="bulk_products_apply">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="selected_ids" id="products_bulk_selected_ids" value="">
+                <div class="field" style="max-width:280px;margin:0;">
+                    <label>Bulk action</label>
+                    <select name="bulk_action">
+                        <option value="archive">Archive selected</option>
+                        <option value="delete">Delete selected permanently</option>
+                    </select>
+                </div>
+                <button class="btn" type="submit" data-products-bulk-submit>Apply to selected</button>
+                <span id="products_bulk_status" class="muted" style="margin:0 0 10px;"></span>
+            </form>
             <table>
                 <thead>
                     <tr>
+                        <th style="width:38px;">
+                            <input type="checkbox" id="products_check_all" aria-label="Select all products">
+                        </th>
                         <th>ID</th>
                         <th>ASIN</th>
                         <th>Image</th>
+                        <th>Quick Image Fix</th>
                         <th>Title</th>
                         <th>Category</th>
                         <th>Available</th>
@@ -2010,6 +2402,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         : ($hasAffiliateUrl ? outbound_url($affiliateUrl, (int) ($item['id'] ?? 0)) : '');
                     ?>
                     <tr>
+                        <td>
+                            <input type="checkbox" class="products-check" value="<?= (int) $item['id'] ?>" aria-label="Select product <?= (int) $item['id'] ?>">
+                        </td>
                         <td><?= (int) $item['id'] ?></td>
                         <td><?= e($item['asin']) ?></td>
                         <td style="width:84px;">
@@ -2021,6 +2416,21 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                 style="display:block;width:68px;height:68px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;"
                                 onerror="this.onerror=null;this.src='<?= e(product_image_fallback_url()) ?>';"
                             >
+                        </td>
+                        <td style="min-width:260px;">
+                            <form method="post" style="display:flex;gap:6px;align-items:center;">
+                                <input type="hidden" name="action" value="quick_update_product_image">
+                                <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
+                                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                <input
+                                    type="url"
+                                    name="quick_image_url"
+                                    value="<?= e((string) ($item['image_url'] ?? '')) ?>"
+                                    placeholder="Paste Amazon image URL"
+                                    style="margin:0;min-width:170px;font-size:12px;padding:6px 8px;"
+                                >
+                                <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;">Save image</button>
+                            </form>
                         </td>
                         <td><?= e($item['title']) ?></td>
                         <td><?= e($item['category_name']) ?></td>
@@ -2034,6 +2444,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                             <?= amazon_tag_present($affiliateUrl) ? '<span style="color:#16a34a;font-weight:700;">OK</span>' : '<span style="color:#dc2626;font-weight:700;">Missing</span>' ?>
                         </td>
                         <td>
+                            <?php if ($hasAffiliateUrl): ?>
+                                <a href="<?= e($affiliateUrl) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Open Amazon</a>
+                            <?php endif; ?>
                             <?php if ($productViewUrl !== ''): ?>
                                 <a href="<?= e($productViewUrl) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">View</a>
                             <?php endif; ?>
@@ -2052,6 +2465,127 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
               <?= $productsPagination ?>
               <?php endif; ?>
           </section>
+        <?php elseif ($activeTab === 'media'): ?>
+        <section class="box">
+            <h2>Media Library Workspace</h2>
+            <p class="muted" style="margin:0 0 10px;">Upload assets once and reuse their URLs in posts/guides quickly.</p>
+            <div class="ops-kpis">
+                <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allMedia)) ?></div></div>
+                <div class="ops-kpi"><div class="k">Total Assets</div><div class="v"><?= number_format($mediaTotal) ?></div></div>
+                <div class="ops-kpi"><div class="k">Current Page</div><div class="v"><?= number_format($mediaPage) ?>/<?= number_format($mediaTotalPages) ?></div></div>
+                <div class="ops-kpi"><div class="k">Table Status</div><div class="v" style="font-size:14px;line-height:1.3;"><?= $mediaTableReady ? 'Ready' : 'Missing' ?></div></div>
+            </div>
+            <div class="ops-nav">
+                <a class="ops-link" href="#media-upload">Upload Asset</a>
+                <a class="ops-link" href="#media-list">Library List</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-routines')) ?>">Sync Indexation Tracker</a>
+            </div>
+        </section>
+
+        <section id="media-upload" class="box ops-anchor-offset">
+            <h2>Upload Media</h2>
+            <?php if (!$mediaTableReady): ?>
+                <div class="error">Media table not found yet. It is created automatically on first upload attempt.</div>
+            <?php endif; ?>
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="media_upload">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                    <div>
+                        <label>Title (optional)</label>
+                        <input type="text" name="media_title" placeholder="e.g. Celestron NexStar hero image">
+                    </div>
+                    <div>
+                        <label>Alt Text (optional)</label>
+                        <input type="text" name="media_alt_text" placeholder="Accessible description">
+                    </div>
+                </div>
+                <label>Notes (optional)</label>
+                <textarea name="media_notes" rows="2" placeholder="Usage notes, source, etc."></textarea>
+                <label>File</label>
+                <input type="file" name="media_file" required style="padding:6px;">
+                <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
+            </form>
+            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB).</p>
+        </section>
+
+        <section id="media-list" class="box ops-anchor-offset">
+            <h2>Media Assets</h2>
+            <?php if (!$mediaTableReady): ?>
+                <div class="empty">Media table not ready yet. Upload one file to initialize it automatically.</div>
+            <?php elseif ($allMedia === []): ?>
+                <div class="empty">No media assets yet.</div>
+            <?php else: ?>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Preview</th>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>File</th>
+                        <th>URL</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($allMedia as $media): ?>
+                        <?php
+                        $mediaId = (int) ($media['id'] ?? 0);
+                        $mediaType = trim((string) ($media['media_type'] ?? 'document'));
+                        $mediaUrl = trim((string) ($media['file_url'] ?? ''));
+                        $title = trim((string) ($media['title'] ?? ''));
+                        $originalName = trim((string) ($media['original_name'] ?? ''));
+                        $mimeType = trim((string) ($media['mime_type'] ?? ''));
+                        $sizeBytes = (int) ($media['file_size'] ?? 0);
+                        $copyStatusId = 'media_copy_status_' . $mediaId;
+                        ?>
+                        <tr>
+                            <td><?= $mediaId ?></td>
+                            <td style="width:100px;">
+                                <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
+                                    <img src="<?= e($mediaUrl) ?>" alt="<?= e($title !== '' ? $title : $originalName) ?>" style="display:block;width:84px;height:64px;object-fit:contain;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;" loading="lazy">
+                                <?php elseif ($mediaType === 'video'): ?>
+                                    <div style="display:flex;align-items:center;justify-content:center;width:84px;height:64px;border-radius:8px;border:1px solid #e2e8f0;background:#0f172a;color:#fff;font-size:11px;font-weight:700;">VIDEO</div>
+                                <?php else: ?>
+                                    <div style="display:flex;align-items:center;justify-content:center;width:84px;height:64px;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;color:#334155;font-size:11px;font-weight:700;">FILE</div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <div><strong><?= e($title !== '' ? $title : '(untitled)') ?></strong></div>
+                                <div class="muted" style="font-size:12px;"><?= e($media['created_at'] ?? '') ?></div>
+                            </td>
+                            <td><?= e(strtoupper($mediaType)) ?></td>
+                            <td>
+                                <div><?= e($originalName) ?></div>
+                                <div class="muted" style="font-size:12px;"><?= e($mimeType) ?> | <?= number_format($sizeBytes / 1024, 1) ?> KB</div>
+                            </td>
+                            <td style="max-width:280px;">
+                                <a href="<?= e($mediaUrl) ?>" target="_blank" rel="noopener noreferrer" style="font-size:12px;word-break:break-all;"><?= e($mediaUrl) ?></a>
+                            </td>
+                            <td>
+                                <button
+                                    class="btn"
+                                    type="button"
+                                    style="padding:6px 10px;font-size:12px;margin-right:6px;"
+                                    data-copy-text="<?= e($mediaUrl) ?>"
+                                    data-copy-status="<?= e($copyStatusId) ?>"
+                                >Copy URL</button>
+                                <form method="post" style="display:inline;" onsubmit="return confirm('Delete this media asset?');">
+                                    <input type="hidden" name="action" value="media_delete">
+                                    <input type="hidden" name="id" value="<?= $mediaId ?>">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0;font-size:12px;">Delete</button>
+                                </form>
+                                <div id="<?= e($copyStatusId) ?>" class="copy-status" style="display:block;margin-top:4px;"></div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?= $mediaPagination ?>
+            <?php endif; ?>
+        </section>
         <?php elseif ($activeTab === 'posts'): ?>
         <section class="box">
             <h2>Posts Workspace</h2>
@@ -2065,8 +2599,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <div class="ops-nav">
                 <a class="ops-link" href="#posts-add">Add Post</a>
                 <a class="ops-link" href="#posts-list">Post List</a>
-                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-ai-draft')) ?>">Go to AI Draft Tool</a>
-                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-prompts')) ?>">Go to Prompt Tools</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=indexation')) ?>">Indexation Tracker</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Go to Prompts Workspace</a>
             </div>
         </section>
         <?php if ($editingPost): ?>
@@ -2369,6 +2903,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                   <?= $postsPagination ?>
               <?php endif; ?>
   	        </section>
+            <?php elseif ($activeTab === 'indexation'): ?>
+            <?php require __DIR__ . '/views/tabs/indexation.php'; ?>
+            <?php elseif ($activeTab === 'prompts'): ?>
+            <?php require __DIR__ . '/views/tabs/prompts.php'; ?>
 	        <?php elseif ($activeTab === 'users'): ?>
             <section class="box">
                 <h2>Users Workspace</h2>
@@ -2939,9 +3477,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div class="ops-kpi"><div class="k">Advanced Tasks</div><div class="v"><?= number_format($advancedToolsCount) ?></div></div>
             </div>
             <div class="ops-nav">
-                <a class="ops-link" href="#ops-prompts">Prompts</a>
-                <a class="ops-link" href="#ops-catalog">Catalog Import</a>
-                <a class="ops-link" href="#ops-ai-draft">AI Draft</a>
+                <a class="ops-link" href="#ops-progress">Progress</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Prompts Workspace</a>
+                <a class="ops-link" href="#ops-safe-check">Safe Availability Check</a>
                 <a class="ops-link" href="#ops-routines">Routine Tasks</a>
                 <a class="ops-link" href="#ops-not-found-review">Not Found Review</a>
                 <a class="ops-link" href="#ops-output">Task Output</a>
@@ -2957,116 +3495,132 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <textarea id="seo_prompt_copy_source" class="copy-source" readonly><?= e($seoPromptTemplate) ?></textarea>
             <textarea id="seo_prompt_sitemap_copy_source" class="copy-source" readonly><?= e($promptPlusSitemapCopyText) ?></textarea>
             <textarea id="catalog_prompt_copy_source" class="copy-source" readonly><?= e($catalogPromptTemplate) ?></textarea>
-            <h3 id="ops-prompts" class="ops-section-title ops-anchor-offset">Prompt Tools</h3>
-            <div class="copy-toolbar" style="margin-bottom:12px;">
-                <h3 style="margin:0;">Copy Ready-to-Use Prompts</h3>
-                <div class="copy-actions">
-                    <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_copy_source" data-copy-status="seo_prompt_copy_status">Copy Prompt</button>
-                    <span id="seo_prompt_copy_status" class="copy-status"></span>
+            <?php $maintenanceProgress = is_array($maintenanceProgress ?? null) ? $maintenanceProgress : []; ?>
+            <?php
+            $imageWeekly = is_array($maintenanceProgress['image_weekly'] ?? null) ? $maintenanceProgress['image_weekly'] : ['runs' => 0, 'checked' => 0, 'updated' => 0, 'failed_fetches' => 0];
+            $imageLastRun = is_array($maintenanceProgress['image_last_run'] ?? null) ? $maintenanceProgress['image_last_run'] : null;
+            $safeCheckLastRun = is_array($maintenanceProgress['safe_check_last_run'] ?? null) ? $maintenanceProgress['safe_check_last_run'] : null;
+            $recentRuns = is_array($maintenanceProgress['recent_runs'] ?? null) ? $maintenanceProgress['recent_runs'] : [];
+            ?>
+            <div id="ops-progress" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">Progress & Queue</h3>
+                <p class="muted" style="margin:0 0 10px;">Use this to confirm work is moving: run volume, updated items, failure rate, and estimated remaining runs.</p>
+                <div class="ops-kpis">
+                    <div class="ops-kpi"><div class="k">Image Runs (7d)</div><div class="v"><?= number_format((int) ($imageWeekly['runs'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Checked (7d)</div><div class="v"><?= number_format((int) ($imageWeekly['checked'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Updated (7d)</div><div class="v"><?= number_format((int) ($imageWeekly['updated'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Success %</div><div class="v"><?= number_format((float) ($maintenanceProgress['image_success_rate'] ?? 0), 2) ?>%</div></div>
+                    <div class="ops-kpi"><div class="k">Failure %</div><div class="v"><?= number_format((float) ($maintenanceProgress['image_failure_rate'] ?? 0), 2) ?>%</div></div>
+                    <div class="ops-kpi"><div class="k">Remaining</div><div class="v"><?= number_format((int) ($maintenanceProgress['image_remaining'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Avg Updates/Run</div><div class="v"><?= number_format((float) ($maintenanceProgress['image_avg_updates_per_run'] ?? 0), 2) ?></div></div>
+                    <div class="ops-kpi"><div class="k">ETA Runs</div><div class="v"><?= $maintenanceProgress['image_eta_runs'] === null ? 'n/a' : number_format((int) $maintenanceProgress['image_eta_runs']) ?></div></div>
                 </div>
-                <div class="copy-actions">
-                    <button class="btn btn-copy" type="button" data-copy-target="seo_prompt_sitemap_copy_source" data-copy-status="seo_prompt_sitemap_copy_status">Copy Prompt + Sitemap</button>
-                    <span id="seo_prompt_sitemap_copy_status" class="copy-status"></span>
-                </div>
-                <div class="copy-actions">
-                    <button class="btn btn-copy" type="button" data-copy-target="catalog_prompt_copy_source" data-copy-status="catalog_prompt_copy_status">Copy Catalog Master Prompt</button>
-                    <span id="catalog_prompt_copy_status" class="copy-status"></span>
-                </div>
-            </div>
-            <div id="ops-catalog" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
-                <h3 style="margin:0 0 8px;">Claude Catalog Import (2 Steps)</h3>
-                <p class="muted" style="margin:0 0 10px;">1) Copy Catalog Master Prompt, paste in Claude and copy the returned <code>$products</code> array. 2) Paste it below and run update.</p>
-                <?php $catalogImportForm = is_array($catalogImportForm ?? null) ? $catalogImportForm : ['payload' => '']; ?>
-                <form method="post" style="margin:0;">
-                    <input type="hidden" name="action" value="maintenance_import_catalog_array">
-                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                    <label for="catalog_payload">Paste Claude PHP array</label>
-                    <textarea id="catalog_payload" name="catalog_payload" rows="12" placeholder="$products = [ ... ];"><?= e((string) ($catalogImportForm['payload'] ?? '')) ?></textarea>
-                    <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-                        <button class="btn" type="submit">Update Catalog DB</button>
-                    </div>
-                </form>
-                <?php if (is_array($catalogImportResult ?? null)): ?>
-                    <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
-                        <p style="margin:0 0 8px;font-size:13px;">
-                            Result:
-                            <strong class="<?= !empty($catalogImportResult['ok']) ? 'ok' : 'fail' ?>">
-                                <?= !empty($catalogImportResult['ok']) ? 'OK' : 'FAIL' ?>
-                            </strong>
-                            | Exit code: <?= (int) ($catalogImportResult['exit_code'] ?? 1) ?>
-                        </p>
-                        <?php if (!empty($catalogImportResult['php_binary'])): ?>
-                            <p class="muted" style="margin:0 0 8px;font-size:12px;">PHP CLI used: <code><?= e((string) $catalogImportResult['php_binary']) ?></code></p>
-                        <?php endif; ?>
-                        <?php if (!empty($catalogImportResult['output_lines']) && is_array($catalogImportResult['output_lines'])): ?>
-                            <?php foreach ($catalogImportResult['output_lines'] as $line): ?>
-                                <div style="font-family:monospace;font-size:12px;"><?= e((string) $line) ?></div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-            <div id="ops-ai-draft" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
-                <h3 style="margin:0 0 8px;">AI Draft Generator (Gemini)</h3>
-                <p class="muted" style="margin:0 0 10px;">One click in Auto mode will pick a commercial gap and create a draft. No auto-publish.</p>
-                <?php $affiliateDraftForm = is_array($affiliateDraftForm ?? null) ? $affiliateDraftForm : ['auto_mode' => '1', 'topic' => '', 'keyword' => '', 'product' => '', 'category' => '', 'model' => 'gemini-2.0-flash']; ?>
-                <form method="post" style="margin:0;">
-                    <input type="hidden" name="action" value="maintenance_generate_affiliate_post">
-                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                    <div style="display:flex;gap:8px;align-items:center;margin:0 0 10px;">
-                        <input type="checkbox" id="ai_auto_mode" name="auto_mode" value="1" <?= (($affiliateDraftForm['auto_mode'] ?? '1') === '1') ? 'checked' : '' ?> style="width:auto;margin:0;">
-                        <label for="ai_auto_mode" style="margin:0;">Auto mode (recommended, one-click draft)</label>
-                    </div>
 
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                        <div>
-                            <label>Topic (manual override)</label>
-                            <input type="text" name="topic" value="<?= e((string) ($affiliateDraftForm['topic'] ?? '')) ?>" placeholder="Best beginner telescope for city skies">
-                        </div>
-                        <div>
-                            <label>Keyword (manual override)</label>
-                            <input type="text" name="keyword" value="<?= e((string) ($affiliateDraftForm['keyword'] ?? '')) ?>" placeholder="best beginner telescope for city skies">
-                        </div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                        <div>
-                            <label>Main Product (manual override)</label>
-                            <input type="text" name="product" value="<?= e((string) ($affiliateDraftForm['product'] ?? '')) ?>" placeholder="Celestron NexStar 4SE">
-                        </div>
-                        <div>
-                            <label>Category (manual override)</label>
-                            <input type="text" name="category" value="<?= e((string) ($affiliateDraftForm['category'] ?? '')) ?>" placeholder="telescopes">
-                        </div>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;">
-                        <div>
-                            <label>Model</label>
-                            <input type="text" name="model" value="<?= e((string) ($affiliateDraftForm['model'] ?? 'gemini-2.0-flash')) ?>" placeholder="gemini-2.0-flash">
-                        </div>
-                        <div>
-                            <button class="btn" type="submit">Generate Draft (One Click)</button>
-                        </div>
-                    </div>
-                </form>
-                <?php if (is_array($affiliateDraftResult ?? null)): ?>
-                    <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
-                        <p style="margin:0 0 8px;font-size:13px;">
-                            Result:
-                            <strong class="<?= !empty($affiliateDraftResult['ok']) ? 'ok' : 'fail' ?>">
-                                <?= !empty($affiliateDraftResult['ok']) ? 'OK' : 'FAIL' ?>
-                            </strong>
-                            | Exit code: <?= (int) ($affiliateDraftResult['exit_code'] ?? 1) ?>
-                        </p>
-                        <?php if (!empty($affiliateDraftResult['php_binary'])): ?>
-                            <p class="muted" style="margin:0 0 8px;font-size:12px;">PHP CLI used: <code><?= e((string) $affiliateDraftResult['php_binary']) ?></code></p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fbff;">
+                        <h4 style="margin:0 0 6px;">Last Image Fix Run</h4>
+                        <?php if ($imageLastRun !== null): ?>
+                            <div class="muted" style="margin:0;font-size:12px;">At: <?= e((string) ($imageLastRun['created_at'] ?? '')) ?></div>
+                            <div class="muted" style="margin:4px 0 0;font-size:12px;">Status: <?= e(strtoupper((string) ($imageLastRun['status'] ?? ''))) ?> | Duration: <?= number_format((float) ($imageLastRun['duration_seconds'] ?? 0), 3) ?>s</div>
+                            <div class="muted" style="margin:4px 0 0;font-size:12px;"><?= e((string) ($imageLastRun['message'] ?? '')) ?></div>
+                        <?php else: ?>
+                            <div class="empty">No run recorded yet.</div>
                         <?php endif; ?>
-                        <?php if (!empty($affiliateDraftResult['output_lines']) && is_array($affiliateDraftResult['output_lines'])): ?>
-                            <?php foreach ($affiliateDraftResult['output_lines'] as $line): ?>
-                                <div style="font-family:monospace;font-size:12px;"><?= e((string) $line) ?></div>
+                    </div>
+                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fbff;">
+                        <h4 style="margin:0 0 6px;">Last Safe Check</h4>
+                        <?php if ($safeCheckLastRun !== null): ?>
+                            <div class="muted" style="margin:0;font-size:12px;">At: <?= e((string) ($safeCheckLastRun['created_at'] ?? '')) ?></div>
+                            <div class="muted" style="margin:4px 0 0;font-size:12px;">Status: <?= e(strtoupper((string) ($safeCheckLastRun['status'] ?? ''))) ?> | Duration: <?= number_format((float) ($safeCheckLastRun['duration_seconds'] ?? 0), 3) ?>s</div>
+                            <div class="muted" style="margin:4px 0 0;font-size:12px;"><?= e((string) ($safeCheckLastRun['message'] ?? '')) ?></div>
+                        <?php else: ?>
+                            <div class="empty">No safe check recorded yet.</div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div style="margin-top:10px;">
+                    <h4 style="margin:0 0 6px;">Recent Job Runs</h4>
+                    <?php if ($recentRuns === []): ?>
+                        <div class="empty">No recent maintenance runs yet.</div>
+                    <?php else: ?>
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Task</th>
+                                <th>Status</th>
+                                <th>Duration</th>
+                                <th>When</th>
+                                <th>Message</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach ($recentRuns as $run): ?>
+                                <tr>
+                                    <td><?= e((string) ($run['task_key'] ?? '')) ?></td>
+                                    <td><?= e(strtoupper((string) ($run['status'] ?? ''))) ?></td>
+                                    <td><?= number_format((float) ($run['duration_seconds'] ?? 0), 3) ?>s</td>
+                                    <td><?= e((string) ($run['created_at'] ?? '')) ?></td>
+                                    <td><?= e((string) ($run['message'] ?? '')) ?></td>
+                                </tr>
                             <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">Prompts Workspace</h3>
+                <p class="muted" style="margin:0 0 10px;">Prompt tools, catalog import y AI draft se movieron a una seccion dedicada para mantener Maintenance limpio.</p>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Open Prompts Workspace</a>
+            </div>
+            <div id="ops-safe-check" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">Safe Availability Check (One Product per Click)</h3>
+                <p class="muted" style="margin:0 0 10px;">
+                    This checker processes exactly one product per click, waits 3-6 seconds before request, rotates User-Agent, and logs into
+                    <code>availability_log.txt</code>.
+                </p>
+
+                <?php $availabilityCheckerDashboard = is_array($availabilityCheckerDashboard ?? null) ? $availabilityCheckerDashboard : []; ?>
+                <?php $availabilityCheckerResult = is_array($availabilityCheckerResult ?? null) ? $availabilityCheckerResult : null; ?>
+
+                <div class="ops-kpis">
+                    <div class="ops-kpi"><div class="k">Total Products</div><div class="v"><?= number_format((int) ($availabilityCheckerDashboard['total_products'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Available</div><div class="v"><?= number_format((int) ($availabilityCheckerDashboard['available_products'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Unavailable</div><div class="v"><?= number_format((int) ($availabilityCheckerDashboard['unavailable_products'] ?? 0)) ?></div></div>
+                    <div class="ops-kpi"><div class="k">Last Check</div><div class="v" style="font-size:12px;line-height:1.35;"><?= e((string) (($availabilityCheckerDashboard['last_checked_at'] ?? '') !== '' ? $availabilityCheckerDashboard['last_checked_at'] : 'Never')) ?></div></div>
+                </div>
+
+                <p class="muted" style="margin:8px 0;">
+                    Next product URL:
+                    <?php $nextSafeUrl = trim((string) ($availabilityCheckerDashboard['next_product_url'] ?? '')); ?>
+                    <?php if ($nextSafeUrl !== ''): ?>
+                        <a href="<?= e($nextSafeUrl) ?>" target="_blank" rel="noopener noreferrer"><?= e($nextSafeUrl) ?></a>
+                    <?php else: ?>
+                        <span>n/a</span>
+                    <?php endif; ?>
+                </p>
+
+                <?php if ($availabilityCheckerResult !== null): ?>
+                    <div class="<?= !empty($availabilityCheckerResult['ok']) ? 'ok' : 'error' ?>" style="margin-bottom:10px;">
+                        <?= e((string) ($availabilityCheckerResult['message'] ?? 'Safe check finished.')) ?>
+                        <?php if (!empty($availabilityCheckerResult['url'])): ?>
+                            <div style="margin-top:6px;font-size:12px;"><?= e((string) $availabilityCheckerResult['url']) ?></div>
                         <?php endif; ?>
                     </div>
                 <?php endif; ?>
+
+                <form id="availability_safe_check_form" method="post" style="margin:0;">
+                    <input type="hidden" name="action" value="availability_safe_check_next">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button id="availability_safe_check_button" class="btn" type="submit" style="font-size:18px;padding:14px 22px;">
+                        Check Next Product (Safe Mode)
+                    </button>
+                    <span id="availability_safe_check_status" class="muted" style="display:none;margin-left:10px;font-weight:700;">Checking...</span>
+                </form>
+                <p class="muted" style="margin:10px 0 0;">
+                    Click repeatedly to process your catalog. Wait a few seconds between clicks if doing many manually, though the script handles the delay.
+                </p>
             </div>
             <?php
             $maintenanceGroups = [

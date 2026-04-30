@@ -229,6 +229,13 @@ function init_schema(PDO $pdo): void
         $pdo->exec('ALTER TABLE posts ADD INDEX idx_posts_type (post_type)');
     }
 
+    $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'created_by_user_id\'');
+    $stmt->execute();
+    if (!$stmt->fetch()) {
+        $pdo->exec('ALTER TABLE posts ADD COLUMN created_by_user_id INT UNSIGNED NULL AFTER extra_data');
+        $pdo->exec('ALTER TABLE posts ADD INDEX idx_posts_created_by (created_by_user_id)');
+    }
+
     $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'extra_data\'');
     $stmt->execute();
     if (!$stmt->fetch()) {

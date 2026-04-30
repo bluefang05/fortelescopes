@@ -126,6 +126,99 @@ if (!function_exists('enma_products_normalize_ai_item')) {
 $productsAiImportForm = ['payload' => ''];
 $productsAiImportResult = null;
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_products_apply') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $bulkAction = trim((string) ($_POST['bulk_action'] ?? ''));
+        $rawIds = trim((string) ($_POST['selected_ids'] ?? ''));
+        $idParts = $rawIds === '' ? [] : preg_split('/\s*,\s*/', $rawIds);
+        $productIds = [];
+        foreach ((array) $idParts as $part) {
+            $id = (int) $part;
+            if ($id > 0) {
+                $productIds[$id] = true;
+            }
+        }
+        $productIds = array_keys($productIds);
+
+        if ($productIds === []) {
+            $errors[] = 'Select at least one product.';
+        } elseif (!in_array($bulkAction, ['archive', 'delete'], true)) {
+            $errors[] = 'Choose a valid bulk action.';
+        } else {
+            $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+            $now = now_iso();
+
+            try {
+                if ($bulkAction === 'archive') {
+                    $sql = 'UPDATE products
+                            SET status = "archived", updated_at = ?
+                            WHERE id IN (' . $placeholders . ')';
+                    $params = array_merge([$now], $productIds);
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute($params);
+                    $affected = (int) $stmt->rowCount();
+
+                    enma_record_activity($pdo, 'product.bulk_archive', 'product', 0, [
+                        'count' => $affected,
+                        'ids' => $productIds,
+                    ]);
+                    $flash = 'Bulk archive completed. Rows affected: ' . $affected;
+                } else {
+                    $selectStmt = $pdo->prepare(
+                        'SELECT slug, category_slug
+                         FROM products
+                         WHERE id IN (' . $placeholders . ')'
+                    );
+                    $selectStmt->execute($productIds);
+                    $rows = $selectStmt->fetchAll();
+
+                    $deleteChecksStmt = $pdo->prepare(
+                        'DELETE FROM product_link_checks
+                         WHERE product_id IN (' . $placeholders . ')'
+                    );
+                    $deleteChecksStmt->execute($productIds);
+
+                    $deleteProductsStmt = $pdo->prepare(
+                        'DELETE FROM products
+                         WHERE id IN (' . $placeholders . ')'
+                    );
+                    $deleteProductsStmt->execute($productIds);
+                    $affected = (int) $deleteProductsStmt->rowCount();
+
+                    $urlsToNotify = [];
+                    foreach ($rows as $row) {
+                        $slug = trim((string) ($row['slug'] ?? ''));
+                        $categorySlug = trim((string) ($row['category_slug'] ?? ''));
+                        if ($slug !== '') {
+                            $urlsToNotify[] = absolute_url('/product/' . $slug);
+                        }
+                        if ($categorySlug !== '') {
+                            $urlsToNotify[] = absolute_url('/category/' . $categorySlug);
+                            $urlsToNotify[] = absolute_url('/' . $categorySlug);
+                        }
+                    }
+                    if ($urlsToNotify !== []) {
+                        $indexNowResult = indexnow_submit_urls($urlsToNotify);
+                        if (!empty($indexNowResult['message'])) {
+                            $maintenanceLog[] = (string) $indexNowResult['message'];
+                        }
+                    }
+
+                    enma_record_activity($pdo, 'product.bulk_delete', 'product', 0, [
+                        'count' => $affected,
+                        'ids' => $productIds,
+                    ]);
+                    $flash = 'Bulk delete completed. Rows deleted: ' . $affected;
+                }
+            } catch (Throwable $e) {
+                $errors[] = 'Bulk action failed: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
 // Import NEW products from pasted AI array (append-only, no archive/delete)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'import_products_ai') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -399,6 +492,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
             $editingProduct = null;
         } catch (Throwable $e) {
             $errors[] = 'Update failed: ' . $e->getMessage();
+        }
+    }
+}
+
+// Quick inline image URL update from products table
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'quick_update_product_image') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $id = (int) ($_POST['id'] ?? 0);
+        $imageUrl = trim((string) ($_POST['quick_image_url'] ?? ''));
+
+        if ($id <= 0) {
+            $errors[] = 'Invalid product id.';
+        } elseif ($imageUrl === '' || filter_var($imageUrl, FILTER_VALIDATE_URL) === false) {
+            $errors[] = 'Image URL is not valid.';
+        } elseif (!is_usable_product_image_url($imageUrl)) {
+            $errors[] = 'Image URL does not look like a valid product image.';
+        } else {
+            try {
+                $stmt = $pdo->prepare(
+                    'UPDATE products
+                     SET image_url = :image_url, updated_at = :updated_at
+                     WHERE id = :id'
+                );
+                $stmt->execute([
+                    ':image_url' => $imageUrl,
+                    ':updated_at' => now_iso(),
+                    ':id' => $id,
+                ]);
+
+                enma_record_activity($pdo, 'product.image.quick_update', 'product', $id, [
+                    'image_url' => $imageUrl,
+                ]);
+                $flash = 'Product image updated.';
+            } catch (Throwable $e) {
+                $errors[] = 'Quick image update failed: ' . $e->getMessage();
+            }
         }
     }
 }

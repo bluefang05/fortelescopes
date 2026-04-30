@@ -134,13 +134,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
         $now = now_iso();
 
         try {
+            $createdByUserId = (int) ($_SESSION['admin_user_id'] ?? 0);
             $stmt = $pdo->prepare(
                 'INSERT INTO posts (
                     slug, title, excerpt, content_html, featured_image, post_type, status, meta_title, meta_description,
-                    created_at, updated_at, published_at
+                    created_by_user_id, created_at, updated_at, published_at
                  ) VALUES (
                     :slug, :title, :excerpt, :content_html, :featured_image, :post_type, :status, :meta_title, :meta_description,
-                    :created_at, :updated_at, :published_at
+                    :created_by_user_id, :created_at, :updated_at, :published_at
                  )'
             );
 
@@ -154,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 ':status' => 'published',
                 ':meta_title' => $metaTitle !== '' ? $metaTitle : null,
                 ':meta_description' => $metaDescription !== '' ? $metaDescription : null,
+                ':created_by_user_id' => $createdByUserId > 0 ? $createdByUserId : null,
                 ':created_at' => $now,
                 ':updated_at' => $now,
                 ':published_at' => $now,

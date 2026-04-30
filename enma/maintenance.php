@@ -11,6 +11,15 @@ if (!$authenticated) {
     return;
 }
 
+// -----------------------------------------------------------------------------
+// Safe availability checker configuration (explicitly requested for maintenance)
+// -----------------------------------------------------------------------------
+$availabilityCheckerDbHost = DB_HOST;
+$availabilityCheckerDbName = DB_NAME;
+$availabilityCheckerDbUser = DB_USER;
+$availabilityCheckerDbPass = DB_PASS;
+$availabilityCheckerTable = 'products';
+
 if (!function_exists('enma_maintenance_resolve_script')) {
     function enma_maintenance_resolve_script(string $relativePath): ?string
     {
@@ -194,6 +203,396 @@ if (!function_exists('enma_maintenance_table_exists')) {
     }
 }
 
+if (!function_exists('enma_maintenance_column_exists')) {
+    function enma_maintenance_column_exists(PDO $pdo, string $tableName, string $columnName): bool
+    {
+        $tableName = trim($tableName);
+        $columnName = trim($columnName);
+        if ($tableName === '' || $columnName === '') {
+            return false;
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT 1
+             FROM information_schema.columns
+             WHERE table_schema = :schema
+               AND table_name = :table_name
+               AND column_name = :column_name
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':schema' => DB_NAME,
+            ':table_name' => $tableName,
+            ':column_name' => $columnName,
+        ]);
+
+        return (bool) $stmt->fetchColumn();
+    }
+}
+
+if (!function_exists('enma_maintenance_init_job_runs_table')) {
+    function enma_maintenance_init_job_runs_table(PDO $pdo): void
+    {
+        $pdo->exec(
+            'CREATE TABLE IF NOT EXISTS maintenance_job_runs (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                task_key VARCHAR(64) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                message VARCHAR(255) NOT NULL DEFAULT "",
+                duration_seconds DECIMAL(10,3) NOT NULL DEFAULT 0,
+                metrics_json TEXT NULL,
+                created_at VARCHAR(40) NOT NULL,
+                INDEX idx_task_created (task_key, created_at),
+                INDEX idx_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
+        );
+    }
+}
+
+if (!function_exists('enma_maintenance_record_job_run')) {
+    function enma_maintenance_record_job_run(
+        PDO $pdo,
+        string $taskKey,
+        string $status,
+        string $message,
+        float $durationSeconds,
+        array $metrics = []
+    ): void {
+        $taskKey = trim($taskKey);
+        if ($taskKey === '') {
+            return;
+        }
+        $status = strtolower($status) === 'ok' ? 'ok' : 'fail';
+        $message = mb_substr(trim($message), 0, 255);
+        $durationSeconds = max(0.0, $durationSeconds);
+        $metricsPayload = $metrics !== [] ? json_encode($metrics, JSON_UNESCAPED_SLASHES) : null;
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO maintenance_job_runs (
+                task_key, status, message, duration_seconds, metrics_json, created_at
+             ) VALUES (
+                :task_key, :status, :message, :duration_seconds, :metrics_json, :created_at
+             )'
+        );
+        $stmt->execute([
+            ':task_key' => $taskKey,
+            ':status' => $status,
+            ':message' => $message,
+            ':duration_seconds' => number_format($durationSeconds, 3, '.', ''),
+            ':metrics_json' => $metricsPayload,
+            ':created_at' => now_iso(),
+        ]);
+    }
+}
+
+if (!function_exists('enma_maintenance_parse_numeric_metrics_from_lines')) {
+    function enma_maintenance_parse_numeric_metrics_from_lines(array $lines): array
+    {
+        $metrics = [];
+        foreach ($lines as $line) {
+            $text = trim((string) $line);
+            if ($text === '') {
+                continue;
+            }
+            if (preg_match('/^([A-Za-z0-9 ()\/_-]+):\s*(-?\d+)/', $text, $m) !== 1) {
+                continue;
+            }
+            $label = strtolower(trim((string) $m[1]));
+            $value = (int) $m[2];
+
+            $key = $label;
+            $key = str_replace(['(', ')', '/', '-'], ' ', $key);
+            $key = preg_replace('/[^a-z0-9 ]+/', ' ', $key) ?? $key;
+            $key = preg_replace('/\s+/', '_', trim($key)) ?? $key;
+            if ($key === '') {
+                continue;
+            }
+            $metrics[$key] = $value;
+        }
+        return $metrics;
+    }
+}
+
+if (!function_exists('enma_maintenance_safe_int_metric')) {
+    function enma_maintenance_safe_int_metric(array $metrics, string $key): int
+    {
+        return isset($metrics[$key]) && is_numeric((string) $metrics[$key]) ? (int) $metrics[$key] : 0;
+    }
+}
+
+if (!function_exists('enma_maintenance_safe_table_name')) {
+    function enma_maintenance_safe_table_name(string $tableName): string
+    {
+        $tableName = trim($tableName);
+        if (!preg_match('/^[A-Za-z0-9_]+$/', $tableName)) {
+            throw new InvalidArgumentException('Invalid table name for safe availability checker.');
+        }
+
+        return '`' . $tableName . '`';
+    }
+}
+
+if (!function_exists('enma_maintenance_init_availability_columns')) {
+    function enma_maintenance_init_availability_columns(PDO $pdo, string $tableName, array &$logLines = []): void
+    {
+        $safeTable = enma_maintenance_safe_table_name($tableName);
+        $required = [
+            'is_available' => 'ALTER TABLE ' . $safeTable . ' ADD COLUMN is_available TINYINT(1) NOT NULL DEFAULT 1',
+            'last_checked_at' => 'ALTER TABLE ' . $safeTable . ' ADD COLUMN last_checked_at DATETIME NULL DEFAULT NULL',
+            'check_priority' => 'ALTER TABLE ' . $safeTable . ' ADD COLUMN check_priority TINYINT NOT NULL DEFAULT 0',
+        ];
+
+        foreach ($required as $column => $sql) {
+            if (enma_maintenance_column_exists($pdo, $tableName, $column)) {
+                continue;
+            }
+            $pdo->exec($sql);
+            $logLines[] = 'Schema auto-fix: added column ' . $column . ' on ' . $tableName;
+        }
+    }
+}
+
+if (!function_exists('enma_maintenance_detect_product_url_column')) {
+    function enma_maintenance_detect_product_url_column(PDO $pdo, string $tableName): ?string
+    {
+        if (enma_maintenance_column_exists($pdo, $tableName, 'amazon_url')) {
+            return 'amazon_url';
+        }
+        if (enma_maintenance_column_exists($pdo, $tableName, 'affiliate_url')) {
+            return 'affiliate_url';
+        }
+        return null;
+    }
+}
+
+if (!function_exists('enma_maintenance_availability_log_path')) {
+    function enma_maintenance_availability_log_path(): string
+    {
+        return __DIR__ . '/../availability_log.txt';
+    }
+}
+
+if (!function_exists('enma_maintenance_append_availability_log')) {
+    function enma_maintenance_append_availability_log(string $line): void
+    {
+        $payload = '[' . gmdate('Y-m-d H:i:s') . ' UTC] ' . trim($line) . PHP_EOL;
+        @file_put_contents(enma_maintenance_availability_log_path(), $payload, FILE_APPEND);
+    }
+}
+
+if (!function_exists('enma_maintenance_pick_next_product_for_availability')) {
+    function enma_maintenance_pick_next_product_for_availability(PDO $pdo, string $tableName, string $urlColumn): ?array
+    {
+        $safeTable = enma_maintenance_safe_table_name($tableName);
+        $safeUrlColumn = '`' . $urlColumn . '`';
+        $sql = 'SELECT id, asin, title, status, is_available, last_checked_at, ' . $safeUrlColumn . ' AS product_url
+                FROM ' . $safeTable . '
+                ORDER BY (last_checked_at IS NULL) DESC, last_checked_at ASC, id ASC
+                LIMIT 1';
+        $stmt = $pdo->query($sql);
+        $row = $stmt !== false ? $stmt->fetch() : false;
+        return is_array($row) ? $row : null;
+    }
+}
+
+if (!function_exists('enma_maintenance_safe_user_agents')) {
+    function enma_maintenance_safe_user_agents(): array
+    {
+        return [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:137.0) Gecko/20100101 Firefox/137.0',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/135.0.0.0 Chrome/135.0.0.0 Safari/537.36',
+        ];
+    }
+}
+
+if (!function_exists('enma_maintenance_safe_check_next_product_once')) {
+    function enma_maintenance_safe_check_next_product_once(PDO $pdo, string $tableName, string $urlColumn): array
+    {
+        $next = enma_maintenance_pick_next_product_for_availability($pdo, $tableName, $urlColumn);
+        if ($next === null) {
+            return [
+                'ok' => false,
+                'message' => 'No product found to check.',
+                'next' => null,
+            ];
+        }
+
+        $productId = (int) ($next['id'] ?? 0);
+        $url = trim((string) ($next['product_url'] ?? ''));
+        if ($productId <= 0 || $url === '' || filter_var($url, FILTER_VALIDATE_URL) === false) {
+            $updateStmt = $pdo->prepare(
+                'UPDATE ' . enma_maintenance_safe_table_name($tableName) . '
+                 SET last_checked_at = NOW()
+                 WHERE id = :id'
+            );
+            $updateStmt->execute([':id' => $productId]);
+            $error = 'invalid_url';
+            enma_maintenance_append_availability_log(
+                'product_id=' . $productId . ' | url=' . $url . ' | new_status=unchanged | error=' . $error
+            );
+            return [
+                'ok' => false,
+                'message' => 'Product has invalid URL; status preserved.',
+                'product_id' => $productId,
+                'url' => $url,
+                'new_status' => null,
+                'error' => $error,
+            ];
+        }
+
+        // Required safety delay: one product per execution with human-like pause.
+        sleep(random_int(3, 6));
+
+        if (!function_exists('curl_init')) {
+            $updateStmt = $pdo->prepare(
+                'UPDATE ' . enma_maintenance_safe_table_name($tableName) . '
+                 SET last_checked_at = NOW()
+                 WHERE id = :id'
+            );
+            $updateStmt->execute([':id' => $productId]);
+            $error = 'curl_not_available';
+            enma_maintenance_append_availability_log(
+                'product_id=' . $productId . ' | url=' . $url . ' | new_status=unchanged | error=' . $error
+            );
+            return [
+                'ok' => false,
+                'message' => 'cURL is not available on this host.',
+                'product_id' => $productId,
+                'url' => $url,
+                'new_status' => null,
+                'error' => $error,
+            ];
+        }
+
+        $userAgents = enma_maintenance_safe_user_agents();
+        $userAgent = $userAgents[array_rand($userAgents)];
+
+        $ch = curl_init($url);
+        if ($ch === false) {
+            return [
+                'ok' => false,
+                'message' => 'Could not initialize cURL.',
+                'product_id' => $productId,
+                'url' => $url,
+                'new_status' => null,
+                'error' => 'curl_init_failed',
+            ];
+        }
+
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 4,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_USERAGENT => $userAgent,
+            CURLOPT_HTTPHEADER => [
+                'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language: en-US,en;q=0.9',
+                'Cache-Control: no-cache',
+                'Pragma: no-cache',
+            ],
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+
+        $body = curl_exec($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $curlError = trim((string) curl_error($ch));
+        curl_close($ch);
+
+        $bodyText = is_string($body) ? strtolower($body) : '';
+        $error = '';
+        $newStatus = null;
+
+        if ($curlError !== '') {
+            $error = 'curl_error:' . $curlError;
+        } elseif ($statusCode === 503 || $statusCode === 429) {
+            $error = 'http_' . $statusCode;
+        } elseif (strpos($bodyText, 'captcha') !== false || strpos($bodyText, 'robot check') !== false || strpos($bodyText, 'enter the characters you see below') !== false) {
+            $error = 'captcha_or_bot_challenge';
+        } else {
+            $unavailableMarkers = [
+                'out of stock',
+                'currently unavailable',
+                'see all buying options',
+            ];
+            $availableMarkers = [
+                'in stock',
+                'add to cart',
+                'buy now',
+                'buybox',
+                'ships from and sold by',
+            ];
+
+            foreach ($unavailableMarkers as $marker) {
+                if (strpos($bodyText, $marker) !== false) {
+                    $newStatus = 0;
+                    break;
+                }
+            }
+
+            if ($newStatus === null) {
+                foreach ($availableMarkers as $marker) {
+                    if (strpos($bodyText, $marker) !== false) {
+                        $newStatus = 1;
+                        break;
+                    }
+                }
+            }
+
+            if ($newStatus === null) {
+                $error = 'stock_signal_not_detected';
+            }
+        }
+
+        if ($newStatus === null) {
+            $updateStmt = $pdo->prepare(
+                'UPDATE ' . enma_maintenance_safe_table_name($tableName) . '
+                 SET last_checked_at = NOW()
+                 WHERE id = :id'
+            );
+            $updateStmt->execute([':id' => $productId]);
+        } else {
+            $updateStmt = $pdo->prepare(
+                'UPDATE ' . enma_maintenance_safe_table_name($tableName) . '
+                 SET is_available = :is_available,
+                     last_checked_at = NOW()
+                 WHERE id = :id'
+            );
+            $updateStmt->execute([
+                ':is_available' => $newStatus,
+                ':id' => $productId,
+            ]);
+        }
+
+        enma_maintenance_append_availability_log(
+            'product_id=' . $productId
+            . ' | url=' . $url
+            . ' | new_status=' . ($newStatus === null ? 'unchanged' : (string) $newStatus)
+            . ' | error=' . ($error !== '' ? $error : '-')
+            . ' | http=' . $statusCode
+        );
+
+        return [
+            'ok' => $newStatus !== null,
+            'message' => $newStatus === null
+                ? 'Availability preserved due to request/parser error.'
+                : 'Availability updated successfully.',
+            'product_id' => $productId,
+            'url' => $url,
+            'new_status' => $newStatus,
+            'error' => $error,
+            'http_status' => $statusCode,
+            'user_agent' => $userAgent,
+        ];
+    }
+}
+
 if (!function_exists('enma_maintenance_build_products_export_sql')) {
     function enma_maintenance_build_products_export_sql(PDO $pdo): array
     {
@@ -370,6 +769,13 @@ $maintenanceTaskMeta = [
         'group' => 'weekly',
         'script' => 'scripts/check_links.php',
     ],
+    'sync_post_indexation_tracker' => [
+        'label' => 'Sync Post Indexation Tracker',
+        'description' => 'Actualiza la tabla de seguimiento de indexacion con todos los posts/guias.',
+        'frequency' => 'Daily',
+        'group' => 'seo',
+        'script' => 'scripts/sync_post_indexation_tracker.php',
+    ],
     'clean_not_found_products' => [
         'label' => 'Clean Not Found Products',
         'description' => 'Revisa affiliate URLs y archiva productos publicados que devuelven not found (404/410 o página Amazon inexistente).',
@@ -511,6 +917,51 @@ $notFoundReviewPage = max(1, (int) ($_GET['nf_review_page'] ?? 1));
 $notFoundReviewPerPage = 15;
 $notFoundReviewTotal = 0;
 $notFoundReviewTotalPages = 1;
+$availabilitySchemaFixLog = [];
+$availabilityCheckerResult = null;
+$availabilityCheckerUnlocked = true;
+$availabilityCheckerDashboard = [
+    'total_products' => 0,
+    'available_products' => 0,
+    'unavailable_products' => 0,
+    'next_product_url' => '',
+    'next_product_id' => 0,
+    'last_checked_at' => '',
+];
+$availabilityCheckerUrlColumn = null;
+$maintenanceProgress = [
+    'image_last_run' => null,
+    'image_last_metrics' => [],
+    'image_weekly' => [
+        'runs' => 0,
+        'checked' => 0,
+        'updated' => 0,
+        'failed_fetches' => 0,
+    ],
+    'image_success_rate' => 0.0,
+    'image_failure_rate' => 0.0,
+    'image_remaining' => 0,
+    'image_avg_updates_per_run' => 0.0,
+    'image_eta_runs' => null,
+    'safe_check_last_run' => null,
+    'recent_runs' => [],
+];
+
+try {
+    enma_maintenance_init_job_runs_table($pdo);
+} catch (Throwable $e) {
+    $maintenanceLog[] = 'Job metrics table unavailable: ' . $e->getMessage();
+}
+
+try {
+    enma_maintenance_init_availability_columns($pdo, $availabilityCheckerTable, $availabilitySchemaFixLog);
+    $availabilityCheckerUrlColumn = enma_maintenance_detect_product_url_column($pdo, $availabilityCheckerTable);
+} catch (Throwable $e) {
+    $maintenanceLog[] = 'Availability schema auto-fix failed: ' . $e->getMessage();
+}
+foreach ($availabilitySchemaFixLog as $schemaLine) {
+    $maintenanceLog[] = (string) $schemaLine;
+}
 
 try {
     enma_maintenance_init_product_link_checks_table($pdo);
@@ -549,6 +1000,60 @@ try {
     $notFoundReviewRows = $rowsStmt->fetchAll();
 } catch (Throwable $e) {
     $maintenanceLog[] = 'Not-found review unavailable: ' . $e->getMessage();
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'availability_safe_check_next') {
+    $taskKey = 'availability_safe_check_next';
+    $taskRunOk = false;
+    $taskRunMessage = '';
+    $taskMetrics = [];
+    $startedAt = microtime(true);
+
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+        $taskRunMessage = 'Invalid request token.';
+    } elseif ($availabilityCheckerUrlColumn === null) {
+        $errors[] = 'No URL column found (expected amazon_url or affiliate_url).';
+        $taskRunMessage = 'Missing URL column for safe check.';
+    } else {
+        try {
+            $availabilityCheckerResult = enma_maintenance_safe_check_next_product_once($pdo, $availabilityCheckerTable, $availabilityCheckerUrlColumn);
+            $taskRunOk = !empty($availabilityCheckerResult['ok']);
+            $taskRunMessage = (string) ($availabilityCheckerResult['message'] ?? ($taskRunOk ? 'Safe check completed.' : 'Safe check failed.'));
+            $taskMetrics = [
+                'checked' => 1,
+                'updated' => $taskRunOk ? 1 : 0,
+                'errors' => !empty($availabilityCheckerResult['error']) ? 1 : 0,
+                'http_status' => (int) ($availabilityCheckerResult['http_status'] ?? 0),
+            ];
+            if ($taskRunOk) {
+                $flash = $taskRunMessage;
+            } else {
+                $errors[] = $taskRunMessage;
+            }
+        } catch (Throwable $e) {
+            $taskRunMessage = 'Safe availability check failed: ' . $e->getMessage();
+            $errors[] = $taskRunMessage;
+        }
+    }
+
+    try {
+        enma_maintenance_record_usage($pdo, $taskKey, $taskRunOk ? 'ok' : 'fail', $taskRunMessage);
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
+    }
+    try {
+        enma_maintenance_record_job_run(
+            $pdo,
+            $taskKey,
+            $taskRunOk ? 'ok' : 'fail',
+            $taskRunMessage,
+            microtime(true) - $startedAt,
+            $taskMetrics
+        );
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Job run record failed: ' . $e->getMessage();
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_generate_affiliate_post') {
@@ -857,6 +1362,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
     $taskKnown = isset($availableMaintenanceTasks[$task]);
     $taskRunOk = false;
     $taskRunMessage = '';
+    $taskMetrics = [];
+    $taskStartedAt = microtime(true);
     $taskMetaConfig = $availableMaintenanceTasks[$task] ?? null;
 
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
@@ -906,6 +1413,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
             $flash = "Affiliate normalization done. Checked: {$checked} | Updated: {$updated}";
             $taskRunOk = true;
             $taskRunMessage = $flash;
+            $taskMetrics = [
+                'checked' => $checked,
+                'updated' => $updated,
+            ];
             $maintenanceLog[] = 'Task: normalize_affiliate_urls';
             $maintenanceLog[] = 'Tag: ' . AMAZON_ASSOCIATE_TAG;
         } elseif ($task === 'update_db_schema') {
@@ -981,11 +1492,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $taskRunOk = true;
                 $taskRunMessage = $output !== '' ? $output : $flash;
                 if ($output !== '') {
-                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                    $outputLines = preg_split('/\r\n|\r|\n/', $output);
+                    foreach ($outputLines as $line) {
                         if (trim((string) $line) !== '') {
                             $maintenanceLog[] = (string) $line;
                         }
                     }
+                    $taskMetrics = enma_maintenance_parse_numeric_metrics_from_lines((array) $outputLines);
                 }
                 $maintenanceLog[] = 'Task: fix_product_images';
                 $maintenanceLog[] = 'Source: Amazon product page scrape + safe placeholder';
@@ -1085,6 +1598,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $taskRunMessage = 'Link check failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
+        } elseif ($task === 'sync_post_indexation_tracker') {
+            $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+            ob_start();
+            try {
+                if (!defined('ENMA_ALLOW_WEB_RUN')) {
+                    define('ENMA_ALLOW_WEB_RUN', true);
+                }
+                require $scriptPath;
+                $output = trim((string) ob_get_clean());
+                $flash = 'Post indexation tracker synced.';
+                $taskRunOk = true;
+                $taskRunMessage = $output !== '' ? $output : $flash;
+                if ($output !== '') {
+                    $outputLines = preg_split('/\r\n|\r|\n/', $output);
+                    foreach ($outputLines as $line) {
+                        if (trim((string) $line) !== '') {
+                            $maintenanceLog[] = (string) $line;
+                        }
+                    }
+                    $taskMetrics = enma_maintenance_parse_numeric_metrics_from_lines((array) $outputLines);
+                }
+                $maintenanceLog[] = 'Task: sync_post_indexation_tracker';
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $taskRunMessage = 'Indexation tracker sync failed: ' . $e->getMessage();
+                $errors[] = $taskRunMessage;
+            }
         } elseif ($task === 'clean_not_found_products') {
             $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
             ob_start();
@@ -1098,11 +1638,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $taskRunOk = true;
                 $taskRunMessage = $output !== '' ? $output : $flash;
                 if ($output !== '') {
-                    foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+                    $outputLines = preg_split('/\r\n|\r|\n/', $output);
+                    foreach ($outputLines as $line) {
                         if (trim((string) $line) !== '') {
                             $maintenanceLog[] = (string) $line;
                         }
                     }
+                    $taskMetrics = enma_maintenance_parse_numeric_metrics_from_lines((array) $outputLines);
                 }
                 $maintenanceLog[] = 'Task: clean_not_found_products';
                 $maintenanceLog[] = 'Mode: archive published products that resolve as not found';
@@ -1134,6 +1676,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $flash = 'Not-found delete completed. Products deleted: ' . $deletedProducts;
                 $taskRunOk = true;
                 $taskRunMessage = $flash;
+                $taskMetrics = [
+                    'deleted_products' => $deletedProducts,
+                    'cleaned_product_link_checks_rows' => $cleanedChecks,
+                ];
                 $maintenanceLog[] = 'Task: delete_not_found_products';
                 $maintenanceLog[] = 'Deleted products: ' . $deletedProducts;
                 $maintenanceLog[] = 'Cleaned product_link_checks rows: ' . $cleanedChecks;
@@ -1271,5 +1817,130 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
         } catch (Throwable $e) {
             $maintenanceLog[] = 'Usage record failed: ' . $e->getMessage();
         }
+        try {
+            enma_maintenance_record_job_run(
+                $pdo,
+                $task,
+                $taskRunOk ? 'ok' : 'fail',
+                $taskRunMessage,
+                microtime(true) - $taskStartedAt,
+                $taskMetrics
+            );
+        } catch (Throwable $e) {
+            $maintenanceLog[] = 'Job run record failed: ' . $e->getMessage();
+        }
     }
+}
+
+if ($availabilityCheckerUrlColumn !== null) {
+    try {
+        $safeTable = enma_maintenance_safe_table_name($availabilityCheckerTable);
+        $availabilityCheckerDashboard['total_products'] = (int) $pdo->query('SELECT COUNT(*) FROM ' . $safeTable)->fetchColumn();
+        $availabilityCheckerDashboard['available_products'] = (int) $pdo->query('SELECT COUNT(*) FROM ' . $safeTable . ' WHERE is_available = 1')->fetchColumn();
+        $availabilityCheckerDashboard['unavailable_products'] = (int) $pdo->query('SELECT COUNT(*) FROM ' . $safeTable . ' WHERE is_available = 0')->fetchColumn();
+        $availabilityCheckerDashboard['last_checked_at'] = (string) ($pdo->query('SELECT MAX(last_checked_at) FROM ' . $safeTable)->fetchColumn() ?: '');
+
+        $nextProduct = enma_maintenance_pick_next_product_for_availability($pdo, $availabilityCheckerTable, $availabilityCheckerUrlColumn);
+        if (is_array($nextProduct)) {
+            $availabilityCheckerDashboard['next_product_id'] = (int) ($nextProduct['id'] ?? 0);
+            $availabilityCheckerDashboard['next_product_url'] = trim((string) ($nextProduct['product_url'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        $maintenanceLog[] = 'Availability dashboard failed: ' . $e->getMessage();
+    }
+}
+
+try {
+    $recentRunsStmt = $pdo->prepare(
+        'SELECT id, task_key, status, message, duration_seconds, metrics_json, created_at
+         FROM maintenance_job_runs
+         ORDER BY id DESC
+         LIMIT 8'
+    );
+    $recentRunsStmt->execute();
+    $maintenanceProgress['recent_runs'] = $recentRunsStmt->fetchAll();
+
+    $imageRunsStmt = $pdo->prepare(
+        'SELECT id, task_key, status, message, duration_seconds, metrics_json, created_at
+         FROM maintenance_job_runs
+         WHERE task_key = "fix_product_images"
+         ORDER BY id DESC
+         LIMIT 30'
+    );
+    $imageRunsStmt->execute();
+    $imageRuns = $imageRunsStmt->fetchAll();
+    if ($imageRuns !== []) {
+        $maintenanceProgress['image_last_run'] = $imageRuns[0];
+        $lastMetrics = json_decode((string) ($imageRuns[0]['metrics_json'] ?? ''), true);
+        $maintenanceProgress['image_last_metrics'] = is_array($lastMetrics) ? $lastMetrics : [];
+    }
+
+    $weeklyRuns = 0;
+    $weeklyChecked = 0;
+    $weeklyUpdated = 0;
+    $weeklyFailedFetches = 0;
+    $updatesAccumulator = 0;
+    $updateRunsCount = 0;
+    $weekCutoffTs = time() - (7 * 86400);
+
+    foreach ($imageRuns as $run) {
+        $createdTs = strtotime((string) ($run['created_at'] ?? ''));
+        $metrics = json_decode((string) ($run['metrics_json'] ?? ''), true);
+        $metrics = is_array($metrics) ? $metrics : [];
+
+        $updated = enma_maintenance_safe_int_metric($metrics, 'updated');
+        if ($updated > 0) {
+            $updatesAccumulator += $updated;
+            $updateRunsCount++;
+        }
+
+        if ($createdTs !== false && $createdTs >= $weekCutoffTs) {
+            $weeklyRuns++;
+            $weeklyChecked += enma_maintenance_safe_int_metric($metrics, 'checked');
+            $weeklyUpdated += $updated;
+            $weeklyFailedFetches += enma_maintenance_safe_int_metric($metrics, 'failed_fetches');
+        }
+    }
+
+    $maintenanceProgress['image_weekly'] = [
+        'runs' => $weeklyRuns,
+        'checked' => $weeklyChecked,
+        'updated' => $weeklyUpdated,
+        'failed_fetches' => $weeklyFailedFetches,
+    ];
+    $maintenanceProgress['image_success_rate'] = $weeklyChecked > 0 ? round(($weeklyUpdated / $weeklyChecked) * 100, 2) : 0.0;
+    $maintenanceProgress['image_failure_rate'] = $weeklyChecked > 0 ? round(($weeklyFailedFetches / $weeklyChecked) * 100, 2) : 0.0;
+    $maintenanceProgress['image_avg_updates_per_run'] = $updateRunsCount > 0 ? round($updatesAccumulator / $updateRunsCount, 2) : 0.0;
+
+    $remainingStmt = $pdo->query(
+        'SELECT COUNT(*)
+         FROM products
+         WHERE status = "published"
+           AND (
+                image_url IS NULL
+                OR image_url = ""
+                OR image_url LIKE "%product-placeholder.svg%"
+                OR image_url LIKE "%image-uploading%"
+                OR image_url LIKE "%URL_%"
+                OR image_url LIKE "%/assets/logo/%"
+           )'
+    );
+    $maintenanceProgress['image_remaining'] = (int) $remainingStmt->fetchColumn();
+    if ($maintenanceProgress['image_avg_updates_per_run'] > 0) {
+        $maintenanceProgress['image_eta_runs'] = (int) ceil(
+            $maintenanceProgress['image_remaining'] / max(0.01, (float) $maintenanceProgress['image_avg_updates_per_run'])
+        );
+    }
+
+    $safeCheckLastStmt = $pdo->prepare(
+        'SELECT id, task_key, status, message, duration_seconds, metrics_json, created_at
+         FROM maintenance_job_runs
+         WHERE task_key = "availability_safe_check_next"
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $safeCheckLastStmt->execute();
+    $maintenanceProgress['safe_check_last_run'] = $safeCheckLastStmt->fetch() ?: null;
+} catch (Throwable $e) {
+    $maintenanceLog[] = 'Maintenance progress metrics unavailable: ' . $e->getMessage();
 }

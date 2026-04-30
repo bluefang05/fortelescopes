@@ -7,6 +7,11 @@ $topCountries = $data['top_countries'] ?? [];
 $topSources = $data['top_sources'] ?? [];
 $topReferrers = $data['top_referrers'] ?? [];
 $originBase = max(1, (int) ($data['stats']['total_views'] ?? 0));
+$postVisitCountries = $data['post_visit_countries'] ?? [];
+$recentPostVisits = $data['recent_post_visits'] ?? [];
+$notMyPostViews = $data['not_my_post_views'] ?? [];
+$countryFilter = strtoupper(trim((string) ($data['country_filter'] ?? '')));
+$excludeMine = !empty($data['exclude_mine']);
 
 $countryNames = [
     'US' => 'Estados Unidos',
@@ -263,6 +268,86 @@ $pct = static function ($count, $base): string {
                             <?php endforeach; ?>
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <div class="card-ui p-3 mt-3">
+                    <h6 class="mb-3">Post visit tracking (human movement)</h6>
+                    <form method="get" class="row g-2 mb-3">
+                        <input type="hidden" name="action" value="analytics">
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Country filter</label>
+                            <select name="country" class="form-select form-select-sm">
+                                <option value="">All countries</option>
+                                <?php foreach ($postVisitCountries as $countryRow): ?>
+                                    <?php $cc = strtoupper((string) ($countryRow['country_code'] ?? '')); ?>
+                                    <option value="<?= htmlspecialchars($cc) ?>" <?= $countryFilter === $cc ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($cc) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small mb-1">Scope</label>
+                            <select name="exclude_mine" class="form-select form-select-sm">
+                                <option value="1" <?= $excludeMine ? 'selected' : '' ?>>Only posts not made by me</option>
+                                <option value="0" <?= !$excludeMine ? 'selected' : '' ?>>All posts</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-sm btn-primary w-100">Apply</button>
+                        </div>
+                    </form>
+
+                    <div class="row g-3">
+                        <div class="col-lg-7">
+                            <h6 class="mb-2">Last post visits</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead>
+                                    <tr><th>When</th><th>Post</th><th>Type</th><th>Country</th><th>Source</th></tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php if (empty($recentPostVisits)): ?>
+                                        <tr><td colspan="5" class="text-muted">No post visits with current filters.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($recentPostVisits as $visit): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars((string) ($visit['viewed_at'] ?? '')) ?></td>
+                                                <td><?= htmlspecialchars((string) ($visit['post_title'] ?? ($visit['page_slug'] ?? 'Unknown post'))) ?></td>
+                                                <td><?= htmlspecialchars((string) ($visit['page_type'] ?? '')) ?></td>
+                                                <td><?= htmlspecialchars((string) ($visit['country_code'] ?? 'UNK')) ?></td>
+                                                <td><?= htmlspecialchars((string) ($visit['source_type'] ?? 'direct')) ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <h6 class="mb-2">View count for posts not made by me</h6>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead>
+                                    <tr><th>Post</th><th>Type</th><th class="text-end">Views</th></tr>
+                                    </thead>
+                                    <tbody>
+                                    <?php if (empty($notMyPostViews)): ?>
+                                        <tr><td colspan="3" class="text-muted">No data available.</td></tr>
+                                    <?php else: ?>
+                                        <?php foreach ($notMyPostViews as $row): ?>
+                                            <tr>
+                                                <td><?= htmlspecialchars((string) ($row['post_title'] ?? ($row['post_slug'] ?? 'Unknown post'))) ?></td>
+                                                <td><?= htmlspecialchars((string) ($row['post_type'] ?? '')) ?></td>
+                                                <td class="text-end fw-semibold"><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>

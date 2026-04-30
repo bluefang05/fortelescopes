@@ -14,6 +14,13 @@ class AnalyticsController {
         }
 
         $analytics = new Analytics();
+        $countryFilter = strtoupper(trim((string) ($_GET['country'] ?? '')));
+        $countryFilter = preg_replace('/[^A-Z]/', '', $countryFilter ?? '');
+        $countryFilter = substr((string) $countryFilter, 0, 8);
+        $excludeMine = (($_GET['exclude_mine'] ?? '1') === '1');
+        $user = Auth::user();
+        $currentUserId = (int) ($user['id'] ?? ($_SESSION['admin_user_id'] ?? 0));
+        $excludeAuthorId = ($excludeMine && $currentUserId > 0) ? $currentUserId : 0;
         
         $data = [
             'stats' => $analytics->getDashboardStats(),
@@ -24,7 +31,12 @@ class AnalyticsController {
             'top_referrers' => $analytics->getTopReferrers(),
             'suspicious_ips' => $analytics->getSuspiciousIPs(),
             'recent_logs' => $analytics->getRecentLogs(50),
-            'user' => Auth::user()
+            'post_visit_countries' => $analytics->getPostVisitCountries(80),
+            'recent_post_visits' => $analytics->getRecentPostVisits(60, $countryFilter, $excludeAuthorId),
+            'not_my_post_views' => $analytics->getViewsForPostsNotMine($currentUserId, $countryFilter, 40),
+            'country_filter' => $countryFilter,
+            'exclude_mine' => $excludeMine,
+            'user' => $user
         ];
 
         // Preparar datos para gráficos

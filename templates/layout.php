@@ -527,6 +527,25 @@ $showAdminNav = frontend_admin_preview_enabled();
             object-fit: cover;
         }
 
+        .product-hero-media {
+            width: 100%;
+            height: clamp(280px, 52vw, 560px);
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: linear-gradient(145deg, #f4f6fb 0%, #e9edf5 100%);
+        }
+
+        .product-hero-image {
+            width: 100% !important;
+            height: 100% !important;
+            max-height: none !important;
+            object-fit: contain !important;
+            object-position: center center;
+            background: transparent;
+            display: block;
+        }
+
         .article-prose {
             color: #1c2940;
             font-size: 16px;
@@ -864,6 +883,7 @@ $showAdminNav = frontend_admin_preview_enabled();
             .tier-grid { grid-template-columns: 1fr; }
             .compare-row { grid-template-columns: 1fr; }
             .compare-label { border-bottom: 1px solid #eef2f6; }
+            .product-hero-media { height: clamp(240px, 72vw, 420px); }
             .mobile-sticky-cta {
                 position: fixed;
                 left: 10px;
@@ -900,9 +920,10 @@ $showAdminNav = frontend_admin_preview_enabled();
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background-size: cover;
+                background-size: contain;
                 background-position: center;
                 background-repeat: no-repeat;
+                background-color: #000;
             }
             .youtube-play-button {
                 position: absolute;
@@ -947,9 +968,10 @@ $showAdminNav = frontend_admin_preview_enabled();
             left: 0;
             width: 100%;
             height: 100%;
-            background-size: cover;
+            background-size: contain;
             background-position: center;
             background-repeat: no-repeat;
+            background-color: #000;
         }
         .youtube-play-button {
             position: absolute;

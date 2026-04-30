@@ -49,6 +49,20 @@ function fetch_url_content(string $url): string
     return is_string($body) ? $body : '';
 }
 
+function is_placeholder_like_image_url(string $url): bool
+{
+    $value = strtolower(trim($url));
+    if ($value === '') {
+        return true;
+    }
+
+    return strpos($value, '/assets/img/product-placeholder.svg') !== false
+        || strpos($value, '\\assets\\img\\product-placeholder.svg') !== false
+        || strpos($value, 'image-uploading') !== false
+        || strpos($value, '/assets/logo/') !== false
+        || strpos($value, '\\assets\\logo\\') !== false;
+}
+
 function extract_amazon_image_url(string $html): string
 {
     if ($html === '') {
@@ -57,15 +71,36 @@ function extract_amazon_image_url(string $html): string
 
     $patterns = [
         '/<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']/i',
+        '/data-a-dynamic-image=["\']([^"\']+)["\']/i',
         '/"landingImageUrl"\s*:\s*"([^"]+)"/i',
+        '/"mainUrl"\s*:\s*"([^"]+)"/i',
         '/"hiRes"\s*:\s*"([^"]+)"/i',
         '/"large"\s*:\s*"([^"]+)"/i',
+        '/(https?:\\\\\/\\\\\/m\.media-amazon\.com\\\\\/images\\\\\/I\\\\\/[^"\\\\]+?\.(?:jpg|jpeg|png|webp))/i',
+        '/(https?:\/\/m\.media-amazon\.com\/images\/I\/[^"\']+?\.(?:jpg|jpeg|png|webp))/i',
     ];
 
     foreach ($patterns as $pattern) {
         if (preg_match($pattern, $html, $m)) {
             $candidate = html_entity_decode((string) $m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
             $candidate = str_replace('\\/', '/', $candidate);
+
+            if ($pattern === '/data-a-dynamic-image=["\']([^"\']+)["\']/i') {
+                $decoded = json_decode($candidate, true);
+                if (is_array($decoded) && $decoded !== []) {
+                    $keys = array_keys($decoded);
+                    usort($keys, static function (string $a, string $b): int {
+                        return strlen($b) <=> strlen($a);
+                    });
+                    foreach ($keys as $key) {
+                        $imgUrl = trim((string) $key);
+                        if (filter_var($imgUrl, FILTER_VALIDATE_URL) && stripos($imgUrl, 'amazon') !== false) {
+                            return $imgUrl;
+                        }
+                    }
+                }
+            }
+
             if (filter_var($candidate, FILTER_VALIDATE_URL) && stripos($candidate, 'amazon') !== false) {
                 return $candidate;
             }
@@ -92,6 +127,9 @@ $updated = 0;
 $skippedNoAsin = 0;
 $scraped = 0;
 $fallbackToPlaceholder = 0;
+$failedFetch = 0;
+$fetchedFromAsinUrl = 0;
+$fetchedFromAffiliateUrl = 0;
 
 $updateStmt = $pdo->prepare(
     'UPDATE products
@@ -115,6 +153,7 @@ foreach ($rows as $row) {
     }
 
     $needsFix = $current === ''
+        || is_placeholder_like_image_url($current)
         || stripos($current, 'URL_') !== false
         || !is_usable_product_image_url($current);
 
@@ -122,13 +161,28 @@ foreach ($rows as $row) {
         continue;
     }
 
-    $sourceUrl = $affiliateUrl !== '' ? $affiliateUrl : amazon_product_url_by_asin($asin);
+    $sourceUrl = amazon_product_url_by_asin($asin);
     $html = fetch_url_content($sourceUrl);
+    if ($html !== '') {
+        $fetchedFromAsinUrl++;
+    }
+
+    if ($html === '' && $affiliateUrl !== '' && stripos($affiliateUrl, '/dp/') !== false) {
+        $sourceUrl = $affiliateUrl;
+        $html = fetch_url_content($sourceUrl);
+        if ($html !== '') {
+            $fetchedFromAffiliateUrl++;
+        }
+    }
+
     $newUrl = extract_amazon_image_url($html);
 
     if ($newUrl !== '') {
         $scraped++;
     } else {
+        if ($html === '') {
+            $failedFetch++;
+        }
         $newUrl = product_image_fallback_url();
         $fallbackToPlaceholder++;
     }
@@ -155,6 +209,9 @@ $lines = [
     'Skipped (invalid/missing ASIN): ' . $skippedNoAsin,
     'Scraped real images: ' . $scraped,
     'Fallback placeholder: ' . $fallbackToPlaceholder,
+    'Failed fetches: ' . $failedFetch,
+    'Fetched from ASIN URLs: ' . $fetchedFromAsinUrl,
+    'Fetched from affiliate URLs: ' . $fetchedFromAffiliateUrl,
 ];
 maintenance_prune_files('logs', 'fix-product-images_*.log', 30);
 $logPath = maintenance_append_log('fix-product-images', $lines);

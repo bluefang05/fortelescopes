@@ -446,6 +446,118 @@ class Analytics {
     }
 
     /**
+     * Country codes available for post/guide visits.
+     */
+    public function getPostVisitCountries(int $limit = 50): array {
+        if (!$this->tableExists('page_view_hits') || !$this->columnExists('page_view_hits', 'country_code')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $stmt = $this->db->prepare(
+            "SELECT country_code, COUNT(*) AS count
+             FROM page_view_hits
+             WHERE page_type IN ('post', 'guide')
+             GROUP BY country_code
+             ORDER BY count DESC
+             LIMIT $limit"
+        );
+        $stmt->execute();
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * Latest raw visits for post and guide pages.
+     */
+    public function getRecentPostVisits(int $limit = 50, string $countryCode = '', int $excludeAuthorUserId = 0): array {
+        if (!$this->tableExists('page_view_hits')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $params = [];
+        $where = ["h.page_type IN ('post', 'guide')"];
+
+        $countryCode = strtoupper(trim($countryCode));
+        if ($countryCode !== '') {
+            $where[] = 'h.country_code = :country_code';
+            $params[':country_code'] = substr($countryCode, 0, 8);
+        }
+
+        if ($excludeAuthorUserId > 0 && $this->columnExists('posts', 'created_by_user_id')) {
+            $where[] = '(p.created_by_user_id IS NULL OR p.created_by_user_id <> :exclude_author_user_id)';
+            $params[':exclude_author_user_id'] = $excludeAuthorUserId;
+        }
+
+        $sql = "SELECT
+                    h.id,
+                    h.viewed_at,
+                    h.country_code,
+                    h.path,
+                    h.page_type,
+                    h.page_slug,
+                    h.source_type,
+                    h.referrer_host,
+                    p.id AS post_id,
+                    p.title AS post_title,
+                    p.post_type,
+                    p.created_by_user_id
+                FROM page_view_hits h
+                LEFT JOIN posts p
+                    ON p.slug = h.page_slug
+                   AND p.post_type = h.page_type
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY h.id DESC
+                LIMIT $limit";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * View counts for posts not authored by a specific admin.
+     */
+    public function getViewsForPostsNotMine(int $authorUserId, string $countryCode = '', int $limit = 30): array {
+        if ($authorUserId <= 0 || !$this->tableExists('page_view_hits') || !$this->columnExists('posts', 'created_by_user_id')) {
+            return [];
+        }
+
+        $limit = max(1, (int) $limit);
+        $params = [':author_user_id' => $authorUserId];
+        $where = [
+            "h.page_type IN ('post', 'guide')",
+            '(p.created_by_user_id IS NULL OR p.created_by_user_id <> :author_user_id)',
+        ];
+
+        $countryCode = strtoupper(trim($countryCode));
+        if ($countryCode !== '') {
+            $where[] = 'h.country_code = :country_code';
+            $params[':country_code'] = substr($countryCode, 0, 8);
+        }
+
+        $sql = "SELECT
+                    p.id AS post_id,
+                    p.title AS post_title,
+                    p.slug AS post_slug,
+                    p.post_type,
+                    p.created_by_user_id,
+                    COUNT(*) AS total_views
+                FROM page_view_hits h
+                LEFT JOIN posts p
+                    ON p.slug = h.page_slug
+                   AND p.post_type = h.page_type
+                WHERE " . implode(' AND ', $where) . "
+                GROUP BY p.id, p.title, p.slug, p.post_type, p.created_by_user_id
+                ORDER BY total_views DESC
+                LIMIT $limit";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Ultimos registros crudos para exportacion.
      */
     public function getRecentLogs($limit = 50): array {

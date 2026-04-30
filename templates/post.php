@@ -38,6 +38,49 @@ if ($postHtmlRaw !== '') {
     
     // Apply YouTube lazy loading transformation
     $postHtml = lazy_load_youtube_embeds($postHtml);
+
+    // Add hover help text to button-like links (especially affiliate CTAs).
+    $postHtml = preg_replace_callback('/<a\b([^>]*)>([\s\S]*?)<\/a>/i', static function (array $m): string {
+        $attrs = (string) ($m[1] ?? '');
+        $inner = (string) ($m[2] ?? '');
+
+        if (preg_match('/\btitle\s*=\s*("|\').*?\1/i', $attrs)) {
+            return (string) $m[0];
+        }
+
+        $href = '';
+        if (preg_match('/\bhref\s*=\s*("|\')(.*?)\1/i', $attrs, $hrefMatch)) {
+            $href = trim((string) ($hrefMatch[2] ?? ''));
+        }
+        $text = trim((string) preg_replace('/\s+/', ' ', strip_tags($inner)));
+        $textLower = strtolower($text);
+        $attrsLower = strtolower($attrs);
+
+        $isButtonLike = (
+            strpos($attrsLower, 'btn') !== false
+            || strpos($attrsLower, 'button') !== false
+            || strpos($attrsLower, 'cta') !== false
+            || (strpos($attrsLower, 'style=') !== false
+                && strpos($attrsLower, 'background') !== false
+                && strpos($attrsLower, 'padding') !== false)
+        );
+
+        if (!$isButtonLike) {
+            return (string) $m[0];
+        }
+
+        $title = '';
+        if (strpos(strtolower($href), 'amazon.') !== false || strpos($textLower, 'amazon') !== false || strpos($textLower, 'check price') !== false || strpos($textLower, 'buy') !== false) {
+            $title = 'Opens Amazon in a new tab (affiliate link).';
+        } elseif (strpos($textLower, 'guide') !== false || strpos($textLower, 'read') !== false || strpos($textLower, 'article') !== false) {
+            $title = 'Opens related content in a new tab.';
+        } else {
+            $title = 'Opens this action link.';
+        }
+
+        $newAttrs = trim($attrs . ' title="' . e($title) . '"');
+        return '<a ' . $newAttrs . '>' . $inner . '</a>';
+    }, $postHtml) ?? $postHtml;
 }
 
 ?>
@@ -67,15 +110,15 @@ if ($postHtmlRaw !== '') {
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Need a first scope?</div>
-            <div class="compare-value"><a href="<?= e(url('/best-beginner-telescopes')) ?>">Read the beginner telescope guide</a> for product shortlists and buying tradeoffs.</div>
+            <div class="compare-value"><a href="<?= e(url('/best-beginner-telescopes')) ?>" title="Opens the beginner buying guide.">Read the beginner telescope guide</a> for product shortlists and buying tradeoffs.</div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Need a budget cap?</div>
-            <div class="compare-value"><a href="<?= e(url('/best-telescopes-under-500')) ?>">Compare telescopes under $500</a> if price is your main constraint.</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescopes-under-500')) ?>" title="Opens the under-$500 comparison guide.">Compare telescopes under $500</a> if price is your main constraint.</div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Need upgrades?</div>
-            <div class="compare-value"><a href="<?= e(url('/best-telescope-accessories')) ?>">See practical accessory picks</a> if you already own a telescope.</div>
+            <div class="compare-value"><a href="<?= e(url('/best-telescope-accessories')) ?>" title="Opens accessory recommendations.">See practical accessory picks</a> if you already own a telescope.</div>
         </div>
     </div>
 </section>
@@ -109,7 +152,7 @@ if ($postHtmlRaw !== '') {
                 <div class="body">
                     <span class="badge">Guide</span>
                     <h3><?= e($otherGuide['title']) ?></h3>
-                    <a class="card-cta" href="<?= e(url('/' . $otherGuide['slug'])) ?>">Open guide</a>
+                    <a class="card-cta" href="<?= e(url('/' . $otherGuide['slug'])) ?>" title="Open this guide.">Open guide</a>
                 </div>
             </article>
         <?php endforeach; ?>
@@ -122,11 +165,11 @@ if ($postHtmlRaw !== '') {
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Blog</div>
-            <div class="compare-value"><a href="<?= e(url('/blog')) ?>">Back to all articles</a></div>
+            <div class="compare-value"><a href="<?= e(url('/blog')) ?>" title="Go back to all blog articles.">Back to all articles</a></div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Guides Hub</div>
-            <div class="compare-value"><a href="<?= e(url('/guides')) ?>">Browse astronomy buying guides</a> for telescope picks and accessories.</div>
+            <div class="compare-value"><a href="<?= e(url('/guides')) ?>" title="Open the full guides hub.">Browse astronomy buying guides</a> for telescope picks and accessories.</div>
         </div>
     </div>
 </section>
