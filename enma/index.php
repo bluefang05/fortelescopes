@@ -77,7 +77,7 @@ $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'control') : 'overview';
 if (!in_array($activeTab, ['control', 'overview', 'products', 'media', 'posts', 'indexation', 'prompts', 'users', 'views', 'analytics', 'maintenance'], true)) {
     $activeTab = 'control';
 }
-$viewDays = $authenticated ? max(7, min(180, (int) ($_GET['days'] ?? 30))) : 30;
+$viewDays = $authenticated ? max(1, min(180, (int) ($_GET['days'] ?? 30))) : 30;
 $viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
 $postAutosaveEnabled = !empty($postAutosaveEnabled);
 
@@ -543,6 +543,7 @@ if ($authenticated && $activeTab === 'maintenance') {
 $productsSqlCopyText = '';
 $postsJsonCopyText = '';
 $sitemapCopyText = '';
+$productsBaselineCopyText = '';
 $seoPromptTemplate = '';
 $blogPostPromptTemplate = '';
 $guidePromptTemplate = '';
@@ -551,10 +552,24 @@ $productSingleReviewPromptTemplate = '';
 $productVersusPromptTemplate = '';
 $bestForYPromptTemplate = '';
 $updateExistingPostPromptTemplate = '';
+$blogPostPromptMissionCopyText = '';
+$guidePromptMissionCopyText = '';
+$productSingleReviewMissionCopyText = '';
+$productVersusMissionCopyText = '';
+$bestForYMissionCopyText = '';
 $existingPostsBaselineCopyText = '';
 $existingPostsWithIndexationCopyText = '';
 $promptPlusSitemapCopyText = '';
 $catalogPromptTemplate = '';
+$catalogPromptMissionCopyText = '';
+$llmOperatorPromptCopyText = '';
+$postGenerationQaPromptCopyText = '';
+$productAcquisitionQaPromptCopyText = '';
+$fullRunPackPostsCopyText = '';
+$fullRunPackGuidesCopyText = '';
+$fullRunPackNewProductsCopyText = '';
+$blogCmsReadyPromptCopyText = '';
+$legacyBlogPromptWithSitemapCopyText = '';
 $productsNewPromptTemplate = '';
 if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance' || $activeTab === 'prompts')) {
     $baseline = [];
@@ -631,13 +646,35 @@ if ($authenticated && ($activeTab === 'maintenance' || $activeTab === 'prompts')
     if ($sitemapCopyText === '') {
         $sitemapCopyText = 'sitemap.xml not found or empty. Run "Generate Sitemap" first.';
     }
+    try {
+        $productBaselineRows = $pdo->query(
+            'SELECT id, asin, title, slug, category_slug
+             FROM products
+             WHERE status = "published"
+             ORDER BY id ASC'
+        )->fetchAll();
+        $productBaselineLines = [];
+        foreach ($productBaselineRows as $productRow) {
+            $productBaselineLines[] =
+                '- id=' . (int) ($productRow['id'] ?? 0)
+                . ' | asin=' . strtoupper(trim((string) ($productRow['asin'] ?? '')))
+                . ' | title=' . trim((string) ($productRow['title'] ?? ''))
+                . ' | slug=' . trim((string) ($productRow['slug'] ?? ''))
+                . ' | category=' . trim((string) ($productRow['category_slug'] ?? ''));
+        }
+        $productsBaselineCopyText = $productBaselineLines !== []
+            ? implode("\n", $productBaselineLines)
+            : '- No published products in DB baseline.';
+    } catch (Throwable $e) {
+        $productsBaselineCopyText = '- Unable to load products baseline.';
+    }
 
     $blogPostPromptTemplate = <<<'PROMPT'
 ROLE & CONTEXT
 
 Act as a Senior SEO Blog Writer + CRO Specialist for astronomy affiliate content.
 
-Current date: April 11, 2026.
+Current date: April 30, 2026 UTC.
 
 Write ONE blog post for Fortelescopes designed to rank and convert affiliate clicks with tag fortelescopes-20.
 
@@ -646,6 +683,7 @@ EXECUTION RULES
 Output ONLY the HTML that belongs inside <body></body>. Do NOT generate <html>, <head>, or <body> wrappers.
 Prefer Amazon search links when ASIN certainty is low.
 Do not invent specs or fake availability.
+Include relevant media when possible: at least one topic-relevant YouTube embed and practical image suggestions/placements.
 
 MANDATORY:
 - Word count: 1400-1900
@@ -654,6 +692,7 @@ MANDATORY:
 - Include FAQ section
 - Include comparison table (3-5 items)
 - Include 3 CTA buttons minimum
+- Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
 
 Start with this exact disclaimer inside a styled <div>:
 "As an Amazon Associate, I earn from qualifying purchases."
@@ -689,6 +728,7 @@ REQUIREMENTS:
 - At least 3 internal links to Fortelescopes.
 - At least 3 CTA buttons to Amazon (search links if uncertain).
 - Include one compact comparison table.
+- Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
 - Tone: practical, clear, no fluff.
 
 OUTPUT:
@@ -724,6 +764,7 @@ CONVERSION RULES:
 - If ASIN certainty is low, use search URL format:
   https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
 - Do not invent specs.
+- Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
 
 OUTPUT:
 1) Product post angle rationale
@@ -763,6 +804,7 @@ CONVERSION RULES:
 - If ASIN certainty is low, use search URL format:
   https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
 - Do not invent specs.
+- Include at least 1 relevant YouTube embed per compared product when possible (max 2 embeds total), and at least 2 relevant image recommendations (with alt text ideas).
 
 OUTPUT:
 1) Versus angle rationale
@@ -864,6 +906,7 @@ MANDATORY FORMAT:
 - At least 3 Amazon CTA buttons with tag=fortelescopes-20
 - At least 2 internal links to Fortelescopes pages
 - Use Amazon search links if ASIN certainty is low.
+- Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
 
 RULES:
 - Do not invent specs.
@@ -903,6 +946,49 @@ PROMPT;
         . $existingPostsBaselineCopyText . "\n\n"
         . "EXISTING POSTS + INDEXATION BASELINE:\n"
         . $existingPostsWithIndexationCopyText . "\n";
+    $missionPreStep =
+        "MANDATORY PRE-STEP (STOP IF FAILS)\n"
+        . "1) Refresh sitemap from existing script/query.\n"
+        . "2) Refresh product list from existing query (ID + ASIN + title + slug).\n"
+        . "3) Use only refreshed data from this run as source of truth.\n"
+        . "4) If refresh is stale/missing, stop and return an error.\n\n"
+        . "DUPLICATE GATE (HARD RULE)\n"
+        . "- Never create content or products that collide with existing URL/slug/title/ASIN.\n"
+        . "- Treat case, punctuation, spaces, singular/plural, and hyphen variants as duplicates.\n"
+        . "- If near-duplicate exists, update/reuse existing entry instead of creating a new one.\n"
+        . "- Output a \"Data Refresh\" section and a \"Duplicate Check\" section before final output.\n\n";
+    $missionContext =
+        "CURRENT SITEMAP.XML\n"
+        . $sitemapCopyText . "\n\n"
+        . "CURRENT PRODUCTS BASELINE\n"
+        . $productsBaselineCopyText . "\n\n"
+        . "CURRENT POSTS BASELINE\n"
+        . $existingPostsBaselineCopyText . "\n\n";
+    $blogPostPromptMissionCopyText = $missionPreStep . $blogPostPromptTemplate . "\n\n" . $missionContext;
+    $guidePromptMissionCopyText = $missionPreStep . $guidePromptTemplate . "\n\n" . $missionContext;
+    $productSingleReviewMissionCopyText = $missionPreStep . $productSingleReviewPromptTemplate . "\n\n" . $missionContext;
+    $productVersusMissionCopyText = $missionPreStep . $productVersusPromptTemplate . "\n\n" . $missionContext;
+    $bestForYMissionCopyText = $missionPreStep . $bestForYPromptTemplate . "\n\n" . $missionContext;
+    $llmOperatorPromptCopyText =
+        "SYSTEM / OPERATOR LAYER FOR CLAUDE OR CHATGPT\n"
+        . "You are generating production content for Fortelescopes.\n"
+        . "Non-negotiable behavior:\n"
+        . "1) Follow the provided task prompt exactly.\n"
+        . "2) If required context is missing or stale, stop and ask for refresh.\n"
+        . "3) Do not invent specs, ASINs, URLs, pricing, or availability.\n"
+        . "4) Prevent duplicates using sitemap + product + posts baseline.\n"
+        . "5) If duplicate/near-duplicate found, propose update of existing URL instead of net-new.\n"
+        . "6) Keep output deterministic and parseable.\n\n"
+        . "Output contract:\n"
+        . "- First: Data Refresh section (what was refreshed + timestamp).\n"
+        . "- Second: Duplicate Check section (candidate, matched existing item, decision).\n"
+        . "- Third: Requested deliverable only.\n"
+        . "- No extra commentary outside requested format.\n\n"
+        . "Near-duplicate policy:\n"
+        . "- Normalize by lowercase + remove punctuation + collapse spaces + singular/plural variants + hyphen/space swaps.\n"
+        . "- Consider two candidates duplicate if normalized titles or slugs are materially equivalent.\n\n"
+        . "Safety fallback:\n"
+        . "- If confidence < 0.85 for factual fields, replace with safe wording or explicit TODO marker.\n";
 
     $catalogSources = [
         'https://www.amazon.com/s?k=best+beginner+telescope',
@@ -999,6 +1085,252 @@ PROMPT;
         . "CURRENT DB BASELINE (use this as update reference):\n"
         . $catalogBaselineText . "\n\n"
         . "Return only the PHP code block, no explanations.\n";
+    $catalogPromptMissionCopyText =
+        "MANDATORY PRE-STEP (PRODUCT ACQUISITION)\n"
+        . "1) Refresh sitemap from existing script/query first.\n"
+        . "2) Refresh full product baseline from DB first (id, asin, title, slug, category).\n"
+        . "3) If either refresh is stale/missing, stop with error.\n\n"
+        . "DUPLICATE GATE\n"
+        . "- Never return rows that match existing ASIN.\n"
+        . "- Also reject near-duplicates by normalized title/slug.\n"
+        . "- Reuse/update existing rows instead of proposing duplicates.\n"
+        . "- Output \"Data Refresh\" and \"Duplicate Check\" sections before the PHP block.\n\n"
+        . $catalogPromptTemplate
+        . "\nCURRENT SITEMAP.XML\n"
+        . $sitemapCopyText
+        . "\n\nCURRENT PRODUCTS BASELINE\n"
+        . $productsBaselineCopyText . "\n";
+    $postGenerationQaPromptCopyText =
+        "POST-GENERATION QA PROMPT (FOR CLAUDE/CHATGPT)\n"
+        . "Task: Validate one generated Fortelescopes content draft before publishing.\n\n"
+        . "Checks:\n"
+        . "1) Structure compliance with requested template.\n"
+        . "2) Duplicate collision against sitemap/products/posts baseline.\n"
+        . "3) Affiliate compliance: include fortelescopes-20 tag; no misleading claims.\n"
+        . "4) Internal links: at least required minimum and valid Fortelescopes paths.\n"
+        . "5) Spec integrity: flag any likely invented technical specs.\n"
+        . "6) CTA quality: specific, intent-matched, non-spammy.\n"
+        . "7) Media quality: YouTube embeds are directly relevant to subject/products and image suggestions are relevant and usable.\n\n"
+        . "Output format (strict):\n"
+        . "A) PASS/FAIL\n"
+        . "B) Blocking issues (numbered)\n"
+        . "C) Non-blocking improvements (numbered)\n"
+        . "D) Corrected final HTML (single code block only)\n\n"
+        . "CONTEXT\n"
+        . "CURRENT SITEMAP.XML\n"
+        . $sitemapCopyText . "\n\n"
+        . "CURRENT PRODUCTS BASELINE\n"
+        . $productsBaselineCopyText . "\n\n"
+        . "CURRENT POSTS BASELINE\n"
+        . $existingPostsBaselineCopyText . "\n";
+    $productAcquisitionQaPromptCopyText =
+        "PRODUCT ACQUISITION QA PROMPT (FOR CLAUDE/CHATGPT)\n"
+        . "Task: Validate a proposed \$products array before DB import.\n\n"
+        . "Checks:\n"
+        . "1) ASIN format: 10 uppercase alphanumeric chars.\n"
+        . "2) Duplicate collisions: ASIN exact + title/slug near-duplicates.\n"
+        . "3) Category allowed only: telescopes|accessories.\n"
+        . "4) URL and image must be full https URLs.\n"
+        . "5) Description quality: factual, concise, no hype.\n"
+        . "6) Ensure rows with missing critical fields are rejected.\n\n"
+        . "Output format (strict):\n"
+        . "A) PASS/FAIL\n"
+        . "B) Rejected rows (asin/title/reason)\n"
+        . "C) Corrected \$products PHP block only\n\n"
+        . "CONTEXT\n"
+        . "CURRENT SITEMAP.XML\n"
+        . $sitemapCopyText . "\n\n"
+        . "CURRENT PRODUCTS BASELINE\n"
+        . $productsBaselineCopyText . "\n";
+    $fullRunPackPostsCopyText =
+        "FULL RUN PACK: POSTS\n\n"
+        . "STEP 1) PASTE THIS OPERATOR LAYER AS SYSTEM/INSTRUCTION:\n"
+        . $llmOperatorPromptCopyText . "\n\n"
+        . "STEP 2) RUN THIS MISSION PROMPT:\n"
+        . $blogPostPromptMissionCopyText . "\n\n"
+        . "STEP 3) AFTER DRAFT, RUN THIS QA PROMPT (PASTE DRAFT INSIDE IT):\n"
+        . $postGenerationQaPromptCopyText . "\n\n"
+        . "STEP 4) FINAL OUTPUT EXPECTED:\n"
+        . "- PASS status\n"
+        . "- Corrected HTML block ready to publish\n";
+    $fullRunPackGuidesCopyText =
+        "FULL RUN PACK: GUIDES\n\n"
+        . "STEP 1) PASTE THIS OPERATOR LAYER AS SYSTEM/INSTRUCTION:\n"
+        . $llmOperatorPromptCopyText . "\n\n"
+        . "STEP 2) RUN THIS MISSION PROMPT:\n"
+        . $guidePromptMissionCopyText . "\n\n"
+        . "STEP 3) AFTER DRAFT, RUN THIS QA PROMPT (PASTE DRAFT INSIDE IT):\n"
+        . $postGenerationQaPromptCopyText . "\n\n"
+        . "STEP 4) FINAL OUTPUT EXPECTED:\n"
+        . "- PASS status\n"
+        . "- Corrected HTML block ready to publish\n";
+    $fullRunPackNewProductsCopyText =
+        "FULL RUN PACK: NEW PRODUCTS ACQUISITION\n\n"
+        . "STEP 1) PASTE THIS OPERATOR LAYER AS SYSTEM/INSTRUCTION:\n"
+        . $llmOperatorPromptCopyText . "\n\n"
+        . "STEP 2) RUN THIS ACQUISITION MISSION PROMPT:\n"
+        . $catalogPromptMissionCopyText . "\n\n"
+        . "STEP 3) AFTER \$products DRAFT, RUN THIS QA PROMPT:\n"
+        . $productAcquisitionQaPromptCopyText . "\n\n"
+        . "STEP 4) FINAL OUTPUT EXPECTED:\n"
+        . "- PASS status\n"
+        . "- Corrected \$products PHP array only\n"
+        . "- Then paste it in \"Claude Catalog Import\" and click Update Catalog DB\n";
+    $blogCmsReadyPromptCopyText =
+        "ROLE & CONTEXT\n\n"
+        . "Act as a Senior SEO Content Strategist and Conversion Rate Optimization (CRO) Expert for the astronomy niche.\n\n"
+        . "Current date: " . gmdate('F j, Y') . ".\n\n"
+        . "Your job: Analyze Fortelescopes and create a ready-to-publish affiliate article for the Fortelescopes CMS designed to rank, build trust, and maximize Amazon affiliate clicks using the tag fortelescopes-20.\n\n"
+        . "EXECUTION RULES\n\n"
+        . "Output ONLY the HTML that belongs inside <body></body>. Do NOT generate <html>, <head>, or <body> wrappers.\n"
+        . "If sitemap.xml is inaccessible, fall back to analyzing public site structure: homepage, guides, categories, and visible product pages.\n"
+        . "Do NOT guess coverage or invent product specs, ASINs, or availability. If unsure, use clear Amazon search links.\n"
+        . "All YouTube embeds must be relevant to the exact product or category discussed.\n"
+        . "Add relevant images when possible: suggest at least 2 useful image assets/placements with concise alt text.\n"
+        . "Final article must feel human, commercially strong, SEO-aware, and trustworthy.\n\n"
+        . "SEO CHECKLIST (MANDATORY)\n\n"
+        . "Title length: 40-65 chars\n"
+        . "Meta title: 45-65 chars\n"
+        . "Meta description: 120-160 chars\n"
+        . "At least 2 H2 headings\n"
+        . "At least 600 words\n"
+        . "At least 2 internal links to relevant Fortelescopes content\n\n"
+        . "STEP 1: SITE ANALYSIS\n\n"
+        . "Analyze:\n"
+        . "https://fortelescopes.com/sitemap.xml\n"
+        . "If unavailable: homepage, guides, categories, and public product pages.\n\n"
+        . "Deliver:\n"
+        . "Main existing content clusters and categories.\n"
+        . "One high-intent commercial content gap not already well covered.\n"
+        . "Choose ONE topic most likely to convert affiliate clicks.\n\n"
+        . "Briefly explain:\n"
+        . "The chosen topic\n"
+        . "Why it fills a content gap\n"
+        . "Why it has buyer intent\n"
+        . "Why it fits Fortelescopes\n\n"
+        . "STEP 2: WRITE THE ARTICLE (RAW HTML ONLY)\n\n"
+        . "Write a complete, high-converting article of at least 1,500 words.\n"
+        . "Output: RAW HTML ONLY for the article body content.\n\n"
+        . "Critical Requirements:\n\n"
+        . "Affiliate Disclaimer\n"
+        . "Start with a styled <div> that says exactly:\n"
+        . "\"As an Amazon Associate, I earn from qualifying purchases.\"\n\n"
+        . "Structure\n"
+        . "Use <h2> and <h3> headings\n"
+        . "Short <p> paragraphs for mobile readability\n"
+        . "Use <ul>, <ol>, <table>, and <strong> where helpful\n"
+        . "Simple explanations for technical terms\n"
+        . "Conversion-focused but trustworthy tone\n\n"
+        . "Internal Links (Minimum 2)\n"
+        . "Include at least 2 contextual internal links to relevant Fortelescopes content using descriptive anchor text.\n\n"
+        . "Product Coverage\n"
+        . "For every product recommendation:\n"
+        . "Explain what it is, who it's for, why it stands out, and realistic limitations\n"
+        . "Include a short \"Why We Love It\" subsection\n"
+        . "Include a Pros and Cons list using <ul>\n"
+        . "Include a relevant embedded YouTube video for that product\n"
+        . "Include a yellow Amazon CTA button immediately after the pros/cons\n\n"
+        . "Amazon Yellow CTA Buttons (SEARCH LINKS ONLY)\n"
+        . "Do NOT use /dp/ASIN links unless 100% certain of a current, in-stock ASIN.\n"
+        . "DEFAULT TO AMAZON SEARCH LINKS.\n\n"
+        . "Amazon SEARCH link format (MANDATORY):\n"
+        . "https://www.amazon.com/s?k=[url-encoded-search-terms]&tag=fortelescopes-20\n\n"
+        . "Comparison Table\n"
+        . "Include a responsive HTML <table> comparing 3-5 top picks with columns: Model, Aperture, Best For, Check Price.\n\n"
+        . "Include a helpful FAQ section and a strong conclusion with one final large yellow button.\n\n"
+        . "STEP 3: FINAL OUTPUT FORMAT\n\n"
+        . "Output in this exact order:\n"
+        . "1) Topic Rationale (plain text)\n"
+        . "2) A single code block with complete raw HTML article body only\n"
+        . "3) Metadata: Title, Excerpt, Meta Title, Meta Description\n"
+        . "4) Final line exactly:\n"
+        . "ask me to redo this same html with proper relevant youtube videos and to make sure amazon links ensure some sort of comission\n\n"
+        . "CURRENT SITEMAP.XML\n\n"
+        . $sitemapCopyText;
+    $legacyBlogPromptWithSitemapCopyText =
+        "ROLE & CONTEXT\n\n"
+        . "Act as a Senior SEO Content Strategist and Conversion Rate Optimization (CRO) Expert for the astronomy niche.\n\n"
+        . "Current date: April 11, 2026.\n\n"
+        . "Your job: Analyze Fortelescopes and create a ready-to-publish affiliate article for the Fortelescopes CMS designed to rank, build trust, and maximize Amazon affiliate clicks using the tag fortelescopes-20.\n\n"
+        . "EXECUTION RULES\n\n"
+        . "Output ONLY the HTML that belongs inside <body></body>. Do NOT generate <html>, <head>, or <body> wrappers.\n"
+        . "If sitemap.xml is inaccessible, fall back to analyzing public site structure: homepage, guides, categories, and visible product pages.\n"
+        . "Do NOT guess coverage or invent product specs, ASINs, or availability. If unsure, use clear Amazon search links.\n"
+        . "All YouTube embeds must be relevant to the exact product or category discussed.\n"
+        . "Final article must feel human, commercially strong, SEO-aware, and trustworthy.\n\n"
+        . "SEO CHECKLIST (MANDATORY)\n\n"
+        . "Title length: 40-65 chars\n"
+        . "Meta title: 45-65 chars\n"
+        . "Meta description: 120-160 chars\n"
+        . "At least 2 H2 headings\n"
+        . "At least 600 words\n"
+        . "At least 2 internal links to relevant Fortelescopes content\n\n"
+        . "STEP 1: SITE ANALYSIS\n\n"
+        . "Analyze:\n"
+        . "https://fortelescopes.com/sitemap.xml\n"
+        . "If unavailable: homepage, guides, categories, and public product pages.\n\n"
+        . "Deliver:\n"
+        . "Main existing content clusters and categories.\n"
+        . "One high-intent commercial content gap not already well covered.\n"
+        . "Choose ONE topic most likely to convert affiliate clicks.\n\n"
+        . "Briefly explain:\n"
+        . "The chosen topic\n"
+        . "Why it fills a content gap\n"
+        . "Why it has buyer intent\n"
+        . "Why it fits Fortelescopes\n\n"
+        . "STEP 2: WRITE THE ARTICLE (RAW HTML ONLY)\n\n"
+        . "Write a complete, high-converting article of at least 1,500 words.\n"
+        . "Output: RAW HTML ONLY for the article body content.\n\n"
+        . "Critical Requirements:\n\n"
+        . "Affiliate Disclaimer\n"
+        . "Start with a styled <div> that says exactly:\n"
+        . "\"As an Amazon Associate, I earn from qualifying purchases.\"\n\n"
+        . "Structure\n"
+        . "Use <h2> and <h3> headings\n"
+        . "Short <p> paragraphs for mobile readability\n"
+        . "Use <ul>, <ol>, <table>, and <strong> where helpful\n"
+        . "Simple explanations for technical terms\n"
+        . "Conversion-focused but trustworthy tone\n\n"
+        . "Internal Links (Minimum 2)\n"
+        . "Include at least 2 contextual internal links to relevant Fortelescopes content using descriptive anchor text.\n\n"
+        . "Product Coverage\n"
+        . "For every product recommendation:\n"
+        . "Explain what it is, who it's for, why it stands out, and realistic limitations\n"
+        . "Include a short \"Why We Love It\" subsection\n"
+        . "Include a Pros and Cons list using <ul>\n"
+        . "Include a relevant embedded YouTube video for that product\n"
+        . "Include a yellow Amazon CTA button immediately after the pros/cons\n\n"
+        . "YouTube Embeds\n"
+        . "Include 1 relevant YouTube embed per product (2 max for high-priority sections)\n"
+        . "Use proper responsive embed HTML\n"
+        . "Only embed videos that exist and are directly relevant to the exact telescope/product type discussed\n"
+        . "Verify video relevance before embedding; if uncertain, omit rather than guess\n\n"
+        . "Amazon Yellow CTA Buttons (SEARCH LINKS ONLY)\n"
+        . "Use button-style affiliate links with inline CSS.\n"
+        . "Do NOT use /dp/ASIN links unless 100% certain of a current, in-stock ASIN.\n"
+        . "DEFAULT TO AMAZON SEARCH LINKS.\n\n"
+        . "Amazon SEARCH link format (MANDATORY):\n"
+        . "https://www.amazon.com/s?k=[url-encoded-search-terms]&tag=fortelescopes-20\n\n"
+        . "Comparison Table\n"
+        . "Include a responsive HTML <table> comparing 3-5 top picks.\n\n"
+        . "STEP 3: FINAL OUTPUT FORMAT\n\n"
+        . "Output in this exact order:\n\n"
+        . "Topic Rationale\n"
+        . "Plain text only. Short but clear.\n\n"
+        . "A single code block\n"
+        . "Inside it, provide the complete raw HTML article body only (clean, minified, no wrapper tags).\n\n"
+        . "Metadata\n"
+        . "Then provide:\n"
+        . "Title (40-65 chars)\n"
+        . "Excerpt (Short summary)\n"
+        . "Meta Title (45-65 chars)\n"
+        . "Meta Description (120-160 chars)\n\n"
+        . "Final line\n"
+        . "After everything is done, write exactly:\n"
+        . "ask me to redo this same html with proper relevant youtube videos and to make sure amazon links ensure some sort of comission\n\n"
+        . "CURRENT SITEMAP.XML\n"
+        . "------------------------------------------------\n"
+        . $sitemapCopyText;
 
     try {
         if (function_exists('enma_maintenance_build_products_export_sql')) {
@@ -1167,6 +1499,36 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             return $content.summernote('code') || '';
           }
           return $content.val() || '';
+        }
+        function buildHorizontalImageBrief($form) {
+          var title = ($form.find('input[name="title"]').val() || '').trim();
+          var postType = ($form.find('select[name="post_type"]').val() || 'post').trim();
+          var excerpt = ($form.find('textarea[name="excerpt"]').val() || '').trim();
+          var metaTitle = ($form.find('input[name="meta_title"]').val() || '').trim();
+          var metaDescription = ($form.find('textarea[name="meta_description"]').val() || '').trim();
+          var html = getContentHtml($form);
+          var plainBody = stripPreviewHtml(html).replace(/\s+/g, ' ').trim();
+          var bodySnippet = plainBody.substring(0, 800);
+          var brand = 'Fortelescopes';
+          var formatHint = 'Horizontal hero image (16:9, web, clean editorial style).';
+          var topicLine = title !== '' ? title : 'Untitled post draft';
+          var summary = excerpt || metaDescription || bodySnippet || 'No summary provided yet.';
+          var seoLine = metaTitle || title || '';
+          return [
+            'Create a horizontal hero image based on this post.',
+            'Brand: ' + brand,
+            'Post type: ' + postType,
+            'Format: ' + formatHint,
+            'Topic: ' + topicLine,
+            'Summary: ' + summary,
+            seoLine !== '' ? 'SEO angle: ' + seoLine : '',
+            bodySnippet !== '' ? 'Body context: ' + bodySnippet : '',
+            'Constraints:',
+            '- No text overlays unless essential and minimal.',
+            '- Realistic astronomy context; avoid fake telescope hardware details.',
+            '- Professional, high-contrast composition that works as blog hero.',
+            '- Safe for commercial affiliate content (no logos/trademarks).'
+          ].filter(function (line) { return line !== ''; }).join('\n');
         }
 
         function updatePostPreview($form) {
@@ -1417,15 +1779,15 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           }
 
           if (text.trim() === '') {
-            updateCopyStatus(statusId, 'Opened Search Console. Nothing to copy.', true);
+            updateCopyStatus(statusId, 'Opened target. Nothing copied.', true);
             return;
           }
 
           function notifyCopied(ok) {
             if (ok) {
-              updateCopyStatus(statusId, 'Copied. Paste URL in Search Console inspect box.', false);
+              updateCopyStatus(statusId, 'Opened + copied URL', false);
             } else {
-              updateCopyStatus(statusId, 'Opened Search Console. Copy failed.', true);
+              updateCopyStatus(statusId, 'Opened target. Copy failed.', true);
             }
           }
 
@@ -1473,6 +1835,31 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 
           var copied = fallbackCopyText(text);
           updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
+        });
+        $('[data-copy-post-image-brief]').on('click', function () {
+          var $btn = $(this);
+          var statusId = ($btn.attr('data-copy-status') || '').trim();
+          var $form = $btn.closest('form');
+          if ($form.length === 0) {
+            updateCopyStatus(statusId, 'Form not found', true);
+            return;
+          }
+          var text = buildHorizontalImageBrief($form);
+          if (text.trim() === '') {
+            updateCopyStatus(statusId, 'Nothing to copy', true);
+            return;
+          }
+          if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(function () {
+              updateCopyStatus(statusId, 'Copied image brief', false);
+            }).catch(function () {
+              var copied = fallbackCopyText(text);
+              updateCopyStatus(statusId, copied ? 'Copied image brief' : 'Copy failed', !copied);
+            });
+            return;
+          }
+          var copied = fallbackCopyText(text);
+          updateCopyStatus(statusId, copied ? 'Copied image brief' : 'Copy failed', !copied);
         });
 
         $('[data-paste-import-target]').on('click', function () {
@@ -2659,6 +3046,15 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
                     </div>
                 </div>
+                <div style="display:flex;gap:8px;align-items:center;margin:8px 0 12px;">
+                    <button
+                        class="btn"
+                        type="button"
+                        data-copy-post-image-brief="1"
+                        data-copy-status="edit_post_image_brief_status"
+                    >Create Horizontal Image Brief From This Post</button>
+                    <span id="edit_post_image_brief_status" class="copy-status"></span>
+                </div>
 	                <?php if (!empty($editingPost['featured_image'])): ?>
 	                    <div style="margin-bottom:12px;">
 	                        <span class="muted">Current Image:</span><br>
@@ -2774,6 +3170,15 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <input type="file" name="featured_image_file" accept="image/*" style="padding: 6px;">
 	                    </div>
 	                </div>
+                <div style="display:flex;gap:8px;align-items:center;margin:8px 0 12px;">
+                    <button
+                        class="btn"
+                        type="button"
+                        data-copy-post-image-brief="1"
+                        data-copy-status="add_post_image_brief_status"
+                    >Create Horizontal Image Brief From This Post</button>
+                    <span id="add_post_image_brief_status" class="copy-status"></span>
+                </div>
 	                <div class="post-preview-grid" style="margin:8px 0 14px;">
 	                    <div class="post-preview-card">
 	                        <h3 style="margin:0 0 10px;">Google Preview</h3>
@@ -3219,7 +3624,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input type="hidden" name="tab" value="views">
                 <div style="max-width:160px;">
                     <label>Days</label>
-                    <input type="number" name="days" min="7" max="180" value="<?= (int) $viewDays ?>">
+                    <input type="number" name="days" min="1" max="180" value="<?= (int) $viewDays ?>">
                 </div>
                 <button class="btn" type="submit">Refresh</button>
             </form>

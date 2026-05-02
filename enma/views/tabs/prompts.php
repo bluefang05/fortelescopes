@@ -6,28 +6,92 @@
         <span class="help-icon" title="Que: resume para que sirve cada prompt. Por que: te ayuda a elegir rapido el prompt correcto sin repetir trabajo." aria-label="Ayuda: que y por que">?</span>
         para recordar que hace cada bloque y por que conviene usarlo.
     </p>
+    <div style="margin:0 0 12px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fbff;">
+        <strong style="font-size:13px;">Claude / ChatGPT Flow:</strong>
+        <ol style="margin:8px 0 0 18px;padding:0;">
+            <li>Copy Operator Layer una vez por chat.</li>
+            <li>Copy Mission Prompt segun tipo de contenido.</li>
+            <li>Generate draft.</li>
+            <li>Run Post-Generation QA prompt before publishing/importing.</li>
+        </ol>
+    </div>
+    <div style="margin:0 0 12px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
+        <strong style="font-size:13px;">Frequency Order (most used first):</strong>
+        <ol style="margin:8px 0 0 18px;padding:0;">
+            <li>Full Run Pack: Posts</li>
+            <li>Full Run Pack: Guides</li>
+            <li>Full Run Pack: New Products</li>
+            <li>Post-Generation QA Prompt</li>
+            <li>Product Acquisition QA Prompt</li>
+            <li>Operator Layer Prompt</li>
+        </ol>
+    </div>
+    <div class="copy-toolbar" style="margin-bottom:12px;">
+        <h3 style="margin:0;">Legacy Prompt (First)</h3>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="legacy_blog_prompt_with_sitemap_copy_source" data-copy-status="legacy_blog_prompt_with_sitemap_copy_status">Copy Old Prompt + Current Sitemap</button>
+            <span id="legacy_blog_prompt_with_sitemap_copy_status" class="copy-status"></span>
+        </div>
+    </div>
+    <div class="copy-toolbar" style="margin-bottom:12px;">
+        <h3 style="margin:0;">One-Click Ready Prompt</h3>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="blog_cms_ready_prompt_copy_source" data-copy-status="blog_cms_ready_prompt_copy_status">Copy Ready-to-Paste CMS Prompt + Sitemap</button>
+            <span id="blog_cms_ready_prompt_copy_status" class="copy-status"></span>
+        </div>
+    </div>
+    <div class="copy-toolbar" style="margin-bottom:12px;">
+        <h3 style="margin:0;">Full Run Packs (One Copy, Full Workflow)</h3>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="full_run_pack_posts_copy_source" data-copy-status="full_run_pack_posts_copy_status">Copy Full Run Pack: Posts</button>
+            <span id="full_run_pack_posts_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="full_run_pack_guides_copy_source" data-copy-status="full_run_pack_guides_copy_status">Copy Full Run Pack: Guides</button>
+            <span id="full_run_pack_guides_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="full_run_pack_new_products_copy_source" data-copy-status="full_run_pack_new_products_copy_status">Copy Full Run Pack: New Products</button>
+            <span id="full_run_pack_new_products_copy_status" class="copy-status"></span>
+        </div>
+    </div>
+    <div class="copy-toolbar" style="margin-bottom:12px;">
+        <h3 style="margin:0;">AI Guardrails (Claude / ChatGPT)</h3>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="llm_operator_prompt_copy_source" data-copy-status="llm_operator_prompt_copy_status">Copy Operator Layer Prompt</button>
+            <span id="llm_operator_prompt_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="post_generation_qa_prompt_copy_source" data-copy-status="post_generation_qa_prompt_copy_status">Copy Post-Generation QA Prompt</button>
+            <span id="post_generation_qa_prompt_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="product_acquisition_qa_prompt_copy_source" data-copy-status="product_acquisition_qa_prompt_copy_status">Copy Product Acquisition QA Prompt</button>
+            <span id="product_acquisition_qa_prompt_copy_status" class="copy-status"></span>
+        </div>
+    </div>
     <div class="copy-toolbar" style="margin-bottom:12px;">
         <h3 style="margin:0;">Blog / Guide / Product Prompts
             <span class="help-icon" title="Que: prompts para generar contenido nuevo con enfoque comercial. Por que: estandariza estructura y evita improvisar." aria-label="Ayuda de prompts de contenido">?</span>
         </h3>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="blog_post_prompt_copy_source" data-copy-status="blog_post_prompt_copy_status">Copy Blog Post Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="blog_post_prompt_copy_source" data-copy-status="blog_post_prompt_copy_status">Copy Blog Mission Prompt</button>
             <span id="blog_post_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="guide_prompt_copy_source" data-copy-status="guide_prompt_copy_status">Copy Guide Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="guide_prompt_copy_source" data-copy-status="guide_prompt_copy_status">Copy Guide Mission Prompt</button>
             <span id="guide_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="product_single_review_prompt_copy_source" data-copy-status="product_single_review_prompt_copy_status">Copy Product Single Review Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="product_single_review_prompt_copy_source" data-copy-status="product_single_review_prompt_copy_status">Copy Product Review Mission Prompt</button>
             <span id="product_single_review_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="product_versus_prompt_copy_source" data-copy-status="product_versus_prompt_copy_status">Copy Product Versus Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="product_versus_prompt_copy_source" data-copy-status="product_versus_prompt_copy_status">Copy Product Versus Mission Prompt</button>
             <span id="product_versus_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="best_for_y_prompt_copy_source" data-copy-status="best_for_y_prompt_copy_status">Copy Best X for Y Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="best_for_y_prompt_copy_source" data-copy-status="best_for_y_prompt_copy_status">Copy Best X for Y Mission Prompt</button>
             <span id="best_for_y_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
@@ -47,20 +111,28 @@
             <span id="blog_post_sitemap_prompt_copy_status" class="copy-status"></span>
         </div>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="catalog_prompt_copy_source" data-copy-status="catalog_prompt_copy_status">Copy Catalog Master Prompt</button>
+            <button class="btn btn-copy" type="button" data-copy-target="catalog_prompt_copy_source" data-copy-status="catalog_prompt_copy_status">Copy Catalog Acquisition Mission Prompt</button>
             <span id="catalog_prompt_copy_status" class="copy-status"></span>
         </div>
     </div>
-    <textarea id="blog_post_prompt_copy_source" class="copy-source" readonly><?= e($blogPostPromptTemplate) ?></textarea>
-    <textarea id="guide_prompt_copy_source" class="copy-source" readonly><?= e($guidePromptTemplate) ?></textarea>
-    <textarea id="product_single_review_prompt_copy_source" class="copy-source" readonly><?= e($productSingleReviewPromptTemplate) ?></textarea>
-    <textarea id="product_versus_prompt_copy_source" class="copy-source" readonly><?= e($productVersusPromptTemplate) ?></textarea>
-    <textarea id="best_for_y_prompt_copy_source" class="copy-source" readonly><?= e($bestForYPromptTemplate) ?></textarea>
+    <textarea id="legacy_blog_prompt_with_sitemap_copy_source" class="copy-source" readonly><?= e($legacyBlogPromptWithSitemapCopyText) ?></textarea>
+    <textarea id="blog_cms_ready_prompt_copy_source" class="copy-source" readonly><?= e($blogCmsReadyPromptCopyText) ?></textarea>
+    <textarea id="full_run_pack_posts_copy_source" class="copy-source" readonly><?= e($fullRunPackPostsCopyText) ?></textarea>
+    <textarea id="full_run_pack_guides_copy_source" class="copy-source" readonly><?= e($fullRunPackGuidesCopyText) ?></textarea>
+    <textarea id="full_run_pack_new_products_copy_source" class="copy-source" readonly><?= e($fullRunPackNewProductsCopyText) ?></textarea>
+    <textarea id="llm_operator_prompt_copy_source" class="copy-source" readonly><?= e($llmOperatorPromptCopyText) ?></textarea>
+    <textarea id="post_generation_qa_prompt_copy_source" class="copy-source" readonly><?= e($postGenerationQaPromptCopyText) ?></textarea>
+    <textarea id="product_acquisition_qa_prompt_copy_source" class="copy-source" readonly><?= e($productAcquisitionQaPromptCopyText) ?></textarea>
+    <textarea id="blog_post_prompt_copy_source" class="copy-source" readonly><?= e($blogPostPromptMissionCopyText) ?></textarea>
+    <textarea id="guide_prompt_copy_source" class="copy-source" readonly><?= e($guidePromptMissionCopyText) ?></textarea>
+    <textarea id="product_single_review_prompt_copy_source" class="copy-source" readonly><?= e($productSingleReviewMissionCopyText) ?></textarea>
+    <textarea id="product_versus_prompt_copy_source" class="copy-source" readonly><?= e($productVersusMissionCopyText) ?></textarea>
+    <textarea id="best_for_y_prompt_copy_source" class="copy-source" readonly><?= e($bestForYMissionCopyText) ?></textarea>
     <textarea id="update_existing_posts_prompt_copy_source" class="copy-source" readonly><?= e($updateExistingPostPromptTemplate) ?></textarea>
     <textarea id="existing_posts_baseline_copy_source" class="copy-source" readonly><?= e($existingPostsBaselineCopyText) ?></textarea>
     <textarea id="existing_posts_with_indexation_copy_source" class="copy-source" readonly><?= e($existingPostsWithIndexationCopyText) ?></textarea>
     <textarea id="blog_post_sitemap_prompt_copy_source" class="copy-source" readonly><?= e($promptPlusSitemapCopyText) ?></textarea>
-    <textarea id="catalog_prompt_copy_source" class="copy-source" readonly><?= e($catalogPromptTemplate) ?></textarea>
+    <textarea id="catalog_prompt_copy_source" class="copy-source" readonly><?= e($catalogPromptMissionCopyText) ?></textarea>
 </section>
 
 <section class="box">

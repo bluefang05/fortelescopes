@@ -86,9 +86,11 @@
                 $state = trim((string) ($row['index_state'] ?? 'pending'));
                 $url = trim((string) ($row['canonical_url'] ?? ''));
                 $searchTarget = $url !== '' ? $url : absolute_url(enma_post_public_path(['slug' => (string) ($row['slug'] ?? ''), 'post_type' => (string) ($row['post_type'] ?? 'post')]));
-                $googleQuery = 'https://www.google.com/search?q=' . rawurlencode('site:' . SITE_DOMAIN . ' "' . $searchTarget . '"');
                 $copyStatusId = 'index_copy_status_' . (int) ($row['post_id'] ?? 0);
                 $gscResourceUrl = 'https://search.google.com/search-console?resource_id=' . rawurlencode('https://' . SITE_DOMAIN . '/');
+                $gscInspectUrl = 'https://search.google.com/search-console/inspect?resource_id='
+                    . rawurlencode('https://' . SITE_DOMAIN . '/')
+                    . '&id=' . rawurlencode($searchTarget);
                 ?>
                 <tr>
                     <td>
@@ -125,7 +127,7 @@
                                     style="padding:6px 10px;font-size:12px;"
                                     onclick="this.form.querySelector('input[name=&quot;action&quot;]').value='indexation_update';"
                                 >Save</button>
-                                <a class="ops-link" href="<?= e($googleQuery) ?>" target="_blank" rel="noopener noreferrer">Google check</a>
+                                <a class="ops-link" href="<?= e($searchTarget) ?>" target="_blank" rel="noopener noreferrer">Open URL</a>
                                 <button
                                     class="btn"
                                     type="button"
@@ -137,10 +139,10 @@
                                     class="btn"
                                     type="button"
                                     style="padding:6px 10px;font-size:12px;"
-                                    data-copy-open-url="<?= e($gscResourceUrl) ?>"
+                                    data-copy-open-url="<?= e($gscInspectUrl) ?>"
                                     data-copy-text="<?= e($searchTarget) ?>"
                                     data-copy-status="<?= e($copyStatusId) ?>"
-                                >Copy + GSC</button>
+                                >Inspect in GSC</button>
                                 <button
                                     class="btn"
                                     type="submit"
