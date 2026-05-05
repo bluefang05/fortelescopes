@@ -1421,6 +1421,55 @@ function product_image_fallback_url(): string
     return url('/assets/img/product-placeholder.svg');
 }
 
+function site_settings_table_exists(PDO $pdo): bool
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT 1
+             FROM information_schema.tables
+             WHERE table_schema = :schema
+               AND table_name = "enma_site_settings"
+             LIMIT 1'
+        );
+        $stmt->execute([':schema' => DB_NAME]);
+        $cache = (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        $cache = false;
+    }
+
+    return $cache;
+}
+
+function site_setting_get(PDO $pdo, string $settingKey, string $default = ''): string
+{
+    $settingKey = trim($settingKey);
+    if ($settingKey === '' || !site_settings_table_exists($pdo)) {
+        return $default;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT setting_value
+             FROM enma_site_settings
+             WHERE setting_key = :setting_key
+             LIMIT 1'
+        );
+        $stmt->execute([':setting_key' => $settingKey]);
+        $value = $stmt->fetchColumn();
+        if ($value === false || $value === null) {
+            return $default;
+        }
+        return trim((string) $value);
+    } catch (Throwable $e) {
+        return $default;
+    }
+}
+
 function is_amazon_host(string $host): bool
 {
     $host = strtolower(trim($host));

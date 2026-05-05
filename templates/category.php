@@ -68,7 +68,7 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
 <h2 class="section-title"><?= e($data['categoryName'] ?? 'Category') ?></h2>
 <p class="muted">Products currently published in this category. Page <?= (int) $currentPage ?> of <?= (int) $totalPages ?>.</p>
 
-<div class="grid">
+<div class="grid" id="<?= e($categorySlug === 'telescopes' ? 'telescopes-grid' : 'category-grid') ?>">
     <?php foreach ($products as $idx => $item): ?>
         <article class="card">
             <a href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener" aria-label="<?= e($item['title']) ?> on Amazon">

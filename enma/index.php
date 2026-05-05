@@ -459,6 +459,8 @@ $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab ==
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
 $allMedia = [];
+$mediaImageOptions = [];
+$mediaFeaturedProductOptions = [];
 $mediaPage = $authenticated ? enma_page_value('media_page') : 1;
 $mediaPerPage = 24;
 $mediaTotal = 0;
@@ -481,12 +483,115 @@ if ($authenticated && $activeTab === 'media') {
             $stmt->bindValue(':offset', ($mediaPage - 1) * $mediaPerPage, PDO::PARAM_INT);
             $stmt->execute();
             $allMedia = $stmt->fetchAll();
+
+            $imageOptionsStmt = $pdo->prepare(
+                'SELECT file_url, title, original_name
+                 FROM media_library
+                 WHERE media_type = "image" AND status = "active"
+                 ORDER BY id DESC
+                 LIMIT 400'
+            );
+            $imageOptionsStmt->execute();
+            $mediaImageOptions = $imageOptionsStmt->fetchAll();
+
+            $productOptionsStmt = $pdo->prepare(
+                'SELECT id, title
+                 FROM products
+                 WHERE status = "published"
+                 ORDER BY id DESC
+                 LIMIT 500'
+            );
+            $productOptionsStmt->execute();
+            $mediaFeaturedProductOptions = $productOptionsStmt->fetchAll();
         }
     } catch (Throwable $e) {
         $mediaTableReady = false;
         $errors[] = 'Media library load failed: ' . $e->getMessage();
     }
 }
+$homeHeroSettings = [
+    'image' => '',
+    'image_2x' => '',
+    'alt' => '',
+    'title' => '',
+    'subtitle' => '',
+    'cta_label' => '',
+    'cta_url' => '',
+    'overlay' => '55',
+    'tile_1_image' => '',
+    'tile_1_title' => '',
+    'tile_1_cta_label' => '',
+    'tile_1_cta_url' => '',
+    'tile_2_image' => '',
+    'tile_2_title' => '',
+    'tile_2_cta_label' => '',
+    'tile_2_cta_url' => '',
+    'featured_ids' => '',
+];
+$homeHeroDraftSettings = $homeHeroSettings;
+if ($authenticated && $activeTab === 'media') {
+    $homeHeroSettings['image'] = site_setting_get($pdo, 'home_hero_image', '');
+    $homeHeroSettings['image_2x'] = site_setting_get($pdo, 'home_hero_image_2x', '');
+    $homeHeroSettings['alt'] = site_setting_get($pdo, 'home_hero_alt', '');
+    $homeHeroSettings['title'] = site_setting_get($pdo, 'home_hero_title', '');
+    $homeHeroSettings['subtitle'] = site_setting_get($pdo, 'home_hero_subtitle', '');
+    $homeHeroSettings['cta_label'] = site_setting_get($pdo, 'home_hero_cta_label', '');
+    $homeHeroSettings['cta_url'] = site_setting_get($pdo, 'home_hero_cta_url', '');
+    $homeHeroSettings['overlay'] = site_setting_get($pdo, 'home_hero_overlay', '55');
+    $homeHeroSettings['tile_1_image'] = site_setting_get($pdo, 'home_promo_tile_1_image', '');
+    $homeHeroSettings['tile_1_title'] = site_setting_get($pdo, 'home_promo_tile_1_title', '');
+    $homeHeroSettings['tile_1_cta_label'] = site_setting_get($pdo, 'home_promo_tile_1_cta_label', '');
+    $homeHeroSettings['tile_1_cta_url'] = site_setting_get($pdo, 'home_promo_tile_1_cta_url', '');
+    $homeHeroSettings['tile_2_image'] = site_setting_get($pdo, 'home_promo_tile_2_image', '');
+    $homeHeroSettings['tile_2_title'] = site_setting_get($pdo, 'home_promo_tile_2_title', '');
+    $homeHeroSettings['tile_2_cta_label'] = site_setting_get($pdo, 'home_promo_tile_2_cta_label', '');
+    $homeHeroSettings['tile_2_cta_url'] = site_setting_get($pdo, 'home_promo_tile_2_cta_url', '');
+    $homeHeroSettings['featured_ids'] = site_setting_get($pdo, 'home_featured_product_ids', '');
+    $homeHeroDraftSettings['image'] = site_setting_get($pdo, 'draft_home_hero_image', $homeHeroSettings['image']);
+    $homeHeroDraftSettings['image_2x'] = site_setting_get($pdo, 'draft_home_hero_image_2x', $homeHeroSettings['image_2x']);
+    $homeHeroDraftSettings['alt'] = site_setting_get($pdo, 'draft_home_hero_alt', $homeHeroSettings['alt']);
+    $homeHeroDraftSettings['title'] = site_setting_get($pdo, 'draft_home_hero_title', $homeHeroSettings['title']);
+    $homeHeroDraftSettings['subtitle'] = site_setting_get($pdo, 'draft_home_hero_subtitle', $homeHeroSettings['subtitle']);
+    $homeHeroDraftSettings['cta_label'] = site_setting_get($pdo, 'draft_home_hero_cta_label', $homeHeroSettings['cta_label']);
+    $homeHeroDraftSettings['cta_url'] = site_setting_get($pdo, 'draft_home_hero_cta_url', $homeHeroSettings['cta_url']);
+    $homeHeroDraftSettings['overlay'] = site_setting_get($pdo, 'draft_home_hero_overlay', $homeHeroSettings['overlay']);
+    $homeHeroDraftSettings['tile_1_image'] = site_setting_get($pdo, 'draft_home_promo_tile_1_image', $homeHeroSettings['tile_1_image']);
+    $homeHeroDraftSettings['tile_1_title'] = site_setting_get($pdo, 'draft_home_promo_tile_1_title', $homeHeroSettings['tile_1_title']);
+    $homeHeroDraftSettings['tile_1_cta_label'] = site_setting_get($pdo, 'draft_home_promo_tile_1_cta_label', $homeHeroSettings['tile_1_cta_label']);
+    $homeHeroDraftSettings['tile_1_cta_url'] = site_setting_get($pdo, 'draft_home_promo_tile_1_cta_url', $homeHeroSettings['tile_1_cta_url']);
+    $homeHeroDraftSettings['tile_2_image'] = site_setting_get($pdo, 'draft_home_promo_tile_2_image', $homeHeroSettings['tile_2_image']);
+    $homeHeroDraftSettings['tile_2_title'] = site_setting_get($pdo, 'draft_home_promo_tile_2_title', $homeHeroSettings['tile_2_title']);
+    $homeHeroDraftSettings['tile_2_cta_label'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_label', $homeHeroSettings['tile_2_cta_label']);
+    $homeHeroDraftSettings['tile_2_cta_url'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_url', $homeHeroSettings['tile_2_cta_url']);
+    $homeHeroDraftSettings['featured_ids'] = site_setting_get($pdo, 'draft_home_featured_product_ids', $homeHeroSettings['featured_ids']);
+}
+$homeUsedImageUrls = [];
+foreach ([
+    $homeHeroSettings['image'] ?? '',
+    $homeHeroSettings['tile_1_image'] ?? '',
+    $homeHeroSettings['tile_2_image'] ?? '',
+    $homeHeroDraftSettings['image'] ?? '',
+    $homeHeroDraftSettings['tile_1_image'] ?? '',
+    $homeHeroDraftSettings['tile_2_image'] ?? '',
+] as $usedUrl) {
+    $usedUrl = trim((string) $usedUrl);
+    if ($usedUrl !== '') {
+        $homeUsedImageUrls[$usedUrl] = true;
+    }
+}
+$homeVisualStatus = [
+    'published' => [
+        'hero' => trim((string) ($homeHeroSettings['image'] ?? '')) !== '',
+        'tile1' => trim((string) ($homeHeroSettings['tile_1_image'] ?? '')) !== '',
+        'tile2' => trim((string) ($homeHeroSettings['tile_2_image'] ?? '')) !== '',
+    ],
+    'draft' => [
+        'hero' => trim((string) ($homeHeroDraftSettings['image'] ?? '')) !== '',
+        'tile1' => trim((string) ($homeHeroDraftSettings['tile_1_image'] ?? '')) !== '',
+        'tile2' => trim((string) ($homeHeroDraftSettings['tile_2_image'] ?? '')) !== '',
+    ],
+];
+$publishedFeaturedIdsArray = array_values(array_filter(array_map('trim', explode(',', (string) ($homeHeroSettings['featured_ids'] ?? ''))), static fn(string $v): bool => $v !== ''));
 $notFoundReviewPagination = $authenticated && $activeTab === 'maintenance'
     ? enma_render_pagination('maintenance', 'nf_review_page', (int) ($notFoundReviewPage ?? 1), (int) ($notFoundReviewTotalPages ?? 1))
     : '';
@@ -1836,6 +1941,292 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           var copied = fallbackCopyText(text);
           updateCopyStatus(statusId, copied ? 'Copied' : 'Copy failed', !copied);
         });
+
+        $('[data-media-assign]').on('click', function () {
+          var $btn = $(this);
+          var assign = ($btn.attr('data-media-assign') || '').toString();
+          var mediaUrl = ($btn.attr('data-media-url') || '').toString();
+          var mediaTitle = ($btn.attr('data-media-title') || '').toString();
+          if (mediaUrl.trim() === '') {
+            return;
+          }
+
+          function fillIfEmpty(id, value) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            if ((el.value || '').toString().trim() === '') {
+              el.value = value;
+            }
+          }
+
+          if (assign === 'hero') {
+            var heroImage = document.getElementById('home_hero_image');
+            if (heroImage) {
+              heroImage.value = mediaUrl;
+            }
+            fillIfEmpty('home_hero_cta_label', 'Explore Telescopes');
+            fillIfEmpty('home_hero_cta_url', '/best-beginner-telescopes');
+          } else if (assign === 'tile1') {
+            var tile1Image = document.getElementById('home_promo_tile_1_image');
+            if (tile1Image) {
+              tile1Image.value = mediaUrl;
+            }
+            fillIfEmpty('home_promo_tile_1_title', mediaTitle || 'Start Stargazing Now');
+            fillIfEmpty('home_promo_tile_1_cta_label', 'Beginner Telescopes');
+            fillIfEmpty('home_promo_tile_1_cta_url', '/best-beginner-telescopes');
+          } else if (assign === 'tile2') {
+            var tile2Image = document.getElementById('home_promo_tile_2_image');
+            if (tile2Image) {
+              tile2Image.value = mediaUrl;
+            }
+            fillIfEmpty('home_promo_tile_2_title', mediaTitle || 'Create Your Masterpiece');
+            fillIfEmpty('home_promo_tile_2_cta_label', 'Explore Astrophotography');
+            fillIfEmpty('home_promo_tile_2_cta_url', '/guides');
+          }
+
+          var heroSection = document.getElementById('home-hero-settings');
+          if (heroSection && typeof heroSection.scrollIntoView === 'function') {
+            heroSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+
+        var publishedSettings = <?= json_encode($homeHeroSettings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        var draftSettings = <?= json_encode($homeHeroDraftSettings, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+
+        function setInputValue(id, value) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.value = (value || '').toString();
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        function loadSettings(source) {
+          setInputValue('home_hero_image', source.image || '');
+          setInputValue('home_hero_image_2x', source.image_2x || '');
+          setInputValue('home_hero_alt', source.alt || '');
+          setInputValue('home_hero_title', source.title || '');
+          setInputValue('home_hero_subtitle', source.subtitle || '');
+          setInputValue('home_hero_cta_label', source.cta_label || '');
+          setInputValue('home_hero_cta_url', source.cta_url || '');
+          setInputValue('home_promo_tile_1_title', source.tile_1_title || '');
+          setInputValue('home_promo_tile_1_image', source.tile_1_image || '');
+          setInputValue('home_promo_tile_1_cta_label', source.tile_1_cta_label || '');
+          setInputValue('home_promo_tile_1_cta_url', source.tile_1_cta_url || '');
+          setInputValue('home_promo_tile_2_title', source.tile_2_title || '');
+          setInputValue('home_promo_tile_2_image', source.tile_2_image || '');
+          setInputValue('home_promo_tile_2_cta_label', source.tile_2_cta_label || '');
+          setInputValue('home_promo_tile_2_cta_url', source.tile_2_cta_url || '');
+          setInputValue('home_featured_product_ids', source.featured_ids || '');
+        }
+
+        $('#load_live_settings').on('click', function () { loadSettings(publishedSettings); });
+        $('#load_draft_settings').on('click', function () { loadSettings(draftSettings); });
+        $('#save_draft_btn').on('click', function () { $('#home_settings_mode').val('draft'); });
+        $('#publish_btn').on('click', function () { $('#home_settings_mode').val('publish'); });
+        $('#save_draft_btn_sticky').on('click', function () { $('#home_settings_mode').val('draft'); });
+        $('#publish_btn_sticky').on('click', function () { $('#home_settings_mode').val('publish'); });
+
+        function bindPreview(inputId, imgId, qualityId) {
+          var $input = $('#' + inputId);
+          var $img = $('#' + imgId);
+          var $quality = qualityId ? $('#' + qualityId) : $();
+          if (!$input.length || !$img.length) return;
+          function syncPreview() {
+            var val = ($input.val() || '').toString().trim();
+            if (val === '') {
+              $img.hide();
+              $img.attr('src', '');
+              if ($quality.length) $quality.hide().text('');
+              return;
+            }
+            $img.attr('src', val);
+            $img.show();
+            if ($quality.length) {
+              var tester = new Image();
+              tester.onload = function () {
+                if (tester.naturalWidth < 1600) {
+                  $quality.text('Low-res warning: image width is ' + tester.naturalWidth + 'px (recommended >= 1600px).').show();
+                } else {
+                  $quality.hide().text('');
+                }
+              };
+              tester.onerror = function () {
+                $quality.text('Could not validate image dimensions from URL.').show();
+              };
+              tester.src = val;
+            }
+          }
+          $input.on('input change', syncPreview);
+          syncPreview();
+        }
+        bindPreview('home_hero_image', 'home_hero_image_preview', 'home_hero_image_quality');
+        bindPreview('home_promo_tile_1_image', 'home_tile_1_image_preview', 'home_tile_1_image_quality');
+        bindPreview('home_promo_tile_2_image', 'home_tile_2_image_preview', 'home_tile_2_image_quality');
+
+        function refreshDuplicateAndStatus() {
+          var hero = ($('#home_hero_image').val() || '').toString().trim();
+          var t1 = ($('#home_promo_tile_1_image').val() || '').toString().trim();
+          var t2 = ($('#home_promo_tile_2_image').val() || '').toString().trim();
+          var dup = [];
+          if (hero !== '' && hero === t1) dup.push('Hero and Tile 1 use the same image');
+          if (hero !== '' && hero === t2) dup.push('Hero and Tile 2 use the same image');
+          if (t1 !== '' && t1 === t2) dup.push('Tile 1 and Tile 2 use the same image');
+          if (dup.length) {
+            $('#home-dup-warning').text(dup.join(' | ')).show();
+          } else {
+            $('#home-dup-warning').hide().text('');
+          }
+
+          function mark(id, ok, label) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = label + ' ' + (ok ? 'OK' : 'Missing');
+            el.style.color = ok ? '#166534' : '#9a3412';
+          }
+          mark('status_pub_hero', hero !== '', 'Hero');
+          mark('status_pub_tile1', t1 !== '', 'Tile 1');
+          mark('status_pub_tile2', t2 !== '', 'Tile 2');
+        }
+        $('#home_hero_image,#home_promo_tile_1_image,#home_promo_tile_2_image').on('input change', refreshDuplicateAndStatus);
+        refreshDuplicateAndStatus();
+
+        var promptTemplates = {
+          cinematic: {
+            hero: 'Ultra-detailed astrophotography-style hero background for a beginner telescope website, cinematic Milky Way over mountains, a modern telescope in foreground, high contrast, dark blue and orange accents, premium ecommerce look, no logos, no text, 16:9 composition, realistic lighting, web-ready.',
+            tile1: 'High-quality lifestyle astronomy image, person setting up a beginner telescope outdoors at dusk, warm natural light, actionable beginner vibe, shallow depth of field, premium brand visual style, no logos, no text, 16:9 crop-safe for tile card.',
+            tile2: 'Stunning deep-space nebula scene with rich detail, vivid but natural colors, astrophotography inspiration mood, clean composition with dark areas for text overlay, no logos, no text, premium ecommerce campaign aesthetic, 16:9 crop-safe.'
+          },
+          product: {
+            hero: 'Premium telescope product hero shot outdoors at night, dramatic sky, clean composition with negative space for headline, ecommerce-ready, no logos, no text, realistic materials, 16:9.',
+            tile1: 'Close-up of beginner telescope setup process, hands adjusting mount, practical educational vibe, sharp focus, no logos, no text, 16:9.',
+            tile2: 'Detailed telescope with camera adapter pointed to nebula sky, product-first composition, no logos, no text, 16:9.'
+          },
+          lifestyle: {
+            hero: 'Family-friendly stargazing night scene with telescope under clear sky, emotional and aspirational, premium web visual, no logos, no text, 16:9.',
+            tile1: 'Beginner observer learning sky alignment with telescope in backyard, warm and authentic style, no logos, no text, 16:9.',
+            tile2: 'Astrophotography enthusiast capturing night sky with telescope rig, dynamic but clean composition, no logos, no text, 16:9.'
+          },
+          deepsky: {
+            hero: 'Epic deep-space inspired hero visual with Milky Way core and dark mountain silhouette, cinematic contrast, premium astronomy mood, no logos, no text, 16:9.',
+            tile1: 'Star cluster themed visual with subtle telescope foreground silhouette, high clarity, no logos, no text, 16:9.',
+            tile2: 'Color-rich nebula and galaxy fusion aesthetic for astrophotography promo tile, dramatic but clean, no logos, no text, 16:9.'
+          }
+        };
+
+        function applyPromptVariant(variant) {
+          var tpl = promptTemplates[variant] || promptTemplates.cinematic;
+          $('#prompt_home_hero').val(tpl.hero);
+          $('#prompt_tile_1').val(tpl.tile1);
+          $('#prompt_tile_2').val(tpl.tile2);
+        }
+        $('#prompt_variant').on('change', function () {
+          applyPromptVariant(($(this).val() || 'cinematic').toString());
+        });
+        applyPromptVariant(($('#prompt_variant').val() || 'cinematic').toString());
+
+        function syncFeaturedIdsFromPicker() {
+          var vals = ($('#home_featured_picker').val() || []).slice(0, 4);
+          $('#home_featured_product_ids').val(vals.join(','));
+        }
+        $('#home_featured_picker').on('change', syncFeaturedIdsFromPicker);
+        syncFeaturedIdsFromPicker();
+
+        function currentFormPayload() {
+          var ids = [
+            'home_hero_title','home_hero_subtitle','home_hero_image','home_hero_image_2x','home_hero_alt',
+            'home_hero_cta_label','home_hero_cta_url','home_promo_tile_1_title','home_promo_tile_1_image',
+            'home_promo_tile_1_cta_label','home_promo_tile_1_cta_url','home_promo_tile_2_title','home_promo_tile_2_image',
+            'home_promo_tile_2_cta_label','home_promo_tile_2_cta_url','home_featured_product_ids'
+          ];
+          var out = {};
+          ids.forEach(function (id) { out[id] = ($('#' + id).val() || '').toString(); });
+          return out;
+        }
+        function applyFormPayload(payload) {
+          Object.keys(payload || {}).forEach(function (id) { setInputValue(id, payload[id]); });
+          var pickerVals = (payload.home_featured_product_ids || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+          $('#home_featured_picker').val(pickerVals);
+          syncFeaturedIdsFromPicker();
+        }
+        function listPresetNames() {
+          var out = [];
+          var prefix = 'home_visual_preset_';
+          for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i) || '';
+            if (key.indexOf(prefix) === 0) {
+              out.push(key.slice(prefix.length));
+            }
+          }
+          out.sort();
+          return out;
+        }
+        function refreshPresetSelect() {
+          var $sel = $('#preset_select');
+          if (!$sel.length) return;
+          var current = ($sel.val() || '').toString();
+          var names = listPresetNames();
+          $sel.empty();
+          $sel.append($('<option/>').val('').text('Select preset'));
+          names.forEach(function (name) {
+            $sel.append($('<option/>').val(name).text(name));
+          });
+          if (current !== '' && names.indexOf(current) !== -1) {
+            $sel.val(current);
+          }
+        }
+        $('#preset_refresh_btn').on('click', function () { refreshPresetSelect(); });
+        $('#preset_save_btn').on('click', function () {
+          var name = window.prompt('Preset name');
+          if (!name) return;
+          var key = 'home_visual_preset_' + name.trim();
+          localStorage.setItem(key, JSON.stringify(currentFormPayload()));
+          refreshPresetSelect();
+          $('#preset_select').val(name.trim());
+          alert('Preset saved: ' + name);
+        });
+        $('#preset_load_btn').on('click', function () {
+          var name = ($('#preset_select').val() || '').toString().trim();
+          if (name === '') {
+            name = window.prompt('Preset name to load');
+          }
+          if (!name) return;
+          var key = 'home_visual_preset_' + name.trim();
+          var raw = localStorage.getItem(key);
+          if (!raw) { alert('Preset not found.'); return; }
+          try { applyFormPayload(JSON.parse(raw)); } catch (e) { alert('Invalid preset data.'); }
+        });
+        $('#preset_delete_btn').on('click', function () {
+          var name = ($('#preset_select').val() || '').toString().trim();
+          if (name === '') {
+            name = window.prompt('Preset name to delete');
+          }
+          if (!name) return;
+          localStorage.removeItem('home_visual_preset_' + name.trim());
+          refreshPresetSelect();
+          alert('Preset deleted: ' + name);
+        });
+        refreshPresetSelect();
+
+        $(document).on('keydown', function (e) {
+          if (!e.ctrlKey || !e.shiftKey) return;
+          var key = (e.key || '').toLowerCase();
+          if (key === 'd') { e.preventDefault(); $('#home_settings_mode').val('draft'); $('#home-hero-form').trigger('submit'); }
+          if (key === 'p') { e.preventDefault(); $('#home_settings_mode').val('publish'); $('#home-hero-form').trigger('submit'); }
+          if (key === 'h') { e.preventDefault(); $('#home_hero_image').trigger('focus'); }
+        });
+
+        $('[data-media-filter]').on('click', function () {
+          var filter = ($(this).attr('data-media-filter') || 'all').toString();
+          $('[data-media-row="1"]').each(function () {
+            var $row = $(this);
+            var show = true;
+            if (filter === 'recent') show = $row.attr('data-recent') === '1';
+            if (filter === 'webp') show = $row.attr('data-webp') === '1';
+            if (filter === 'landscape') show = $row.attr('data-landscape') === '1';
+            if (filter === 'used') show = $row.attr('data-used') === '1';
+            $row.toggle(show);
+          });
+        });
         $('[data-copy-post-image-brief]').on('click', function () {
           var $btn = $(this);
           var statusId = ($btn.attr('data-copy-status') || '').trim();
@@ -2869,6 +3260,285 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             </div>
         </section>
 
+        <section id="home-hero-settings" class="box ops-anchor-offset">
+            <h2>Home Hero Settings</h2>
+            <p class="muted" style="margin:0 0 10px;">Control hero content, promo tiles, and featured home products. Use Media Library URLs in WEBP format when possible.</p>
+            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 12px;">
+                <div style="border:1px solid #d7e0ed;border-radius:10px;padding:10px;background:#fff;">
+                    <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Published</div>
+                    <div style="margin-top:6px;font-size:13px;">
+                        <span id="status_pub_hero" style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['published']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['published']['hero'] ? 'OK' : 'Missing' ?></span>
+                        <span id="status_pub_tile1" style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['published']['tile1'] ? '#166534' : '#9a3412' ?>;">Tile 1 <?= $homeVisualStatus['published']['tile1'] ? 'OK' : 'Missing' ?></span>
+                        <span id="status_pub_tile2" style="display:inline-block;color:<?= $homeVisualStatus['published']['tile2'] ? '#166534' : '#9a3412' ?>;">Tile 2 <?= $homeVisualStatus['published']['tile2'] ? 'OK' : 'Missing' ?></span>
+                    </div>
+                </div>
+                <div style="border:1px solid #d7e0ed;border-radius:10px;padding:10px;background:#fff;">
+                    <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Draft</div>
+                    <div style="margin-top:6px;font-size:13px;">
+                        <span style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['draft']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['draft']['hero'] ? 'OK' : 'Missing' ?></span>
+                        <span style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['draft']['tile1'] ? '#166534' : '#9a3412' ?>;">Tile 1 <?= $homeVisualStatus['draft']['tile1'] ? 'OK' : 'Missing' ?></span>
+                        <span style="display:inline-block;color:<?= $homeVisualStatus['draft']['tile2'] ? '#166534' : '#9a3412' ?>;">Tile 2 <?= $homeVisualStatus['draft']['tile2'] ? 'OK' : 'Missing' ?></span>
+                    </div>
+                </div>
+            </div>
+            <form method="post" id="home-hero-form">
+                <input type="hidden" name="action" value="save_home_hero_settings">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <input type="hidden" name="home_settings_mode" id="home_settings_mode" value="publish">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                    <button class="btn" type="button" id="load_live_settings">Load Published</button>
+                    <button class="btn" type="button" id="load_draft_settings">Load Draft</button>
+                    <button class="btn" type="submit" id="save_draft_btn">Save Draft</button>
+                    <button class="btn" type="submit" id="publish_btn">Publish To Home</button>
+                </div>
+                <div id="home-dup-warning" style="display:none;margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff4e5;border:1px solid #f0c48a;color:#8a3b00;font-size:12px;font-weight:700;"></div>
+                <label>Hero title (optional override)</label>
+                <input id="home_hero_title" type="text" name="home_hero_title" value="<?= e((string) ($homeHeroSettings['title'] ?? '')) ?>" placeholder="See what's out there">
+                <label>Hero eyebrow / small label</label>
+                <input type="text" name="home_hero_eyebrow" value="<?= e(site_setting_get($pdo, 'home_hero_eyebrow', 'Astronomy Affiliate Guide')) ?>" placeholder="Astronomy Affiliate Guide">
+                <label>Hero subtitle (optional override)</label>
+                <input id="home_hero_subtitle" type="text" name="home_hero_subtitle" value="<?= e((string) ($homeHeroSettings['subtitle'] ?? '')) ?>" placeholder="Short value statement">
+                <label>Hero image URL (1x)</label>
+                <input id="home_hero_image" type="text" name="home_hero_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" placeholder="/assets/img/optimized_1.webp or https://...">
+                <label>Hero image URL (2x, optional)</label>
+                <input id="home_hero_image_2x" type="text" name="home_hero_image_2x" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image_2x'] ?? '')) ?>" placeholder="/assets/img/optimized_2.webp or https://...">
+                <img id="home_hero_image_preview" src="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
+                <div id="home_hero_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
+                <label>Hero image ALT text</label>
+                <input id="home_hero_alt" type="text" name="home_hero_alt" value="<?= e((string) ($homeHeroSettings['alt'] ?? '')) ?>" placeholder="Accessible description of the hero image">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                        <label>Hero CTA label</label>
+                        <input id="home_hero_cta_label" type="text" name="home_hero_cta_label" value="<?= e((string) ($homeHeroSettings['cta_label'] ?? '')) ?>" placeholder="Explore Telescopes">
+                    </div>
+                    <div>
+                        <label>Hero CTA URL</label>
+                        <input id="home_hero_cta_url" type="text" name="home_hero_cta_url" value="<?= e((string) ($homeHeroSettings['cta_url'] ?? '')) ?>" placeholder="/best-beginner-telescopes">
+                    </div>
+                </div>
+                <label>Hero overlay darkness (%)</label>
+                <input type="number" min="15" max="85" name="home_hero_overlay" value="<?= e((string) ($homeHeroSettings['overlay'] ?? '55')) ?>">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <div>
+                        <label>Hero text position</label>
+                        <select name="home_hero_text_position">
+                            <?php $heroPos = site_setting_get($pdo, 'home_hero_text_position', 'center'); ?>
+                            <?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?>
+                                <option value="<?= e($opt) ?>" <?= $heroPos === $opt ? 'selected' : '' ?>><?= e($opt) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Hero overlay strength</label>
+                        <?php $heroOverlayStrength = site_setting_get($pdo, 'home_hero_overlay_strength', 'dark'); ?>
+                        <select name="home_hero_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $heroOverlayStrength === $opt ? 'selected' : '' ?>><?= e($opt) ?></option><?php endforeach; ?></select>
+                    </div>
+                    <div>
+                        <label>Hero layout size</label>
+                        <?php $heroLayoutSize = site_setting_get($pdo, 'home_hero_layout_size', 'full'); ?>
+                        <select name="home_hero_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $heroLayoutSize === $opt ? 'selected' : '' ?>><?= e($opt) ?></option><?php endforeach; ?></select>
+                    </div>
+                </div>
+
+                <h3 style="margin:14px 0 8px;">Promo Tile 1</h3>
+                <input id="home_promo_tile_1_title" type="text" name="home_promo_tile_1_title" value="<?= e((string) ($homeHeroSettings['tile_1_title'] ?? '')) ?>" placeholder="Start Stargazing Now">
+                <input type="text" name="home_promo_tile_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_eyebrow', '')) ?>" placeholder="Tile 1 eyebrow">
+                <input type="text" name="home_promo_tile_1_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_subtitle', '')) ?>" placeholder="Tile 1 subtitle">
+                <input id="home_promo_tile_1_image" type="text" name="home_promo_tile_1_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
+                <img id="home_tile_1_image_preview" src="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_1_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
+                <div id="home_tile_1_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input id="home_promo_tile_1_cta_label" type="text" name="home_promo_tile_1_cta_label" value="<?= e((string) ($homeHeroSettings['tile_1_cta_label'] ?? '')) ?>" placeholder="Beginner Telescopes">
+                    <input id="home_promo_tile_1_cta_url" type="text" name="home_promo_tile_1_cta_url" value="<?= e((string) ($homeHeroSettings['tile_1_cta_url'] ?? '')) ?>" placeholder="/best-beginner-telescopes">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <?php $t1Pos = site_setting_get($pdo, 'home_promo_tile_1_text_position', 'bottom-left'); ?>
+                    <?php $t1Overlay = site_setting_get($pdo, 'home_promo_tile_1_overlay_strength', 'medium'); ?>
+                    <?php $t1Size = site_setting_get($pdo, 'home_promo_tile_1_layout_size', 'half'); ?>
+                    <select name="home_promo_tile_1_text_position"><?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t1Pos === $opt ? 'selected' : '' ?>><?= e('Tile1 '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_promo_tile_1_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t1Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_promo_tile_1_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t1Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
+                </div>
+
+                <h3 style="margin:14px 0 8px;">Promo Tile 2</h3>
+                <input id="home_promo_tile_2_title" type="text" name="home_promo_tile_2_title" value="<?= e((string) ($homeHeroSettings['tile_2_title'] ?? '')) ?>" placeholder="Create Your Masterpiece">
+                <input type="text" name="home_promo_tile_2_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_eyebrow', '')) ?>" placeholder="Tile 2 eyebrow">
+                <input type="text" name="home_promo_tile_2_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_subtitle', '')) ?>" placeholder="Tile 2 subtitle">
+                <input id="home_promo_tile_2_image" type="text" name="home_promo_tile_2_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
+                <img id="home_tile_2_image_preview" src="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_2_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
+                <div id="home_tile_2_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input id="home_promo_tile_2_cta_label" type="text" name="home_promo_tile_2_cta_label" value="<?= e((string) ($homeHeroSettings['tile_2_cta_label'] ?? '')) ?>" placeholder="Explore Astrophotography">
+                    <input id="home_promo_tile_2_cta_url" type="text" name="home_promo_tile_2_cta_url" value="<?= e((string) ($homeHeroSettings['tile_2_cta_url'] ?? '')) ?>" placeholder="/guides">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <?php $t2Pos = site_setting_get($pdo, 'home_promo_tile_2_text_position', 'bottom-left'); ?>
+                    <?php $t2Overlay = site_setting_get($pdo, 'home_promo_tile_2_overlay_strength', 'medium'); ?>
+                    <?php $t2Size = site_setting_get($pdo, 'home_promo_tile_2_layout_size', 'half'); ?>
+                    <select name="home_promo_tile_2_text_position"><?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Pos === $opt ? 'selected' : '' ?>><?= e('Tile2 '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_promo_tile_2_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_promo_tile_2_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
+                </div>
+
+                <h3 style="margin:14px 0 8px;">Reusable Banner 1</h3>
+                <input type="text" name="home_banner_1_image" list="media-image-urls" value="<?= e(site_setting_get($pdo, 'home_banner_1_image', '')) ?>" placeholder="/assets/uploads/media/...webp">
+                <input type="text" name="home_banner_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_banner_1_eyebrow', '')) ?>" placeholder="Banner eyebrow">
+                <input type="text" name="home_banner_1_title" value="<?= e(site_setting_get($pdo, 'home_banner_1_title', '')) ?>" placeholder="Banner title">
+                <input type="text" name="home_banner_1_subtitle" value="<?= e(site_setting_get($pdo, 'home_banner_1_subtitle', '')) ?>" placeholder="Banner subtitle">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input type="text" name="home_banner_1_cta_label" value="<?= e(site_setting_get($pdo, 'home_banner_1_cta_label', '')) ?>" placeholder="Button text">
+                    <input type="text" name="home_banner_1_cta_url" value="<?= e(site_setting_get($pdo, 'home_banner_1_cta_url', '')) ?>" placeholder="/guides">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <?php $b1Pos = site_setting_get($pdo, 'home_banner_1_text_position', 'left'); ?>
+                    <?php $b1Overlay = site_setting_get($pdo, 'home_banner_1_overlay_strength', 'medium'); ?>
+                    <?php $b1Size = site_setting_get($pdo, 'home_banner_1_layout_size', 'full'); ?>
+                    <select name="home_banner_1_text_position"><?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b1Pos === $opt ? 'selected' : '' ?>><?= e('Banner1 '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_banner_1_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b1Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_banner_1_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b1Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
+                </div>
+
+                <h3 style="margin:14px 0 8px;">Reusable Banner 2</h3>
+                <input type="text" name="home_banner_2_image" list="media-image-urls" value="<?= e(site_setting_get($pdo, 'home_banner_2_image', '')) ?>" placeholder="/assets/uploads/media/...webp">
+                <input type="text" name="home_banner_2_eyebrow" value="<?= e(site_setting_get($pdo, 'home_banner_2_eyebrow', '')) ?>" placeholder="Banner eyebrow">
+                <input type="text" name="home_banner_2_title" value="<?= e(site_setting_get($pdo, 'home_banner_2_title', '')) ?>" placeholder="Banner title">
+                <input type="text" name="home_banner_2_subtitle" value="<?= e(site_setting_get($pdo, 'home_banner_2_subtitle', '')) ?>" placeholder="Banner subtitle">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input type="text" name="home_banner_2_cta_label" value="<?= e(site_setting_get($pdo, 'home_banner_2_cta_label', '')) ?>" placeholder="Button text">
+                    <input type="text" name="home_banner_2_cta_url" value="<?= e(site_setting_get($pdo, 'home_banner_2_cta_url', '')) ?>" placeholder="/guides">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+                    <?php $b2Pos = site_setting_get($pdo, 'home_banner_2_text_position', 'left'); ?>
+                    <?php $b2Overlay = site_setting_get($pdo, 'home_banner_2_overlay_strength', 'medium'); ?>
+                    <?php $b2Size = site_setting_get($pdo, 'home_banner_2_layout_size', 'full'); ?>
+                    <select name="home_banner_2_text_position"><?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b2Pos === $opt ? 'selected' : '' ?>><?= e('Banner2 '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_banner_2_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b2Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
+                    <select name="home_banner_2_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b2Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
+                </div>
+
+                <h3 style="margin:14px 0 8px;">Shop by Goal (Admin)</h3>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input type="text" name="home_goal_1_label" value="<?= e(site_setting_get($pdo, 'home_goal_1_label', 'First Telescope')) ?>" placeholder="Goal 1 label">
+                    <input type="text" name="home_goal_1_url" value="<?= e(site_setting_get($pdo, 'home_goal_1_url', '/best-beginner-telescopes')) ?>" placeholder="Goal 1 URL">
+                    <input type="text" name="home_goal_2_label" value="<?= e(site_setting_get($pdo, 'home_goal_2_label', 'Budget Under $500')) ?>" placeholder="Goal 2 label">
+                    <input type="text" name="home_goal_2_url" value="<?= e(site_setting_get($pdo, 'home_goal_2_url', '/best-telescopes-under-500')) ?>" placeholder="Goal 2 URL">
+                    <input type="text" name="home_goal_3_label" value="<?= e(site_setting_get($pdo, 'home_goal_3_label', 'Upgrade Accessories')) ?>" placeholder="Goal 3 label">
+                    <input type="text" name="home_goal_3_url" value="<?= e(site_setting_get($pdo, 'home_goal_3_url', '/best-telescope-accessories')) ?>" placeholder="Goal 3 URL">
+                    <input type="text" name="home_goal_4_label" value="<?= e(site_setting_get($pdo, 'home_goal_4_label', 'Astrophotography Path')) ?>" placeholder="Goal 4 label">
+                    <input type="text" name="home_goal_4_url" value="<?= e(site_setting_get($pdo, 'home_goal_4_url', '/guides')) ?>" placeholder="Goal 4 URL">
+                </div>
+
+                <label>Most Loved Product IDs (comma-separated, max 4)</label>
+                <input id="home_featured_product_ids" type="text" name="home_featured_product_ids" value="<?= e((string) ($homeHeroSettings['featured_ids'] ?? '')) ?>" placeholder="123,456,789,101">
+                <label>Featured Product Picker (max 4)</label>
+                <select id="home_featured_picker" multiple size="8" style="width:100%;">
+                    <?php foreach ($mediaFeaturedProductOptions as $productOption): ?>
+                        <?php
+                        $pid = (string) (int) ($productOption['id'] ?? 0);
+                        $ptitle = trim((string) ($productOption['title'] ?? ''));
+                        ?>
+                        <option value="<?= e($pid) ?>" <?= in_array($pid, $publishedFeaturedIdsArray, true) ? 'selected' : '' ?>>#<?= e($pid) ?> - <?= e($ptitle) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="muted" style="font-size:12px;margin-top:4px;">Tip: hold Ctrl/Cmd for multi-select.</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                    <select id="preset_select" style="min-width:220px;">
+                        <option value="">Select preset</option>
+                    </select>
+                    <button class="btn" type="button" id="preset_refresh_btn">Refresh Presets</button>
+                    <button class="btn" type="button" id="preset_save_btn">Save Preset</button>
+                    <button class="btn" type="button" id="preset_load_btn">Load Preset</button>
+                    <button class="btn" type="button" id="preset_delete_btn">Delete Preset</button>
+                </div>
+                <div class="sticky-save-bar" style="position:sticky;bottom:8px;z-index:20;margin-top:12px;padding:10px;border:1px solid #d7e0ed;border-radius:10px;background:#fff;box-shadow:0 8px 16px rgba(10,20,34,.08);display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn" type="submit" id="save_draft_btn_sticky">Save Draft</button>
+                    <button class="btn" type="submit" id="publish_btn_sticky">Publish To Home</button>
+                </div>
+            </form>
+            <form method="post" style="margin-top:8px;">
+                <input type="hidden" name="action" value="home_publish_draft">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <button class="btn" type="submit">Publish Draft to Live (One Click)</button>
+            </form>
+
+            <div style="margin-top:14px;padding:12px;border:1px solid #d7e0ed;border-radius:10px;background:#f8fbff;">
+                <h3 style="margin:0 0 8px;">Image Prompt Shortcuts</h3>
+                <p class="muted" style="margin:0 0 10px;">Copy, generate image, upload here, then click Use in Hero/Tile buttons in Media Library.</p>
+                <label>Prompt Variant</label>
+                <select id="prompt_variant">
+                    <option value="cinematic">Cinematic</option>
+                    <option value="product">Product-focused</option>
+                    <option value="lifestyle">Lifestyle</option>
+                    <option value="deepsky">Deep-sky</option>
+                </select>
+
+                <label>Hero Image Prompt</label>
+                <textarea id="prompt_home_hero" rows="4" readonly>Ultra-detailed astrophotography-style hero background for a beginner telescope website, cinematic Milky Way over mountains, a modern telescope in foreground, high contrast, dark blue and orange accents, premium ecommerce look, no logos, no text, 16:9 composition, realistic lighting, web-ready.</textarea>
+                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_home_hero" data-copy-status="prompt_home_hero_status">Copy Hero Prompt</button>
+                <div id="prompt_home_hero_status" class="copy-status" style="display:block;margin-top:4px;"></div>
+
+                <label style="margin-top:12px;">Promo Tile 1 Prompt</label>
+                <textarea id="prompt_tile_1" rows="4" readonly>High-quality lifestyle astronomy image, person setting up a beginner telescope outdoors at dusk, warm natural light, actionable beginner vibe, shallow depth of field, premium brand visual style, no logos, no text, 16:9 crop-safe for tile card.</textarea>
+                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_tile_1" data-copy-status="prompt_tile_1_status">Copy Tile 1 Prompt</button>
+                <div id="prompt_tile_1_status" class="copy-status" style="display:block;margin-top:4px;"></div>
+
+                <label style="margin-top:12px;">Promo Tile 2 Prompt</label>
+                <textarea id="prompt_tile_2" rows="4" readonly>Stunning deep-space nebula scene with rich detail, vivid but natural colors, astrophotography inspiration mood, clean composition with dark areas for text overlay, no logos, no text, premium ecommerce campaign aesthetic, 16:9 crop-safe.</textarea>
+                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_tile_2" data-copy-status="prompt_tile_2_status">Copy Tile 2 Prompt</button>
+                <div id="prompt_tile_2_status" class="copy-status" style="display:block;margin-top:4px;"></div>
+            </div>
+
+            <div style="margin-top:14px;padding:12px;border:1px solid #d7e0ed;border-radius:10px;background:#f8fbff;">
+                <h3 style="margin:0 0 8px;">Quick Upload for Home Visuals</h3>
+                <p class="muted" style="margin:0 0 10px;">Upload from here directly. JPG/PNG/GIF will auto-convert to WEBP and appear in Media Library.</p>
+                <form method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="media_upload">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="quick_assign_autosave" value="1">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div>
+                            <label>Title (optional)</label>
+                            <input type="text" name="media_title" placeholder="e.g. Home hero visual">
+                        </div>
+                        <div>
+                            <label>Alt Text (optional)</label>
+                            <input type="text" name="media_alt_text" placeholder="Accessible description">
+                        </div>
+                    </div>
+                    <label>Notes (optional)</label>
+                    <textarea name="media_notes" rows="2" placeholder="Hero / Tile 1 / Tile 2"></textarea>
+                    <label>Assign After Upload</label>
+                    <select name="quick_assign_target">
+                        <option value="">None</option>
+                        <option value="hero">Hero</option>
+                        <option value="tile1">Tile 1</option>
+                        <option value="tile2">Tile 2</option>
+                    </select>
+                    <label>File</label>
+                    <input type="file" name="media_file" required style="padding:6px;">
+                    <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
+                </form>
+            </div>
+
+            <?php if ($mediaImageOptions !== []): ?>
+                <datalist id="media-image-urls">
+                    <?php foreach ($mediaImageOptions as $imageOption): ?>
+                        <?php
+                        $imageUrl = trim((string) ($imageOption['file_url'] ?? ''));
+                        $imageLabel = trim((string) ($imageOption['title'] ?? ''));
+                        if ($imageLabel === '') {
+                            $imageLabel = trim((string) ($imageOption['original_name'] ?? ''));
+                        }
+                        if ($imageUrl === '') {
+                            continue;
+                        }
+                        ?>
+                        <option value="<?= e($imageUrl) ?>" label="<?= e($imageLabel) ?>"></option>
+                    <?php endforeach; ?>
+                </datalist>
+            <?php endif; ?>
+        </section>
+
         <section id="media-upload" class="box ops-anchor-offset">
             <h2>Upload Media</h2>
             <?php if (!$mediaTableReady): ?>
@@ -2893,11 +3563,18 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input type="file" name="media_file" required style="padding:6px;">
                 <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
             </form>
-            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB).</p>
+            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB). JPG/PNG/GIF uploads are auto-converted to WEBP.</p>
         </section>
 
         <section id="media-list" class="box ops-anchor-offset">
             <h2>Media Assets</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;">
+                <button class="btn" type="button" data-media-filter="all">All</button>
+                <button class="btn" type="button" data-media-filter="recent">Recent</button>
+                <button class="btn" type="button" data-media-filter="webp">Only WEBP</button>
+                <button class="btn" type="button" data-media-filter="landscape">Landscape 16:9+</button>
+                <button class="btn" type="button" data-media-filter="used">Used In Home</button>
+            </div>
             <?php if (!$mediaTableReady): ?>
                 <div class="empty">Media table not ready yet. Upload one file to initialize it automatically.</div>
             <?php elseif ($allMedia === []): ?>
@@ -2926,8 +3603,25 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         $mimeType = trim((string) ($media['mime_type'] ?? ''));
                         $sizeBytes = (int) ($media['file_size'] ?? 0);
                         $copyStatusId = 'media_copy_status_' . $mediaId;
+                        $createdTs = strtotime((string) ($media['created_at'] ?? ''));
+                        $isRecentMedia = $createdTs !== false && (time() - $createdTs) <= 7 * 86400;
+                        $isWebp = strtolower((string) ($media['file_ext'] ?? '')) === 'webp' || strtolower($mimeType) === 'image/webp';
+                        $isLandscape = false;
+                        if ($mediaType === 'image') {
+                            $storedName = trim((string) ($media['stored_name'] ?? ''));
+                            if ($storedName !== '' && preg_match('/^[A-Za-z0-9_.-]+$/', $storedName) === 1) {
+                                $localImagePath = __DIR__ . '/../assets/uploads/media/' . $storedName;
+                                if (is_file($localImagePath)) {
+                                    $size = @getimagesize($localImagePath);
+                                    if (is_array($size) && isset($size[0], $size[1]) && (int) $size[0] >= (int) $size[1]) {
+                                        $isLandscape = true;
+                                    }
+                                }
+                            }
+                        }
+                        $isUsedInHome = isset($homeUsedImageUrls[$mediaUrl]);
                         ?>
-                        <tr>
+                        <tr data-media-row="1" data-recent="<?= $isRecentMedia ? '1' : '0' ?>" data-webp="<?= $isWebp ? '1' : '0' ?>" data-landscape="<?= $isLandscape ? '1' : '0' ?>" data-used="<?= $isUsedInHome ? '1' : '0' ?>">
                             <td><?= $mediaId ?></td>
                             <td style="width:100px;">
                                 <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
@@ -2941,6 +3635,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                             <td>
                                 <div><strong><?= e($title !== '' ? $title : '(untitled)') ?></strong></div>
                                 <div class="muted" style="font-size:12px;"><?= e($media['created_at'] ?? '') ?></div>
+                                <?php if ($isUsedInHome): ?>
+                                    <div style="font-size:11px;font-weight:700;color:#134b8a;">Used in Home</div>
+                                <?php endif; ?>
                             </td>
                             <td><?= e(strtoupper($mediaType)) ?></td>
                             <td>
@@ -2958,6 +3655,38 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                     data-copy-text="<?= e($mediaUrl) ?>"
                                     data-copy-status="<?= e($copyStatusId) ?>"
                                 >Copy URL</button>
+                                <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="hero" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Hero</button>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 1</button>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile2" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 2</button>
+                                    <form method="post" style="display:inline;">
+                                        <input type="hidden" name="action" value="home_media_assign">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="assign_target" value="hero">
+                                        <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
+                                        <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
+                                        <input type="hidden" name="assign_mode" value="publish">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Hero + Save</button>
+                                    </form>
+                                    <form method="post" style="display:inline;">
+                                        <input type="hidden" name="action" value="home_media_assign">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="assign_target" value="tile1">
+                                        <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
+                                        <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
+                                        <input type="hidden" name="assign_mode" value="publish">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Tile 1 + Save</button>
+                                    </form>
+                                    <form method="post" style="display:inline;">
+                                        <input type="hidden" name="action" value="home_media_assign">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="assign_target" value="tile2">
+                                        <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
+                                        <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
+                                        <input type="hidden" name="assign_mode" value="publish">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Tile 2 + Save</button>
+                                    </form>
+                                <?php endif; ?>
                                 <form method="post" style="display:inline;" onsubmit="return confirm('Delete this media asset?');">
                                     <input type="hidden" name="action" value="media_delete">
                                     <input type="hidden" name="id" value="<?= $mediaId ?>">

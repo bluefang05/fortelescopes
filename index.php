@@ -87,6 +87,99 @@ if ($segments === []) {
     $data['products'] = get_recent_products($pdo, 18);
     $data['telescopes'] = get_products_by_category($pdo, 'telescopes', 6);
     $data['accessories'] = get_products_by_category($pdo, 'accessories', 6);
+    $data['home_hero_image'] = site_setting_get($pdo, 'home_hero_image', '');
+    $data['home_hero_image_2x'] = site_setting_get($pdo, 'home_hero_image_2x', '');
+    $data['home_hero_alt'] = site_setting_get($pdo, 'home_hero_alt', '');
+    $data['home_hero_title'] = site_setting_get($pdo, 'home_hero_title', '');
+    $data['home_hero_subtitle'] = site_setting_get($pdo, 'home_hero_subtitle', '');
+    $data['home_hero_eyebrow'] = site_setting_get($pdo, 'home_hero_eyebrow', 'Astronomy Affiliate Guide');
+    $data['home_hero_cta_label'] = site_setting_get($pdo, 'home_hero_cta_label', '');
+    $data['home_hero_cta_url'] = site_setting_get($pdo, 'home_hero_cta_url', '');
+    $data['home_hero_overlay'] = site_setting_get($pdo, 'home_hero_overlay', '55');
+    $data['home_hero_text_position'] = site_setting_get($pdo, 'home_hero_text_position', 'center');
+    $data['home_hero_overlay_strength'] = site_setting_get($pdo, 'home_hero_overlay_strength', 'dark');
+    $data['home_hero_layout_size'] = site_setting_get($pdo, 'home_hero_layout_size', 'full');
+    $data['home_promo_tile_1_image'] = site_setting_get($pdo, 'home_promo_tile_1_image', '');
+    $data['home_promo_tile_1_title'] = site_setting_get($pdo, 'home_promo_tile_1_title', '');
+    $data['home_promo_tile_1_eyebrow'] = site_setting_get($pdo, 'home_promo_tile_1_eyebrow', '');
+    $data['home_promo_tile_1_subtitle'] = site_setting_get($pdo, 'home_promo_tile_1_subtitle', '');
+    $data['home_promo_tile_1_cta_label'] = site_setting_get($pdo, 'home_promo_tile_1_cta_label', '');
+    $data['home_promo_tile_1_cta_url'] = site_setting_get($pdo, 'home_promo_tile_1_cta_url', '');
+    $data['home_promo_tile_1_text_position'] = site_setting_get($pdo, 'home_promo_tile_1_text_position', 'bottom-left');
+    $data['home_promo_tile_1_overlay_strength'] = site_setting_get($pdo, 'home_promo_tile_1_overlay_strength', 'medium');
+    $data['home_promo_tile_1_layout_size'] = site_setting_get($pdo, 'home_promo_tile_1_layout_size', 'half');
+    $data['home_promo_tile_2_image'] = site_setting_get($pdo, 'home_promo_tile_2_image', '');
+    $data['home_promo_tile_2_title'] = site_setting_get($pdo, 'home_promo_tile_2_title', '');
+    $data['home_promo_tile_2_eyebrow'] = site_setting_get($pdo, 'home_promo_tile_2_eyebrow', '');
+    $data['home_promo_tile_2_subtitle'] = site_setting_get($pdo, 'home_promo_tile_2_subtitle', '');
+    $data['home_promo_tile_2_cta_label'] = site_setting_get($pdo, 'home_promo_tile_2_cta_label', '');
+    $data['home_promo_tile_2_cta_url'] = site_setting_get($pdo, 'home_promo_tile_2_cta_url', '');
+    $data['home_promo_tile_2_text_position'] = site_setting_get($pdo, 'home_promo_tile_2_text_position', 'bottom-left');
+    $data['home_promo_tile_2_overlay_strength'] = site_setting_get($pdo, 'home_promo_tile_2_overlay_strength', 'medium');
+    $data['home_promo_tile_2_layout_size'] = site_setting_get($pdo, 'home_promo_tile_2_layout_size', 'half');
+
+    $data['home_banner_1_image'] = site_setting_get($pdo, 'home_banner_1_image', '');
+    $data['home_banner_1_eyebrow'] = site_setting_get($pdo, 'home_banner_1_eyebrow', '');
+    $data['home_banner_1_title'] = site_setting_get($pdo, 'home_banner_1_title', '');
+    $data['home_banner_1_subtitle'] = site_setting_get($pdo, 'home_banner_1_subtitle', '');
+    $data['home_banner_1_cta_label'] = site_setting_get($pdo, 'home_banner_1_cta_label', '');
+    $data['home_banner_1_cta_url'] = site_setting_get($pdo, 'home_banner_1_cta_url', '');
+    $data['home_banner_1_text_position'] = site_setting_get($pdo, 'home_banner_1_text_position', 'left');
+    $data['home_banner_1_overlay_strength'] = site_setting_get($pdo, 'home_banner_1_overlay_strength', 'medium');
+    $data['home_banner_1_layout_size'] = site_setting_get($pdo, 'home_banner_1_layout_size', 'full');
+
+    $data['home_banner_2_image'] = site_setting_get($pdo, 'home_banner_2_image', '');
+    $data['home_banner_2_eyebrow'] = site_setting_get($pdo, 'home_banner_2_eyebrow', '');
+    $data['home_banner_2_title'] = site_setting_get($pdo, 'home_banner_2_title', '');
+    $data['home_banner_2_subtitle'] = site_setting_get($pdo, 'home_banner_2_subtitle', '');
+    $data['home_banner_2_cta_label'] = site_setting_get($pdo, 'home_banner_2_cta_label', '');
+    $data['home_banner_2_cta_url'] = site_setting_get($pdo, 'home_banner_2_cta_url', '');
+    $data['home_banner_2_text_position'] = site_setting_get($pdo, 'home_banner_2_text_position', 'left');
+    $data['home_banner_2_overlay_strength'] = site_setting_get($pdo, 'home_banner_2_overlay_strength', 'medium');
+    $data['home_banner_2_layout_size'] = site_setting_get($pdo, 'home_banner_2_layout_size', 'full');
+
+    $data['home_goal_1_label'] = site_setting_get($pdo, 'home_goal_1_label', 'First Telescope');
+    $data['home_goal_1_url'] = site_setting_get($pdo, 'home_goal_1_url', '/best-beginner-telescopes');
+    $data['home_goal_2_label'] = site_setting_get($pdo, 'home_goal_2_label', 'Budget Under $500');
+    $data['home_goal_2_url'] = site_setting_get($pdo, 'home_goal_2_url', '/best-telescopes-under-500');
+    $data['home_goal_3_label'] = site_setting_get($pdo, 'home_goal_3_label', 'Upgrade Accessories');
+    $data['home_goal_3_url'] = site_setting_get($pdo, 'home_goal_3_url', '/best-telescope-accessories');
+    $data['home_goal_4_label'] = site_setting_get($pdo, 'home_goal_4_label', 'Astrophotography Path');
+    $data['home_goal_4_url'] = site_setting_get($pdo, 'home_goal_4_url', '/guides');
+
+    $featuredIdsRaw = site_setting_get($pdo, 'home_featured_product_ids', '');
+    $featuredIds = [];
+    foreach (preg_split('/[\s,]+/', $featuredIdsRaw) ?: [] as $token) {
+        $id = (int) trim((string) $token);
+        if ($id > 0) {
+            $featuredIds[] = $id;
+        }
+    }
+    $featuredIds = array_values(array_unique($featuredIds));
+    $featuredProducts = [];
+    if ($featuredIds !== []) {
+        $placeholders = implode(',', array_fill(0, count($featuredIds), '?'));
+        $stmt = $pdo->prepare('SELECT * FROM products WHERE status = "published" AND id IN (' . $placeholders . ')');
+        $stmt->execute($featuredIds);
+        $rows = $stmt->fetchAll();
+        $byId = [];
+        foreach ($rows as $row) {
+            $byId[(int) ($row['id'] ?? 0)] = $row;
+        }
+        foreach ($featuredIds as $id) {
+            if (isset($byId[$id])) {
+                $featuredProducts[] = $byId[$id];
+            }
+            if (count($featuredProducts) >= 4) {
+                break;
+            }
+        }
+    }
+    if ($featuredProducts === []) {
+        $featuredProducts = array_slice($data['products'], 0, 4);
+    }
+    $data['home_featured_products'] = $featuredProducts;
+
     $pageTitle = 'Best Beginner Telescopes, Astronomy Gear Reviews & Stargazing Guides | ' . APP_NAME;
     $meta['description'] = 'Compare beginner telescopes, telescope accessories, and practical stargazing guides built to help new observers choose the right gear.';
     $meta['image'] = absolute_url('/assets/logo/1024.png');
