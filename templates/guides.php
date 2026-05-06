@@ -64,7 +64,7 @@ $buildGuidesPageUrl = static function (int $page): string {
                 <?php if ($guideImage): ?>
                     <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
                 <?php else: ?>
-                    <div style="height: 200px; background: #0f1c30; display: flex; align-items: center; justify-content: center; color: #fff;">No Image</div>
+                    <div style="height: 200px; background: #0b1625; display: flex; align-items: center; justify-content: center; color: #dce9fa;">No Image</div>
                 <?php endif; ?>
                 <div class="body">
                     <span class="badge">Guide</span>
@@ -107,14 +107,14 @@ $buildGuidesPageUrl = static function (int $page): string {
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
+<section class="panel faq-panel" style="margin-bottom: 18px;">
     <h2 class="section-title" style="margin-top:0;">Frequently asked questions</h2>
-    <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-        <summary style="font-weight: 700; cursor: pointer;">Which astronomy buying guide should I start with?</summary>
-        <p class="muted" style="margin: 8px 0 0;">Start with the guide that matches your immediate decision: first telescope, budget limit, or accessories. That gets you to the right internal pages faster than browsing products at random.</p>
+    <details>
+        <summary>Which astronomy buying guide should I start with?</summary>
+        <p class="muted">Start with the guide that matches your immediate decision: first telescope, budget limit, or accessories. That gets you to the right internal pages faster than browsing products at random.</p>
     </details>
-    <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-        <summary style="font-weight: 700; cursor: pointer;">Do these guides replace product research?</summary>
-        <p class="muted" style="margin: 8px 0 0;">No. They narrow the field, explain tradeoffs, and then link you into product and category pages so you can validate fit before buying.</p>
+    <details>
+        <summary>Do these guides replace product research?</summary>
+        <p class="muted">No. They narrow the field, explain tradeoffs, and then link you into product and category pages so you can validate fit before buying.</p>
     </details>
 </section>

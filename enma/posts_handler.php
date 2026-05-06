@@ -11,6 +11,39 @@ if (!$authenticated) {
     return;
 }
 
+if (!function_exists('enma_post_theme_fix_html')) {
+    function enma_post_theme_fix_html(string $html): string
+    {
+        $normalized = enma_normalize_editor_html($html);
+        if ($normalized === '') {
+            return '';
+        }
+
+        $normalized = preg_replace('/\s+$/m', '', $normalized) ?? $normalized;
+        return trim($normalized);
+    }
+}
+
+if (!function_exists('enma_post_theme_dark_html')) {
+    function enma_post_theme_dark_html(string $html): string
+    {
+        $darkReady = enma_post_theme_fix_html($html);
+        if ($darkReady === '') {
+            return '';
+        }
+
+        // Remove presentation attributes that commonly force light blocks in post bodies.
+        $darkReady = preg_replace('/\s(style|bgcolor|color)\s*=\s*(".*?"|\'.*?\'|[^\s>]+)/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/<\s*style\b[^>]*>[\s\S]*?<\s*\/\s*style\s*>/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/<\s*script\b[^>]*type\s*=\s*("|\')application\/ld\+json\1[^>]*>[\s\S]*?<\s*\/\s*script\s*>/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/<\s*script\b[^>]*>[\s\S]*?<\s*\/\s*script\s*>/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/<\s*article\b[^>]*>/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/<\s*\/\s*article\s*>/i', '', $darkReady) ?? $darkReady;
+        $darkReady = preg_replace('/\s{2,}/', ' ', $darkReady) ?? $darkReady;
+        return trim($darkReady);
+    }
+}
+
 if (!function_exists('enma_posts_table_exists')) {
     function enma_posts_table_exists(PDO $pdo, string $tableName): bool
     {
@@ -32,6 +65,66 @@ if (!function_exists('enma_posts_table_exists')) {
         ]);
 
         return (bool) $stmt->fetchColumn();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_fix_posts_theme') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        try {
+            $rows = $pdo->query('SELECT id, content_html FROM posts')->fetchAll();
+            $updated = 0;
+            $stmt = $pdo->prepare('UPDATE posts SET content_html = :content_html, updated_at = :updated_at WHERE id = :id');
+            $now = now_iso();
+            foreach ($rows as $row) {
+                $original = (string) ($row['content_html'] ?? '');
+                $fixed = enma_post_theme_fix_html($original);
+                if ($fixed === $original) {
+                    continue;
+                }
+                $stmt->execute([
+                    ':content_html' => $fixed,
+                    ':updated_at' => $now,
+                    ':id' => (int) ($row['id'] ?? 0),
+                ]);
+                $updated++;
+            }
+            enma_record_activity($pdo, 'post.bulk_fix_theme', 'post', null, ['updated' => $updated]);
+            $flash = 'Bulk post fix complete. Updated ' . $updated . ' post(s).';
+        } catch (Throwable $e) {
+            $errors[] = 'Bulk fix failed: ' . $e->getMessage();
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_dark_posts_theme') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        try {
+            $rows = $pdo->query('SELECT id, content_html FROM posts')->fetchAll();
+            $updated = 0;
+            $stmt = $pdo->prepare('UPDATE posts SET content_html = :content_html, updated_at = :updated_at WHERE id = :id');
+            $now = now_iso();
+            foreach ($rows as $row) {
+                $original = (string) ($row['content_html'] ?? '');
+                $darkReady = enma_post_theme_dark_html($original);
+                if ($darkReady === $original) {
+                    continue;
+                }
+                $stmt->execute([
+                    ':content_html' => $darkReady,
+                    ':updated_at' => $now,
+                    ':id' => (int) ($row['id'] ?? 0),
+                ]);
+                $updated++;
+            }
+            enma_record_activity($pdo, 'post.bulk_dark_theme', 'post', null, ['updated' => $updated]);
+            $flash = 'Bulk dark-theme conversion complete. Updated ' . $updated . ' post(s).';
+        } catch (Throwable $e) {
+            $errors[] = 'Bulk dark-theme conversion failed: ' . $e->getMessage();
+        }
     }
 }
 

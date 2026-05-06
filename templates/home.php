@@ -130,9 +130,13 @@ $renderVisualBlock = static function (array $block, array $options = []): string
             decoding="<?= e($decoding) ?>"
             fetchpriority="<?= e($fetchpriority) ?>">
         <div class="visual-overlay-content">
-            <?php if ($eyebrow !== ''): ?><span class="visual-eyebrow"><?= e($eyebrow) ?></span><?php endif; ?>
-            <?php if ($title !== ''): ?><h3><?= e($title) ?></h3><?php endif; ?>
-            <?php if ($subtitle !== ''): ?><p><?= e($subtitle) ?></p><?php endif; ?>
+            <?php if ($eyebrow !== '' || $title !== '' || $subtitle !== ''): ?>
+                <div class="visual-text-block">
+                    <?php if ($eyebrow !== ''): ?><span class="visual-eyebrow"><?= e($eyebrow) ?></span><?php endif; ?>
+                    <?php if ($title !== ''): ?><h3><?= e($title) ?></h3><?php endif; ?>
+                    <?php if ($subtitle !== ''): ?><p><?= e($subtitle) ?></p><?php endif; ?>
+                </div>
+            <?php endif; ?>
             <?php if ($ctaLabel !== '' && $ctaUrl !== ''): ?><a class="btn promo-cta <?= e($ctaClass) ?>" href="<?= e(url($ctaUrl)) ?>"><?= e($ctaLabel) ?></a><?php endif; ?>
             <?= $extraHtml ?>
         </div>

@@ -798,8 +798,9 @@ MANDATORY:
 - Include comparison table (3-5 items)
 - Include 3 CTA buttons minimum
 - Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
+- Dark-theme compatible HTML only: do not use inline style attributes, do not add light background colors, and do not include <style> blocks.
 
-Start with this exact disclaimer inside a styled <div>:
+Start with this exact disclaimer in plain HTML text (no inline styles):
 "As an Amazon Associate, I earn from qualifying purchases."
 
 Output format:
@@ -835,6 +836,7 @@ REQUIREMENTS:
 - Include one compact comparison table.
 - Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
 - Tone: practical, clear, no fluff.
+- Dark-theme compatible HTML only: do not use inline style attributes, do not add light background colors, and do not include <style> blocks.
 
 OUTPUT:
 1) Guide angle rationale
@@ -870,6 +872,7 @@ CONVERSION RULES:
   https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
 - Do not invent specs.
 - Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
+- Dark-theme compatible HTML only: do not use inline style attributes, do not add light background colors, and do not include <style> blocks.
 
 OUTPUT:
 1) Product post angle rationale
@@ -910,6 +913,7 @@ CONVERSION RULES:
   https://www.amazon.com/s?k=<query>&tag=fortelescopes-20
 - Do not invent specs.
 - Include at least 1 relevant YouTube embed per compared product when possible (max 2 embeds total), and at least 2 relevant image recommendations (with alt text ideas).
+- Dark-theme compatible HTML only: do not use inline style attributes, do not add light background colors, and do not include <style> blocks.
 
 OUTPUT:
 1) Versus angle rationale
@@ -1012,6 +1016,7 @@ MANDATORY FORMAT:
 - At least 2 internal links to Fortelescopes pages
 - Use Amazon search links if ASIN certainty is low.
 - Include at least 1 relevant YouTube embed and at least 2 relevant image recommendations (with alt text ideas).
+- Dark-theme compatible HTML only: do not use inline style attributes, do not add light background colors, and do not include <style> blocks.
 
 RULES:
 - Do not invent specs.
@@ -1216,6 +1221,7 @@ PROMPT;
         . "5) Spec integrity: flag any likely invented technical specs.\n"
         . "6) CTA quality: specific, intent-matched, non-spammy.\n"
         . "7) Media quality: YouTube embeds are directly relevant to subject/products and image suggestions are relevant and usable.\n\n"
+        . "8) Dark-theme compatibility: no inline style attributes, no <style> blocks, and no hardcoded light backgrounds/text colors.\n\n"
         . "Output format (strict):\n"
         . "A) PASS/FAIL\n"
         . "B) Blocking issues (numbered)\n"
@@ -1318,7 +1324,7 @@ PROMPT;
         . "Output: RAW HTML ONLY for the article body content.\n\n"
         . "Critical Requirements:\n\n"
         . "Affiliate Disclaimer\n"
-        . "Start with a styled <div> that says exactly:\n"
+        . "Start with a plain <p> or <div> (no inline style) that says exactly:\n"
         . "\"As an Amazon Associate, I earn from qualifying purchases.\"\n\n"
         . "Structure\n"
         . "Use <h2> and <h3> headings\n"
@@ -1388,7 +1394,7 @@ PROMPT;
         . "Output: RAW HTML ONLY for the article body content.\n\n"
         . "Critical Requirements:\n\n"
         . "Affiliate Disclaimer\n"
-        . "Start with a styled <div> that says exactly:\n"
+        . "Start with a plain <p> or <div> (no inline style) that says exactly:\n"
         . "\"As an Amazon Associate, I earn from qualifying purchases.\"\n\n"
         . "Structure\n"
         . "Use <h2> and <h3> headings\n"
@@ -3992,6 +3998,18 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 </div>
                 <button class="btn" type="submit">Apply</button>
             </form>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px;">
+                <form method="post" style="margin:0;" onsubmit="return confirm('Run bulk fix for all posts now?');">
+                    <input type="hidden" name="action" value="bulk_fix_posts_theme">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button class="btn" type="submit">Fix All Posts (One Click)</button>
+                </form>
+                <form method="post" style="margin:0;" onsubmit="return confirm('Convert all posts to dark-theme-safe HTML now?');">
+                    <input type="hidden" name="action" value="bulk_dark_posts_theme">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button class="btn" type="submit">Dark Theme All Posts (One Click)</button>
+                </form>
+            </div>
             <?php if ($allPosts === []): ?>
                 <div class="empty">No posts or guides found in database.</div>
             <?php else: ?>
