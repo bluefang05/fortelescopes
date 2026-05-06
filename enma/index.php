@@ -527,6 +527,12 @@ $homeHeroSettings = [
     'tile_2_cta_label' => '',
     'tile_2_cta_url' => '',
     'featured_ids' => '',
+    'faq_1_question' => '',
+    'faq_1_answer' => '',
+    'faq_2_question' => '',
+    'faq_2_answer' => '',
+    'faq_3_question' => '',
+    'faq_3_answer' => '',
 ];
 $homeHeroDraftSettings = $homeHeroSettings;
 if ($authenticated && $activeTab === 'media') {
@@ -547,6 +553,12 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroSettings['tile_2_cta_label'] = site_setting_get($pdo, 'home_promo_tile_2_cta_label', '');
     $homeHeroSettings['tile_2_cta_url'] = site_setting_get($pdo, 'home_promo_tile_2_cta_url', '');
     $homeHeroSettings['featured_ids'] = site_setting_get($pdo, 'home_featured_product_ids', '');
+    $homeHeroSettings['faq_1_question'] = site_setting_get($pdo, 'home_faq_1_question', 'What is the best telescope for a beginner?');
+    $homeHeroSettings['faq_1_answer'] = site_setting_get($pdo, 'home_faq_1_answer', 'The best beginner telescope is usually one that is easy to set up, stable enough to use comfortably, and realistic for your observing habits. Start with the beginner telescope guide if you want a filtered shortlist instead of a raw catalog.');
+    $homeHeroSettings['faq_2_question'] = site_setting_get($pdo, 'home_faq_2_question', 'How much should I spend on a first telescope?');
+    $homeHeroSettings['faq_2_answer'] = site_setting_get($pdo, 'home_faq_2_answer', 'A reasonable first budget depends on how often you expect to observe and how much setup friction you can tolerate. If budget is your main constraint, go straight to telescopes under $500.');
+    $homeHeroSettings['faq_3_question'] = site_setting_get($pdo, 'home_faq_3_question', 'Which accessories help most after buying a telescope?');
+    $homeHeroSettings['faq_3_answer'] = site_setting_get($pdo, 'home_faq_3_answer', 'The best accessories are the ones that solve a real problem in your sessions, such as poor comfort, weak magnification choices, or difficult phone alignment. The accessories guide focuses on those high-impact upgrades.');
     $homeHeroDraftSettings['image'] = site_setting_get($pdo, 'draft_home_hero_image', $homeHeroSettings['image']);
     $homeHeroDraftSettings['image_2x'] = site_setting_get($pdo, 'draft_home_hero_image_2x', $homeHeroSettings['image_2x']);
     $homeHeroDraftSettings['alt'] = site_setting_get($pdo, 'draft_home_hero_alt', $homeHeroSettings['alt']);
@@ -564,6 +576,12 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroDraftSettings['tile_2_cta_label'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_label', $homeHeroSettings['tile_2_cta_label']);
     $homeHeroDraftSettings['tile_2_cta_url'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_url', $homeHeroSettings['tile_2_cta_url']);
     $homeHeroDraftSettings['featured_ids'] = site_setting_get($pdo, 'draft_home_featured_product_ids', $homeHeroSettings['featured_ids']);
+    $homeHeroDraftSettings['faq_1_question'] = site_setting_get($pdo, 'draft_home_faq_1_question', $homeHeroSettings['faq_1_question']);
+    $homeHeroDraftSettings['faq_1_answer'] = site_setting_get($pdo, 'draft_home_faq_1_answer', $homeHeroSettings['faq_1_answer']);
+    $homeHeroDraftSettings['faq_2_question'] = site_setting_get($pdo, 'draft_home_faq_2_question', $homeHeroSettings['faq_2_question']);
+    $homeHeroDraftSettings['faq_2_answer'] = site_setting_get($pdo, 'draft_home_faq_2_answer', $homeHeroSettings['faq_2_answer']);
+    $homeHeroDraftSettings['faq_3_question'] = site_setting_get($pdo, 'draft_home_faq_3_question', $homeHeroSettings['faq_3_question']);
+    $homeHeroDraftSettings['faq_3_answer'] = site_setting_get($pdo, 'draft_home_faq_3_answer', $homeHeroSettings['faq_3_answer']);
 }
 $homeUsedImageUrls = [];
 foreach ([
@@ -2023,6 +2041,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           setInputValue('home_promo_tile_2_cta_label', source.tile_2_cta_label || '');
           setInputValue('home_promo_tile_2_cta_url', source.tile_2_cta_url || '');
           setInputValue('home_featured_product_ids', source.featured_ids || '');
+          setInputValue('home_faq_1_question', source.faq_1_question || '');
+          setInputValue('home_faq_1_answer', source.faq_1_answer || '');
+          setInputValue('home_faq_2_question', source.faq_2_question || '');
+          setInputValue('home_faq_2_answer', source.faq_2_answer || '');
+          setInputValue('home_faq_3_question', source.faq_3_question || '');
+          setInputValue('home_faq_3_answer', source.faq_3_answer || '');
         }
 
         $('#load_live_settings').on('click', function () { loadSettings(publishedSettings); });
@@ -2387,30 +2411,30 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
     </script>
     <style>
         :root {
-            --bg: #edf3fb;
-            --panel: #ffffff;
-            --text: #162235;
-            --muted: #5d6b81;
-            --line: #d7e0ed;
-            --brand: #0e2a57;
-            --brand-2: #144488;
-            --focus: #2f7ae5;
+            --bg: #070d16;
+            --panel: #0f1b2b;
+            --text: #e6edf8;
+            --muted: #9db0c9;
+            --line: rgba(155, 181, 214, 0.22);
+            --brand: #1f4f8e;
+            --brand-2: #2d6bc0;
+            --focus: #4f95ff;
         }
         body {
             margin: 0;
             font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
             color: var(--text);
             background:
-                radial-gradient(1200px 500px at 90% -10%, #d9e8ff 0%, transparent 60%),
-                radial-gradient(700px 350px at -10% -15%, #d6fff0 0%, transparent 55%),
+                radial-gradient(1200px 500px at 90% -10%, #17304a 0%, transparent 60%),
+                radial-gradient(700px 350px at -10% -15%, #143a33 0%, transparent 55%),
                 var(--bg);
         }
         .wrap { max-width: 1260px; margin: 26px auto; padding: 0 14px 28px; }
         .box {
             background: var(--panel);
             border-radius: 14px;
-            border: 1px solid #e4ebf5;
-            box-shadow: 0 10px 30px rgba(8, 29, 66, 0.08);
+            border: 1px solid var(--line);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
             padding: 18px;
             margin-bottom: 16px;
             overflow-x: auto;
@@ -2427,12 +2451,13 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             padding: 10px;
             border: 1px solid var(--line);
             border-radius: 8px;
-            background: #fdfefe;
+            background: #122238;
+            color: var(--text);
         }
         input:focus, textarea:focus, select:focus {
             outline: none;
-            border-color: #6ea1ee;
-            box-shadow: 0 0 0 3px rgba(73, 132, 221, 0.15);
+            border-color: var(--focus);
+            box-shadow: 0 0 0 3px rgba(79, 149, 255, 0.2);
         }
         .btn {
             background: linear-gradient(180deg, var(--brand-2), var(--brand));
@@ -2444,10 +2469,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             font-weight: 700;
         }
         table { width: 100%; min-width: 720px; border-collapse: collapse; }
-        th, td { text-align: left; border-bottom: 1px solid #e9eef6; padding: 10px 8px; font-size: 14px; }
-        th { color: #2c3e57; background: #f6f9fd; position: sticky; top: 0; z-index: 1; }
-        tbody tr:nth-child(even) { background: #fbfdff; }
-        tbody tr:hover { background: #eef4fd; }
+        th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 10px 8px; font-size: 14px; }
+        th { color: #eaf1fc; background: #122238; position: sticky; top: 0; z-index: 1; }
+        tbody tr:nth-child(even) { background: rgba(18, 34, 56, 0.45); }
+        tbody tr:hover { background: rgba(24, 44, 72, 0.75); }
         .error { background: #ffe5e5; color: #8a1f1f; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
         .ok { background: #e4f8ea; color: #165f2b; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
         .toplink { display: inline-block; margin-bottom: 12px; color: var(--brand); font-weight: 700; text-decoration: none; }
@@ -2461,8 +2486,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             z-index: 20;
             padding: 8px;
             border-radius: 12px;
-            border: 1px solid #dbe6f4;
-            background: rgba(248, 251, 255, 0.92);
+            border: 1px solid var(--line);
+            background: rgba(9, 19, 34, 0.92);
             backdrop-filter: blur(6px);
         }
         .tab {
@@ -2471,14 +2496,14 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             padding:10px 14px;
             border-radius:999px;
             border:1px solid var(--line);
-            background:#fff;
-            color:#1c365d;
+            background:#122238;
+            color:#dce9fa;
             font-weight:700;
             font-size:13px;
         }
         .tab:hover {
-            border-color:#a7bee0;
-            color:#112e56;
+            border-color:#4a6b94;
+            color:#ffffff;
         }
         .tab.active {
             background: linear-gradient(180deg, var(--brand-2), var(--brand));
@@ -2486,9 +2511,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             border-color:var(--brand);
         }
         .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:14px; }
-        .stat { background:#f7faff; border:1px solid #dce6f3; border-radius:10px; padding:10px; }
-        .stat-k { font-size:12px; color:#4a5b73; margin-bottom:4px; }
-        .stat-v { font-size:24px; font-weight:800; color:#0b1f3a; }
+        .stat { background:#122238; border:1px solid var(--line); border-radius:10px; padding:10px; }
+        .stat-k { font-size:12px; color:#9db0c9; margin-bottom:4px; }
+        .stat-v { font-size:24px; font-weight:800; color:#eaf1fc; }
         .muted { color: var(--muted); font-size:13px; }
         .toolbar { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:12px; }
         .toolbar .field { max-width:280px; }
@@ -2517,7 +2542,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         }
         .copy-status {
             font-size:12px;
-            color:#5d6f86;
+            color:#9db0c9;
             min-height:16px;
         }
         .help-icon {
@@ -2527,9 +2552,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             width:18px;
             height:18px;
             border-radius:999px;
-            border:1px solid #9fb7da;
-            color:#1f4f8e;
-            background:#eef4ff;
+            border:1px solid #4a6b94;
+            color:#dce9fa;
+            background:#122238;
             font-size:11px;
             font-weight:800;
             line-height:1;
@@ -2546,7 +2571,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             opacity:0;
             pointer-events:none;
         }
-        .empty { padding:14px; border:1px dashed #d8e2ee; border-radius:8px; color:#5d6f86; background:#f9fbfe; }
+        .empty { padding:14px; border:1px dashed #3a5272; border-radius:8px; color:#9db0c9; background:#0d1726; }
         .note-editor { margin-bottom: 12px; }
         .maintenance-grid {
             display: grid;
@@ -2555,9 +2580,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             margin-top: 10px;
         }
         .maintenance-card {
-            border: 1px solid #d9e6f7;
+            border: 1px solid var(--line);
             border-radius: 12px;
-            background: #f8fbff;
+            background: #122238;
             padding: 12px;
         }
         .maintenance-card h4 {
@@ -2567,7 +2592,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         .maintenance-meta {
             margin: 0 0 8px;
             font-size: 12px;
-            color: #395377;
+            color: #9db0c9;
         }
         .maintenance-desc {
             margin: 0 0 10px;
@@ -2577,7 +2602,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         .maintenance-last {
             margin: 0 0 10px;
             font-size: 12px;
-            color: #5d6f86;
+            color: var(--muted);
         }
         .maintenance-last strong.ok { color: #1e6a31; background: transparent; padding: 0; }
         .maintenance-last strong.fail { color: #9b1c1c; background: transparent; padding: 0; }
@@ -2586,26 +2611,54 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             gap: 8px;
             flex-wrap: wrap;
             padding: 10px;
-            border: 1px solid #dbe6f4;
+            border: 1px solid var(--line);
             border-radius: 10px;
-            background: #f6faff;
+            background: #122238;
             margin: 0 0 12px;
         }
         .ops-link {
             display: inline-flex;
             align-items: center;
             text-decoration: none;
-            border: 1px solid #c9d8ee;
+            border: 1px solid var(--line);
             border-radius: 999px;
             padding: 6px 10px;
             font-size: 12px;
             font-weight: 700;
-            color: #1c3b67;
-            background: #fff;
+            color: #dce9fa;
+            background: #0f1b2b;
         }
         .ops-link:hover {
-            border-color: #8fb0dd;
-            color: #0f2f59;
+            border-color: #4a6b94;
+            color: #ffffff;
+        }
+        .home-admin-sections {
+            display: grid;
+            gap: 12px;
+        }
+        .home-admin-group {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: #0f1b2b;
+            overflow: hidden;
+        }
+        .home-admin-group > summary {
+            cursor: pointer;
+            list-style: none;
+            padding: 11px 12px;
+            font-weight: 800;
+            background: #122238;
+            border-bottom: 1px solid var(--line);
+        }
+        .home-admin-group > summary::-webkit-details-marker {
+            display: none;
+        }
+        .home-admin-group-body {
+            padding: 12px;
+        }
+        .home-admin-group-body h3 {
+            margin: 0 0 8px;
+            font-size: 15px;
         }
         .quick-actions {
             display:flex;
@@ -2636,20 +2689,20 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             margin: 0 0 12px;
         }
         .ops-kpi {
-            border:1px solid #dbe6f4;
+            border:1px solid var(--line);
             border-radius:10px;
-            background:#f8fbff;
+            background:#122238;
             padding:10px;
         }
         .ops-kpi .k {
             font-size:12px;
-            color:#4e6280;
+            color:var(--muted);
             margin-bottom:4px;
         }
         .ops-kpi .v {
             font-size:20px;
             font-weight:800;
-            color:#0d2a53;
+            color:#eaf1fc;
         }
         .ops-section-title {
             margin: 0 0 8px;
@@ -2676,38 +2729,38 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            align-items:start;
 	        }
 	        .post-preview-card {
-	            border:1px solid #d8e3f0;
+	            border:1px solid var(--line);
 	            border-radius:12px;
-	            background:#fbfdff;
+	            background:#122238;
 	            padding:14px;
 	        }
 	        .serp-preview-title {
-	            color:#1a0dab;
+	            color:#8bb9ff;
 	            font-size:22px;
 	            line-height:1.25;
 	            margin:0 0 6px;
 	        }
 	        .serp-preview-url {
-	            color:#188038;
+	            color:#6dc5a2;
 	            font-size:14px;
 	            margin-bottom:6px;
 	        }
 	        .serp-preview-desc {
-	            color:#4d5156;
+	            color:var(--muted);
 	            font-size:14px;
 	            line-height:1.45;
 	            margin:0;
 	        }
 	        .post-render-preview {
-	            border:1px solid #dfe8f3;
+	            border:1px solid var(--line);
 	            border-radius:16px;
-	            background:#fff;
+	            background:#0f1b2b;
 	            overflow:hidden;
 	        }
 	        .post-render-preview .hero-preview {
 	            padding:18px;
-	            background:linear-gradient(145deg,#fff9ee 0%,#fff2d8 100%);
-	            border-bottom:1px solid #ebf0f5;
+	            background:linear-gradient(145deg,#122238 0%,#0f1b2b 100%);
+	            border-bottom:1px solid var(--line);
 	        }
 	        .post-render-preview .hero-preview h3 {
 	            margin:10px 0 8px;
@@ -2721,8 +2774,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            font-weight:800;
 	            text-transform:uppercase;
 	            letter-spacing:.04em;
-	            color:#0f294f;
-	            background:#eaf2ff;
+	            color:#dce9fa;
+	            background:#1b3354;
 	            border-radius:999px;
 	            padding:5px 8px;
 	        }
@@ -2756,9 +2809,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	            font-size:14px;
 	        }
             .seo-panel {
-                border: 1px solid #d8e3f0;
+                border: 1px solid var(--line);
                 border-radius: 12px;
-                background: #f9fcff;
+                background: #122238;
                 padding: 12px;
                 margin: 8px 0 14px;
             }
@@ -2769,7 +2822,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             .seo-score {
                 font-size: 24px;
                 font-weight: 800;
-                color: #0e2a57;
+                color: #eaf1fc;
             }
             .seo-metrics {
                 display: grid;
@@ -2778,10 +2831,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 margin: 10px 0;
             }
             .seo-metric {
-                border: 1px solid #e0eaf7;
+                border: 1px solid var(--line);
                 border-radius: 8px;
                 padding: 8px;
-                background: #fff;
+                background: #0f1b2b;
                 font-size: 12px;
             }
             .seo-checklist {
@@ -2793,20 +2846,60 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 gap: 8px;
             }
             .seo-checklist li {
-                border: 1px solid #dbe6f4;
+                border: 1px solid var(--line);
                 border-radius: 8px;
                 padding: 8px;
                 font-size: 13px;
                 display: flex;
                 justify-content: space-between;
                 gap: 10px;
-                background: #fff;
+                background: #0f1b2b;
             }
             .seo-ok {
-                color: #1a6f35;
+                color: #67d68f;
             }
             .seo-warn {
-                color: #9a2f15;
+                color: #ff9f85;
+            }
+
+            /* Force dark theme on remaining inline light containers/links */
+            .wrap [style*="background:#fff"],
+            .wrap [style*="background: #fff"],
+            .wrap [style*="background:#ffffff"],
+            .wrap [style*="background: #ffffff"],
+            .wrap [style*="background:#f8fbff"],
+            .wrap [style*="background: #f8fbff"],
+            .wrap [style*="background:#f9fcff"],
+            .wrap [style*="background: #f9fcff"],
+            .wrap [style*="background:#fbfdff"],
+            .wrap [style*="background: #fbfdff"],
+            .wrap [style*="background:#f6f9fc"],
+            .wrap [style*="background: #f6f9fc"],
+            .wrap [style*="background:#f9fafb"],
+            .wrap [style*="background: #f9fafb"],
+            .wrap [style*="background:#eef2f7"],
+            .wrap [style*="background: #eef2f7"] {
+                background: #122238 !important;
+                border-color: var(--line) !important;
+                color: var(--text) !important;
+            }
+
+            .wrap [style*="border:1px solid #e2e8f0"],
+            .wrap [style*="border: 1px solid #e2e8f0"],
+            .wrap [style*="border:1px solid #d7e0ed"],
+            .wrap [style*="border: 1px solid #d7e0ed"] {
+                border-color: var(--line) !important;
+            }
+
+            .wrap a[style*="color:#0b1f3a"],
+            .wrap a[style*="color: #0b1f3a"] {
+                color: #dce9fa !important;
+            }
+            .wrap [style*="color:#0f172a"],
+            .wrap [style*="color: #0f172a"],
+            .wrap [style*="color:#111827"],
+            .wrap [style*="color: #111827"] {
+                color: var(--text) !important;
             }
             .editor-tools {
                 display: flex;
@@ -3298,6 +3391,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <button class="btn" type="submit" id="publish_btn">Publish To Home</button>
                 </div>
                 <div id="home-dup-warning" style="display:none;margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff4e5;border:1px solid #f0c48a;color:#8a3b00;font-size:12px;font-weight:700;"></div>
+                <div class="home-admin-sections">
+                <details class="home-admin-group" open>
+                    <summary>Hero</summary>
+                    <div class="home-admin-group-body">
                 <label>Hero title (optional override)</label>
                 <input id="home_hero_title" type="text" name="home_hero_title" value="<?= e((string) ($homeHeroSettings['title'] ?? '')) ?>" placeholder="See what's out there">
                 <label>Hero eyebrow / small label</label>
@@ -3345,7 +3442,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <select name="home_hero_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $heroLayoutSize === $opt ? 'selected' : '' ?>><?= e($opt) ?></option><?php endforeach; ?></select>
                     </div>
                 </div>
+                    </div>
+                </details>
 
+                <details class="home-admin-group" open>
+                    <summary>Promo Tiles</summary>
+                    <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Promo Tile 1</h3>
                 <input id="home_promo_tile_1_title" type="text" name="home_promo_tile_1_title" value="<?= e((string) ($homeHeroSettings['tile_1_title'] ?? '')) ?>" placeholder="Start Stargazing Now">
                 <input type="text" name="home_promo_tile_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_eyebrow', '')) ?>" placeholder="Tile 1 eyebrow">
@@ -3385,7 +3487,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <select name="home_promo_tile_2_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
                     <select name="home_promo_tile_2_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
                 </div>
+                    </div>
+                </details>
 
+                <details class="home-admin-group">
+                    <summary>Reusable Banners</summary>
+                    <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Reusable Banner 1</h3>
                 <input type="text" name="home_banner_1_image" list="media-image-urls" value="<?= e(site_setting_get($pdo, 'home_banner_1_image', '')) ?>" placeholder="/assets/uploads/media/...webp">
                 <input type="text" name="home_banner_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_banner_1_eyebrow', '')) ?>" placeholder="Banner eyebrow">
@@ -3421,7 +3528,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <select name="home_banner_2_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b2Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
                     <select name="home_banner_2_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $b2Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
                 </div>
+                    </div>
+                </details>
 
+                <details class="home-admin-group">
+                    <summary>Goals and FAQ</summary>
+                    <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Shop by Goal (Admin)</h3>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <input type="text" name="home_goal_1_label" value="<?= e(site_setting_get($pdo, 'home_goal_1_label', 'First Telescope')) ?>" placeholder="Goal 1 label">
@@ -3434,6 +3546,25 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <input type="text" name="home_goal_4_url" value="<?= e(site_setting_get($pdo, 'home_goal_4_url', '/guides')) ?>" placeholder="Goal 4 URL">
                 </div>
 
+                <h3 style="margin:14px 0 8px;">Home FAQ (Admin)</h3>
+                <label>FAQ 1 question</label>
+                <input id="home_faq_1_question" type="text" name="home_faq_1_question" value="<?= e((string) ($homeHeroSettings['faq_1_question'] ?? '')) ?>" placeholder="What is the best telescope for a beginner?">
+                <label>FAQ 1 answer</label>
+                <textarea id="home_faq_1_answer" name="home_faq_1_answer" rows="3" placeholder="Answer for FAQ 1"><?= e((string) ($homeHeroSettings['faq_1_answer'] ?? '')) ?></textarea>
+                <label>FAQ 2 question</label>
+                <input id="home_faq_2_question" type="text" name="home_faq_2_question" value="<?= e((string) ($homeHeroSettings['faq_2_question'] ?? '')) ?>" placeholder="How much should I spend on a first telescope?">
+                <label>FAQ 2 answer</label>
+                <textarea id="home_faq_2_answer" name="home_faq_2_answer" rows="3" placeholder="Answer for FAQ 2"><?= e((string) ($homeHeroSettings['faq_2_answer'] ?? '')) ?></textarea>
+                <label>FAQ 3 question</label>
+                <input id="home_faq_3_question" type="text" name="home_faq_3_question" value="<?= e((string) ($homeHeroSettings['faq_3_question'] ?? '')) ?>" placeholder="Which accessories help most after buying a telescope?">
+                <label>FAQ 3 answer</label>
+                <textarea id="home_faq_3_answer" name="home_faq_3_answer" rows="3" placeholder="Answer for FAQ 3"><?= e((string) ($homeHeroSettings['faq_3_answer'] ?? '')) ?></textarea>
+                    </div>
+                </details>
+
+                <details class="home-admin-group">
+                    <summary>Featured Products and Presets</summary>
+                    <div class="home-admin-group-body">
                 <label>Most Loved Product IDs (comma-separated, max 4)</label>
                 <input id="home_featured_product_ids" type="text" name="home_featured_product_ids" value="<?= e((string) ($homeHeroSettings['featured_ids'] ?? '')) ?>" placeholder="123,456,789,101">
                 <label>Featured Product Picker (max 4)</label>
@@ -3455,6 +3586,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <button class="btn" type="button" id="preset_save_btn">Save Preset</button>
                     <button class="btn" type="button" id="preset_load_btn">Load Preset</button>
                     <button class="btn" type="button" id="preset_delete_btn">Delete Preset</button>
+                </div>
+                    </div>
+                </details>
                 </div>
                 <div class="sticky-save-bar" style="position:sticky;bottom:8px;z-index:20;margin-top:12px;padding:10px;border:1px solid #d7e0ed;border-radius:10px;background:#fff;box-shadow:0 8px 16px rgba(10,20,34,.08);display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn" type="submit" id="save_draft_btn_sticky">Save Draft</button>

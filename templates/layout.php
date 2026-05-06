@@ -585,6 +585,13 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
             filter: brightness(0.82) saturate(1.06);
         }
 
+        .visual-block-link {
+            position: absolute;
+            inset: 0;
+            z-index: 2;
+            border-radius: inherit;
+        }
+
         .visual-overlay-content {
             position: absolute;
             inset: 0;
@@ -593,6 +600,13 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
             gap: 8px;
             padding: 16px;
             color: #f7fbff;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .visual-overlay-content a,
+        .visual-overlay-content button {
+            pointer-events: auto;
         }
 
         .visual-text-block {
@@ -892,24 +906,24 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
 
         .card-cta {
             width: 100%;
-            background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
+            background: linear-gradient(140deg, #c45108 0%, #933700 100%);
             color: #fff;
             padding: 11px 12px;
-            box-shadow: 0 9px 18px rgba(255, 122, 26, 0.28);
+            box-shadow: 0 9px 18px rgba(147, 55, 0, 0.32);
         }
 
         .card-cta:hover { transform: translateY(-2px); }
 
         .btn {
-            background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
+            background: linear-gradient(140deg, #c45108 0%, #933700 100%);
             color: #fff;
             padding: 12px 16px;
-            box-shadow: 0 10px 18px rgba(255, 122, 26, 0.3);
+            box-shadow: 0 10px 18px rgba(147, 55, 0, 0.34);
         }
 
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 14px 24px rgba(255, 122, 26, 0.4);
+            box-shadow: 0 14px 24px rgba(147, 55, 0, 0.45);
         }
 
         .pagination {
@@ -956,10 +970,10 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
         }
 
         .pagination-link.active {
-            background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
+            background: linear-gradient(140deg, #c45108 0%, #933700 100%);
             border-color: transparent;
             color: #fff;
-            box-shadow: 0 8px 18px rgba(255, 122, 26, 0.28);
+            box-shadow: 0 8px 18px rgba(147, 55, 0, 0.32);
         }
 
         .amazon-btn {
@@ -1367,6 +1381,7 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
             border-radius: 12px;
             padding: 12px 14px;
             background: #fff;
+            color: #1b2f4a;
         }
 
         .faq-panel details:last-child {
@@ -1384,6 +1399,7 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
             margin: 10px 0 0;
             font-size: 15px;
             line-height: 1.6;
+            color: #3b4f69;
         }
 
         @keyframes rise {
@@ -1395,6 +1411,23 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
             .hero { padding: 18px 16px; border-radius: 20px; }
             .hero--with-image {
                 min-height: clamp(320px, 86vw, 520px);
+            }
+            .hero-visual-block .visual-text-block,
+            .hero-visual-block .trust-row {
+                display: none;
+            }
+            .hero-visual-block .visual-overlay-content {
+                justify-content: flex-end;
+                padding: 16px 14px 20px;
+            }
+            .hero-visual-block .visual-overlay-content .hero-main-cta {
+                width: auto;
+                max-width: calc(100% - 20px);
+                min-width: 0;
+                padding: 10px 14px;
+                font-size: 13px;
+                line-height: 1.2;
+                box-sizing: border-box;
             }
             .hero h1, .hero h2 { font-size: clamp(26px, 9vw, 38px); }
             .hero-visual {
@@ -1722,11 +1755,46 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
         }
 
         .faq-panel details {
-            background: #111f32;
+            background: linear-gradient(180deg, #16263b 0%, #122033 100%) !important;
+            border-color: rgba(150, 178, 212, 0.34) !important;
+            color: #dce9fa !important;
         }
 
         .faq-panel summary {
-            color: #e7f0fe;
+            color: #f2f7ff !important;
+        }
+
+        .faq-panel .muted {
+            color: #d0def3 !important;
+        }
+
+        /* Force-dark legacy inline FAQ blocks used in some templates */
+        details[style*="background: #fff"],
+        details[style*="background:#fff"],
+        details[style*="background: #ffffff"],
+        details[style*="background:#ffffff"] {
+            background: linear-gradient(180deg, #16263b 0%, #122033 100%) !important;
+            border-color: rgba(150, 178, 212, 0.34) !important;
+            color: #dce9fa !important;
+        }
+
+        details[style*="border: 1px solid #e8edf3"],
+        details[style*="border:1px solid #e8edf3"] {
+            border-color: rgba(150, 178, 212, 0.34) !important;
+        }
+
+        details[style*="background: #fff"] > summary[style*="font-weight: 700"],
+        details[style*="background:#fff"] > summary[style*="font-weight: 700"],
+        details[style*="background: #ffffff"] > summary[style*="font-weight: 700"],
+        details[style*="background:#ffffff"] > summary[style*="font-weight: 700"] {
+            color: #f2f7ff !important;
+        }
+
+        details[style*="background: #fff"] .muted,
+        details[style*="background:#fff"] .muted,
+        details[style*="background: #ffffff"] .muted,
+        details[style*="background:#ffffff"] .muted {
+            color: #d0def3 !important;
         }
 
         .notice {

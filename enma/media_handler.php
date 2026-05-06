@@ -413,6 +413,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'home_
                 'home_banner_1_image','home_banner_1_eyebrow','home_banner_1_title','home_banner_1_subtitle','home_banner_1_cta_label','home_banner_1_cta_url','home_banner_1_text_position','home_banner_1_overlay_strength','home_banner_1_layout_size',
                 'home_banner_2_image','home_banner_2_eyebrow','home_banner_2_title','home_banner_2_subtitle','home_banner_2_cta_label','home_banner_2_cta_url','home_banner_2_text_position','home_banner_2_overlay_strength','home_banner_2_layout_size',
                 'home_goal_1_label','home_goal_1_url','home_goal_2_label','home_goal_2_url','home_goal_3_label','home_goal_3_url','home_goal_4_label','home_goal_4_url',
+                'home_faq_1_question','home_faq_1_answer','home_faq_2_question','home_faq_2_answer','home_faq_3_question','home_faq_3_answer',
             ];
             foreach ($keys as $key) {
                 $draftValue = site_setting_get($pdo, 'draft_' . $key, site_setting_get($pdo, $key, ''));
@@ -522,6 +523,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $goal3Url = trim((string) ($_POST['home_goal_3_url'] ?? ''));
         $goal4Label = trim((string) ($_POST['home_goal_4_label'] ?? ''));
         $goal4Url = trim((string) ($_POST['home_goal_4_url'] ?? ''));
+        $faq1Question = trim((string) ($_POST['home_faq_1_question'] ?? ''));
+        $faq1Answer = trim((string) ($_POST['home_faq_1_answer'] ?? ''));
+        $faq2Question = trim((string) ($_POST['home_faq_2_question'] ?? ''));
+        $faq2Answer = trim((string) ($_POST['home_faq_2_answer'] ?? ''));
+        $faq3Question = trim((string) ($_POST['home_faq_3_question'] ?? ''));
+        $faq3Answer = trim((string) ($_POST['home_faq_3_answer'] ?? ''));
         $featuredProductIds = trim((string) ($_POST['home_featured_product_ids'] ?? ''));
 
         if (
@@ -604,6 +611,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_goal_3_url', $goal3Url);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_goal_4_label', $goal4Label);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_goal_4_url', $goal4Url);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_1_question', $faq1Question);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_1_answer', $faq1Answer);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_2_question', $faq2Question);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_2_answer', $faq2Answer);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_3_question', $faq3Question);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_3_answer', $faq3Answer);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_featured_product_ids', $featuredProductIds);
                 enma_record_activity($pdo, 'settings.home_hero.save', 'setting', 0, [
                     'home_hero_image' => $heroImage,
