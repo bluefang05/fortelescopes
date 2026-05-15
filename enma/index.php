@@ -62,6 +62,55 @@ $editingPost = null;
 $editingProduct = null;
 $editingUser = null;
 
+// Auto-fix DB schema and post section data on ENMA entry (throttled per session).
+$enmaAutofixIntervalSeconds = 900;
+$enmaAutofixDue = true;
+if (isset($_SESSION['enma_autofix_last_run']) && is_numeric($_SESSION['enma_autofix_last_run'])) {
+    $enmaAutofixDue = ((time() - (int) $_SESSION['enma_autofix_last_run']) >= $enmaAutofixIntervalSeconds);
+}
+
+if ($authenticated && $enmaAutofixDue) {
+    try {
+        init_schema($pdo);
+
+        if (DB_DRIVER === 'mysql') {
+            $nowIso = now_iso();
+            $normalizeSectionStmt = $pdo->prepare(
+                'UPDATE posts
+                 SET extra_data = JSON_SET(COALESCE(extra_data, JSON_OBJECT()), "$.section", :section_to),
+                     updated_at = :updated_at
+                 WHERE post_type = "post"
+                   AND JSON_UNQUOTE(JSON_EXTRACT(COALESCE(extra_data, JSON_OBJECT()), "$.section")) = :section_from'
+            );
+            $normalizeSectionStmt->execute([
+                ':section_to' => 'reviews',
+                ':section_from' => 'review',
+                ':updated_at' => $nowIso,
+            ]);
+            $normalizeSectionStmt->execute([
+                ':section_to' => 'blog',
+                ':section_from' => 'learn',
+                ':updated_at' => $nowIso,
+            ]);
+
+            $promoteReviewsStmt = $pdo->prepare(
+                'UPDATE posts
+                 SET post_type = "review",
+                     updated_at = :updated_at
+                 WHERE post_type = "post"
+                   AND JSON_UNQUOTE(JSON_EXTRACT(COALESCE(extra_data, JSON_OBJECT()), "$.section")) = "reviews"'
+            );
+            $promoteReviewsStmt->execute([
+                ':updated_at' => $nowIso,
+            ]);
+        }
+
+        $_SESSION['enma_autofix_last_run'] = time();
+    } catch (Throwable $e) {
+        $errors[] = 'ENMA auto-fix failed: ' . $e->getMessage();
+    }
+}
+
 // Include handlers
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/posts_handler.php';
@@ -74,11 +123,39 @@ require_once __DIR__ . '/maintenance.php';
 $authenticated = !empty($_SESSION['admin_ok']);
 
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'control') : 'overview';
-if (!in_array($activeTab, ['control', 'overview', 'products', 'media', 'posts', 'indexation', 'prompts', 'users', 'views', 'analytics', 'maintenance'], true)) {
+if (!in_array($activeTab, ['control', 'overview', 'products', 'media', 'posts', 'indexation', 'prompts', 'users', 'messages', 'sql', 'views', 'analytics', 'maintenance'], true)) {
     $activeTab = 'control';
 }
-$viewDays = $authenticated ? max(1, min(180, (int) ($_GET['days'] ?? 30))) : 30;
+$viewRange = $authenticated ? strtolower(trim((string) ($_GET['view_range'] ?? 'custom'))) : 'custom';
+$viewRangeDaysMap = [
+    'today' => 1,
+    'week' => 7,
+    'month' => 30,
+];
+$viewDays = 30;
+if ($authenticated) {
+    if (isset($viewRangeDaysMap[$viewRange])) {
+        $viewDays = $viewRangeDaysMap[$viewRange];
+    } elseif ($viewRange === 'all') {
+        try {
+            $minViewDate = (string) ($pdo->query('SELECT MIN(view_date) FROM page_views')->fetchColumn() ?: '');
+            if ($minViewDate !== '') {
+                $viewDays = max(1, (int) floor((time() - strtotime($minViewDate . ' 00:00:00 UTC')) / 86400) + 1);
+            } else {
+                $viewDays = 3650;
+            }
+        } catch (Throwable $e) {
+            $viewDays = 3650;
+        }
+    } else {
+        $viewRange = 'custom';
+        $viewDays = max(1, min(180, (int) ($_GET['days'] ?? 30)));
+    }
+}
 $viewsDashboard = ($authenticated && $activeTab === 'views') ? get_views_dashboard($pdo, $viewDays) : [];
+$viewWindowLabel = $viewRange === 'all'
+    ? 'all tracked views'
+    : ('last ' . (int) $viewDays . ' days');
 $postAutosaveEnabled = !empty($postAutosaveEnabled);
 
 if (!function_exists('enma_page_value')) {
@@ -139,11 +216,15 @@ if (!function_exists('enma_post_public_path')) {
         }
 
         $postType = trim((string) ($post['post_type'] ?? 'post'));
-        return $postType === 'guide' ? '/' . $slug : '/blog/' . $slug;
+        return $postType === 'guide'
+            ? '/' . $slug
+            : post_url_path($post);
     }
 }
 require_once __DIR__ . '/indexation_handler.php';
 require_once __DIR__ . '/operator_handler.php';
+require_once __DIR__ . '/messages_handler.php';
+require_once __DIR__ . '/sql_handler.php';
 
 $productQuery = $authenticated ? trim((string) ($_GET['q'] ?? '')) : '';
 $allProducts = [];
@@ -224,7 +305,7 @@ if ($authenticated && $activeTab === 'products') {
 
 $overviewStats = [];
 if ($authenticated && $activeTab === 'overview') {
-$views30dSql = "SELECT COALESCE(SUM(views),0) FROM page_views WHERE view_date >= DATE_SUB(UTC_DATE(), INTERVAL 29 DAY)";
+$views30dSql = "SELECT COALESCE(SUM(views),0) FROM page_views WHERE view_date >= DATE_SUB(UTC_DATE(), INTERVAL 29 DAY) AND page_type IN ('home','blog','guides','guide','category','page','post','product')";
 $overviewStats = [
         'products' => (int) $pdo->query('SELECT COUNT(*) FROM products')->fetchColumn(),
         'categories' => (int) $pdo->query('SELECT COUNT(DISTINCT category_slug) FROM products')->fetchColumn(),
@@ -362,6 +443,7 @@ if ($authenticated && $activeTab === 'analytics') {
             'top_agents' => $analytics->getTopUserAgents(50),
             'suspicious_ips' => $analytics->getSuspiciousIPs(),
             'recent_logs' => $analytics->getRecentLogs(200),
+            'monetization' => $analytics->getMonetizationMetrics(30),
         ];
     } catch (Throwable $e) {
         $errors[] = 'Analytics load failed: ' . $e->getMessage();
@@ -371,6 +453,7 @@ if ($authenticated && $activeTab === 'analytics') {
             'top_agents' => [],
             'suspicious_ips' => [],
             'recent_logs' => [],
+            'monetization' => [],
         ];
     }
 }
@@ -455,6 +538,18 @@ $indexationPagination = $authenticated && $activeTab === 'indexation'
 $usersPagination = $authenticated && $activeTab === 'users'
     ? enma_render_pagination('users', 'users_page', $usersPage, $usersTotalPages, $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
+$messagesPagination = $authenticated && $activeTab === 'messages'
+    ? enma_render_pagination(
+        'messages',
+        'messages_page',
+        $messagesPage,
+        $messagesTotalPages,
+        array_filter([
+            'msg_status' => $messageStatusFilter !== 'all' ? $messageStatusFilter : null,
+            'msg_q' => $messageSearch !== '' ? $messageSearch : null,
+        ], static fn($value): bool => $value !== null && $value !== '')
+    )
+    : '';
 $activityPagination = $authenticated && ($activeTab === 'users' || $activeTab === 'overview')
     ? enma_render_pagination($activeTab === 'overview' ? 'overview' : 'users', 'activity_page', $activityPage, $activityTotalPages, $activeTab === 'users' && $userSearch !== '' ? ['user_q' => $userSearch] : [])
     : '';
@@ -462,6 +557,7 @@ $allMedia = [];
 $mediaImageOptions = [];
 $mediaFeaturedProductOptions = [];
 $mediaPage = $authenticated ? enma_page_value('media_page') : 1;
+$mediaSearch = $authenticated ? trim((string) ($_GET['media_q'] ?? '')) : '';
 $mediaPerPage = 24;
 $mediaTotal = 0;
 $mediaTotalPages = 1;
@@ -470,15 +566,42 @@ if ($authenticated && $activeTab === 'media') {
     try {
         $mediaTableReady = function_exists('enma_media_table_exists') && enma_media_table_exists($pdo);
         if ($mediaTableReady) {
-            $mediaTotal = (int) $pdo->query('SELECT COUNT(*) FROM media_library')->fetchColumn();
+            if ($mediaSearch !== '') {
+                $countStmt = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM media_library
+                     WHERE title LIKE :q
+                        OR original_name LIKE :q
+                        OR file_url LIKE :q
+                        OR mime_type LIKE :q'
+                );
+                $countStmt->execute([':q' => '%' . $mediaSearch . '%']);
+                $mediaTotal = (int) $countStmt->fetchColumn();
+            } else {
+                $mediaTotal = (int) $pdo->query('SELECT COUNT(*) FROM media_library')->fetchColumn();
+            }
             $mediaTotalPages = enma_total_pages($mediaTotal, $mediaPerPage);
             $mediaPage = min($mediaPage, $mediaTotalPages);
-            $stmt = $pdo->prepare(
-                'SELECT id, media_type, mime_type, file_ext, original_name, stored_name, file_url, file_size, title, alt_text, notes, status, created_at
-                 FROM media_library
-                 ORDER BY id DESC
-                 LIMIT :limit OFFSET :offset'
-            );
+            if ($mediaSearch !== '') {
+                $stmt = $pdo->prepare(
+                    'SELECT id, media_type, mime_type, file_ext, original_name, stored_name, file_url, file_size, title, alt_text, notes, status, created_at
+                     FROM media_library
+                     WHERE title LIKE :q
+                        OR original_name LIKE :q
+                        OR file_url LIKE :q
+                        OR mime_type LIKE :q
+                     ORDER BY id DESC
+                     LIMIT :limit OFFSET :offset'
+                );
+                $stmt->bindValue(':q', '%' . $mediaSearch . '%', PDO::PARAM_STR);
+            } else {
+                $stmt = $pdo->prepare(
+                    'SELECT id, media_type, mime_type, file_ext, original_name, stored_name, file_url, file_size, title, alt_text, notes, status, created_at
+                     FROM media_library
+                     ORDER BY id DESC
+                     LIMIT :limit OFFSET :offset'
+                );
+            }
             $stmt->bindValue(':limit', $mediaPerPage, PDO::PARAM_INT);
             $stmt->bindValue(':offset', ($mediaPage - 1) * $mediaPerPage, PDO::PARAM_INT);
             $stmt->execute();
@@ -522,10 +645,14 @@ $homeHeroSettings = [
     'tile_1_title' => '',
     'tile_1_cta_label' => '',
     'tile_1_cta_url' => '',
+    'tile_1_overlay_link_label' => '',
+    'tile_1_overlay_link_url' => '',
     'tile_2_image' => '',
     'tile_2_title' => '',
     'tile_2_cta_label' => '',
     'tile_2_cta_url' => '',
+    'tile_2_overlay_link_label' => '',
+    'tile_2_overlay_link_url' => '',
     'featured_ids' => '',
     'faq_1_question' => '',
     'faq_1_answer' => '',
@@ -533,6 +660,15 @@ $homeHeroSettings = [
     'faq_2_answer' => '',
     'faq_3_question' => '',
     'faq_3_answer' => '',
+    'home_h1_text' => '',
+    'site_logo_image' => '/assets/logo/128.png',
+    'site_favicon_ico' => '/favicon.ico',
+    'site_favicon_image' => '/assets/logo/32.png',
+    'site_og_image' => '',
+    'site_enable_security_headers' => '1',
+    'site_enable_public_cache' => '1',
+    'site_public_cache_max_age' => '300',
+    'site_public_smaxage' => '600',
 ];
 $homeHeroDraftSettings = $homeHeroSettings;
 if ($authenticated && $activeTab === 'media') {
@@ -548,10 +684,14 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroSettings['tile_1_title'] = site_setting_get($pdo, 'home_promo_tile_1_title', '');
     $homeHeroSettings['tile_1_cta_label'] = site_setting_get($pdo, 'home_promo_tile_1_cta_label', '');
     $homeHeroSettings['tile_1_cta_url'] = site_setting_get($pdo, 'home_promo_tile_1_cta_url', '');
+    $homeHeroSettings['tile_1_overlay_link_label'] = site_setting_get($pdo, 'home_promo_tile_1_overlay_link_label', '');
+    $homeHeroSettings['tile_1_overlay_link_url'] = site_setting_get($pdo, 'home_promo_tile_1_overlay_link_url', '');
     $homeHeroSettings['tile_2_image'] = site_setting_get($pdo, 'home_promo_tile_2_image', '');
     $homeHeroSettings['tile_2_title'] = site_setting_get($pdo, 'home_promo_tile_2_title', '');
     $homeHeroSettings['tile_2_cta_label'] = site_setting_get($pdo, 'home_promo_tile_2_cta_label', '');
     $homeHeroSettings['tile_2_cta_url'] = site_setting_get($pdo, 'home_promo_tile_2_cta_url', '');
+    $homeHeroSettings['tile_2_overlay_link_label'] = site_setting_get($pdo, 'home_promo_tile_2_overlay_link_label', '');
+    $homeHeroSettings['tile_2_overlay_link_url'] = site_setting_get($pdo, 'home_promo_tile_2_overlay_link_url', '');
     $homeHeroSettings['featured_ids'] = site_setting_get($pdo, 'home_featured_product_ids', '');
     $homeHeroSettings['faq_1_question'] = site_setting_get($pdo, 'home_faq_1_question', 'What is the best telescope for a beginner?');
     $homeHeroSettings['faq_1_answer'] = site_setting_get($pdo, 'home_faq_1_answer', 'The best beginner telescope is usually one that is easy to set up, stable enough to use comfortably, and realistic for your observing habits. Start with the beginner telescope guide if you want a filtered shortlist instead of a raw catalog.');
@@ -559,6 +699,15 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroSettings['faq_2_answer'] = site_setting_get($pdo, 'home_faq_2_answer', 'A reasonable first budget depends on how often you expect to observe and how much setup friction you can tolerate. If budget is your main constraint, go straight to telescopes under $500.');
     $homeHeroSettings['faq_3_question'] = site_setting_get($pdo, 'home_faq_3_question', 'Which accessories help most after buying a telescope?');
     $homeHeroSettings['faq_3_answer'] = site_setting_get($pdo, 'home_faq_3_answer', 'The best accessories are the ones that solve a real problem in your sessions, such as poor comfort, weak magnification choices, or difficult phone alignment. The accessories guide focuses on those high-impact upgrades.');
+    $homeHeroSettings['home_h1_text'] = site_setting_get($pdo, 'home_h1_text', '');
+    $homeHeroSettings['site_logo_image'] = site_setting_get($pdo, 'site_logo_image', '/assets/logo/128.png');
+    $homeHeroSettings['site_favicon_ico'] = site_setting_get($pdo, 'site_favicon_ico', '/favicon.ico');
+    $homeHeroSettings['site_favicon_image'] = site_setting_get($pdo, 'site_favicon_image', '/assets/logo/32.png');
+    $homeHeroSettings['site_og_image'] = site_setting_get($pdo, 'site_og_image', '');
+    $homeHeroSettings['site_enable_security_headers'] = site_setting_get($pdo, 'site_enable_security_headers', '1');
+    $homeHeroSettings['site_enable_public_cache'] = site_setting_get($pdo, 'site_enable_public_cache', '1');
+    $homeHeroSettings['site_public_cache_max_age'] = site_setting_get($pdo, 'site_public_cache_max_age', '300');
+    $homeHeroSettings['site_public_smaxage'] = site_setting_get($pdo, 'site_public_smaxage', '600');
     $homeHeroDraftSettings['image'] = site_setting_get($pdo, 'draft_home_hero_image', $homeHeroSettings['image']);
     $homeHeroDraftSettings['image_2x'] = site_setting_get($pdo, 'draft_home_hero_image_2x', $homeHeroSettings['image_2x']);
     $homeHeroDraftSettings['alt'] = site_setting_get($pdo, 'draft_home_hero_alt', $homeHeroSettings['alt']);
@@ -571,10 +720,14 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroDraftSettings['tile_1_title'] = site_setting_get($pdo, 'draft_home_promo_tile_1_title', $homeHeroSettings['tile_1_title']);
     $homeHeroDraftSettings['tile_1_cta_label'] = site_setting_get($pdo, 'draft_home_promo_tile_1_cta_label', $homeHeroSettings['tile_1_cta_label']);
     $homeHeroDraftSettings['tile_1_cta_url'] = site_setting_get($pdo, 'draft_home_promo_tile_1_cta_url', $homeHeroSettings['tile_1_cta_url']);
+    $homeHeroDraftSettings['tile_1_overlay_link_label'] = site_setting_get($pdo, 'draft_home_promo_tile_1_overlay_link_label', $homeHeroSettings['tile_1_overlay_link_label']);
+    $homeHeroDraftSettings['tile_1_overlay_link_url'] = site_setting_get($pdo, 'draft_home_promo_tile_1_overlay_link_url', $homeHeroSettings['tile_1_overlay_link_url']);
     $homeHeroDraftSettings['tile_2_image'] = site_setting_get($pdo, 'draft_home_promo_tile_2_image', $homeHeroSettings['tile_2_image']);
     $homeHeroDraftSettings['tile_2_title'] = site_setting_get($pdo, 'draft_home_promo_tile_2_title', $homeHeroSettings['tile_2_title']);
     $homeHeroDraftSettings['tile_2_cta_label'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_label', $homeHeroSettings['tile_2_cta_label']);
     $homeHeroDraftSettings['tile_2_cta_url'] = site_setting_get($pdo, 'draft_home_promo_tile_2_cta_url', $homeHeroSettings['tile_2_cta_url']);
+    $homeHeroDraftSettings['tile_2_overlay_link_label'] = site_setting_get($pdo, 'draft_home_promo_tile_2_overlay_link_label', $homeHeroSettings['tile_2_overlay_link_label']);
+    $homeHeroDraftSettings['tile_2_overlay_link_url'] = site_setting_get($pdo, 'draft_home_promo_tile_2_overlay_link_url', $homeHeroSettings['tile_2_overlay_link_url']);
     $homeHeroDraftSettings['featured_ids'] = site_setting_get($pdo, 'draft_home_featured_product_ids', $homeHeroSettings['featured_ids']);
     $homeHeroDraftSettings['faq_1_question'] = site_setting_get($pdo, 'draft_home_faq_1_question', $homeHeroSettings['faq_1_question']);
     $homeHeroDraftSettings['faq_1_answer'] = site_setting_get($pdo, 'draft_home_faq_1_answer', $homeHeroSettings['faq_1_answer']);
@@ -582,6 +735,15 @@ if ($authenticated && $activeTab === 'media') {
     $homeHeroDraftSettings['faq_2_answer'] = site_setting_get($pdo, 'draft_home_faq_2_answer', $homeHeroSettings['faq_2_answer']);
     $homeHeroDraftSettings['faq_3_question'] = site_setting_get($pdo, 'draft_home_faq_3_question', $homeHeroSettings['faq_3_question']);
     $homeHeroDraftSettings['faq_3_answer'] = site_setting_get($pdo, 'draft_home_faq_3_answer', $homeHeroSettings['faq_3_answer']);
+    $homeHeroDraftSettings['home_h1_text'] = site_setting_get($pdo, 'draft_home_h1_text', $homeHeroSettings['home_h1_text']);
+    $homeHeroDraftSettings['site_logo_image'] = site_setting_get($pdo, 'draft_site_logo_image', $homeHeroSettings['site_logo_image']);
+    $homeHeroDraftSettings['site_favicon_ico'] = site_setting_get($pdo, 'draft_site_favicon_ico', $homeHeroSettings['site_favicon_ico']);
+    $homeHeroDraftSettings['site_favicon_image'] = site_setting_get($pdo, 'draft_site_favicon_image', $homeHeroSettings['site_favicon_image']);
+    $homeHeroDraftSettings['site_og_image'] = site_setting_get($pdo, 'draft_site_og_image', $homeHeroSettings['site_og_image']);
+    $homeHeroDraftSettings['site_enable_security_headers'] = site_setting_get($pdo, 'draft_site_enable_security_headers', $homeHeroSettings['site_enable_security_headers']);
+    $homeHeroDraftSettings['site_enable_public_cache'] = site_setting_get($pdo, 'draft_site_enable_public_cache', $homeHeroSettings['site_enable_public_cache']);
+    $homeHeroDraftSettings['site_public_cache_max_age'] = site_setting_get($pdo, 'draft_site_public_cache_max_age', $homeHeroSettings['site_public_cache_max_age']);
+    $homeHeroDraftSettings['site_public_smaxage'] = site_setting_get($pdo, 'draft_site_public_smaxage', $homeHeroSettings['site_public_smaxage']);
 }
 $homeUsedImageUrls = [];
 foreach ([
@@ -614,7 +776,7 @@ $notFoundReviewPagination = $authenticated && $activeTab === 'maintenance'
     ? enma_render_pagination('maintenance', 'nf_review_page', (int) ($notFoundReviewPage ?? 1), (int) ($notFoundReviewTotalPages ?? 1))
     : '';
 $mediaPagination = $authenticated && $activeTab === 'media'
-    ? enma_render_pagination('media', 'media_page', $mediaPage, $mediaTotalPages)
+    ? enma_render_pagination('media', 'media_page', $mediaPage, $mediaTotalPages, $mediaSearch !== '' ? ['media_q' => $mediaSearch] : [])
     : '';
 $productsCopyText = '';
 if ($authenticated && $activeTab === 'products' && $allProducts !== []) {
@@ -693,6 +855,9 @@ $fullRunPackGuidesCopyText = '';
 $fullRunPackNewProductsCopyText = '';
 $blogCmsReadyPromptCopyText = '';
 $legacyBlogPromptWithSitemapCopyText = '';
+$legacyPostPromptWithSitemapCopyText = '';
+$legacyGuidePromptWithSitemapCopyText = '';
+$legacyReviewPromptWithSitemapCopyText = '';
 $productsNewPromptTemplate = '';
 if ($authenticated && ($activeTab === 'products' || $activeTab === 'maintenance' || $activeTab === 'prompts')) {
     $baseline = [];
@@ -940,7 +1105,13 @@ OUTPUT:
 PROMPT;
     $productPostPromptTemplate = $productSingleReviewPromptTemplate;
     $seoPromptTemplate = $blogPostPromptTemplate;
-    $promptPlusSitemapCopyText = $blogPostPromptTemplate . "\n\nCURRENT SITEMAP.XML\n\n" . $sitemapCopyText;
+    $promptPlusSitemapCopyText = $blogPostPromptTemplate
+        . "\n\nTYPE CLASSIFICATION RULE (MANDATORY)\n"
+        . "- Output one explicit line before metadata: TYPE_MARKER: guide or TYPE_MARKER: post\n"
+        . "- Use TYPE_MARKER: guide only when the content is a full step-by-step workflow guide.\n"
+        . "- If it is not clearly a guide, default to TYPE_MARKER: post.\n"
+        . "\nCURRENT SITEMAP.XML\n\n"
+        . $sitemapCopyText;
     $postsBaselineLines = [];
     try {
         $postRows = $pdo->query(
@@ -1460,6 +1631,17 @@ PROMPT;
         . "CURRENT SITEMAP.XML\n"
         . "------------------------------------------------\n"
         . $sitemapCopyText;
+    $legacyPostPromptWithSitemapCopyText = $legacyBlogPromptWithSitemapCopyText;
+    $legacyGuidePromptWithSitemapCopyText = str_replace(
+        'ready-to-publish affiliate article',
+        'ready-to-publish structured guide',
+        $legacyBlogPromptWithSitemapCopyText
+    );
+    $legacyReviewPromptWithSitemapCopyText = str_replace(
+        'ready-to-publish affiliate article',
+        'ready-to-publish product review article',
+        $legacyBlogPromptWithSitemapCopyText
+    );
 
     try {
         if (function_exists('enma_maintenance_build_products_export_sql')) {
@@ -1490,6 +1672,12 @@ $viewsTopPagesAll = $viewsDashboard['top_pages'] ?? [];
 $viewsTopProductsAll = $viewsDashboard['top_products'] ?? [];
 $viewsTopClickedAll = $viewsDashboard['clicks']['top_products'] ?? [];
 $viewsReferrersAll = $viewsDashboard['top_referrers'] ?? [];
+$viewsSecurityTrafficAll = $viewsDashboard['security_traffic'] ?? [];
+$viewsBrokenAssetsAll = $viewsDashboard['broken_assets'] ?? [];
+$viewsDuplicateRoutesAll = $viewsDashboard['duplicate_routes'] ?? [];
+$viewsProductRouteMismatchAll = $viewsDashboard['product_route_mismatch'] ?? [];
+$viewsTopCommercialPagesAll = $viewsDashboard['top_commercial_pages'] ?? [];
+$viewsAmazonClicksByProductAll = $viewsDashboard['amazon_clicks_by_product'] ?? [];
 $viewsCompare = $viewsDashboard['compare'] ?? [];
 $viewsCompareDelta = $viewsCompare['delta'] ?? ['views' => 0, 'clicks' => 0, 'ctr_percent' => 0];
 $viewsTopWinners = $viewsCompare['top_winners'] ?? [];
@@ -1517,7 +1705,7 @@ $viewsTopProductsRows = array_slice($viewsTopProductsAll, ($viewsTopProductsPage
 $viewsTopClickedRows = array_slice($viewsTopClickedAll, ($viewsTopClickedPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
 $viewsReferrersRows = array_slice($viewsReferrersAll, ($viewsReferrersPage - 1) * $viewsSectionPerPage, $viewsSectionPerPage);
 
-$viewsBaseExtra = ['days' => $viewDays];
+$viewsBaseExtra = ['days' => $viewDays, 'view_range' => $viewRange];
 $viewsTopPagesPagination = $authenticated && $activeTab === 'views'
     ? enma_render_pagination('views', 'views_top_pages_page', $viewsTopPagesPage, $viewsTopPagesTotalPages, $viewsBaseExtra)
     : '';
@@ -1553,6 +1741,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
     ? enma_render_pagination('analytics', 'analytics_logs_page', $analyticsLogsPage, $analyticsLogsTotalPages)
     : '';
 
+$enmaThemeCssPath = __DIR__ . '/assets/enma-theme.css';
+$enmaThemeJsPath = __DIR__ . '/assets/enma-theme.js';
+$enmaThemeCssVersion = is_file($enmaThemeCssPath) ? (string) filemtime($enmaThemeCssPath) : '1';
+$enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJsPath) : '1';
 ?>
 <!doctype html>
 <html lang="en">
@@ -1561,6 +1753,22 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin | <?= e(APP_NAME) ?></title>
     <meta name="robots" content="noindex,nofollow">
+    <script>
+      (function () {
+        var key = 'enma_theme';
+        var themes = ['light', 'dark', 'midnight', 'navy', 'nord'];
+        var fallback = 'dark';
+        var stored = '';
+        try { stored = (localStorage.getItem(key) || '').toLowerCase(); } catch (e) { stored = ''; }
+        var theme = themes.indexOf(stored) !== -1 ? stored : fallback;
+        var root = document.documentElement;
+        root.setAttribute('data-enma-theme', theme);
+        root.setAttribute('data-theme', theme);
+        root.classList.add('theme-' + theme);
+      })();
+    </script>
+    <link rel="stylesheet" href="<?= e(url('/enma/assets/enma-theme.css?v=' . rawurlencode($enmaThemeCssVersion))) ?>">
+    <script defer src="<?= e(url('/enma/assets/enma-theme.js?v=' . rawurlencode($enmaThemeJsVersion))) ?>"></script>
     <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
     <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
@@ -1678,7 +1886,12 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           var cardTitle = title || 'Post title preview';
           var cardExcerpt = excerpt || metaDescription || plainBody || 'Post excerpt preview';
           var previewSlug = slugifyPreview(title) || 'preview-post';
-          var previewPath = postType === 'guide' ? '/' + previewSlug : '/blog/' + previewSlug;
+          var previewPath = '/blog/' + previewSlug;
+          if (postType === 'guide') {
+            previewPath = '/' + previewSlug;
+          } else if (postType === 'review') {
+            previewPath = '/reviews/' + previewSlug;
+          }
 
           $form.find('[data-preview="serp-url"]').text(window.location.origin + <?= json_encode(url('/')) ?>.replace(/\/$/, '') + previewPath);
           $form.find('[data-preview="serp-title"]').text(serpTitle);
@@ -1982,6 +2195,20 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
               el.value = value;
             }
           }
+          function postAssign(target) {
+            var form = document.createElement('form');
+            form.method = 'post';
+            form.style.display = 'none';
+            form.innerHTML =
+              '<input type="hidden" name="action" value="home_media_assign">' +
+              '<input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">' +
+              '<input type="hidden" name="assign_target" value="' + target + '">' +
+              '<input type="hidden" name="assign_url" value="' + $('<div/>').text(mediaUrl).html() + '">' +
+              '<input type="hidden" name="assign_title" value="' + $('<div/>').text(mediaTitle).html() + '">' +
+              '<input type="hidden" name="assign_mode" value="publish">';
+            document.body.appendChild(form);
+            form.submit();
+          }
 
           if (assign === 'hero') {
             var heroImage = document.getElementById('home_hero_image');
@@ -2006,6 +2233,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             fillIfEmpty('home_promo_tile_2_title', mediaTitle || 'Create Your Masterpiece');
             fillIfEmpty('home_promo_tile_2_cta_label', 'Explore Astrophotography');
             fillIfEmpty('home_promo_tile_2_cta_url', '/guides');
+          } else if (assign === 'logo' || assign === 'ico') {
+            postAssign(assign);
+            return;
           }
 
           var heroSection = document.getElementById('home-hero-settings');
@@ -2036,10 +2266,14 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           setInputValue('home_promo_tile_1_image', source.tile_1_image || '');
           setInputValue('home_promo_tile_1_cta_label', source.tile_1_cta_label || '');
           setInputValue('home_promo_tile_1_cta_url', source.tile_1_cta_url || '');
+          setInputValue('home_promo_tile_1_overlay_link_label', source.tile_1_overlay_link_label || '');
+          setInputValue('home_promo_tile_1_overlay_link_url', source.tile_1_overlay_link_url || '');
           setInputValue('home_promo_tile_2_title', source.tile_2_title || '');
           setInputValue('home_promo_tile_2_image', source.tile_2_image || '');
           setInputValue('home_promo_tile_2_cta_label', source.tile_2_cta_label || '');
           setInputValue('home_promo_tile_2_cta_url', source.tile_2_cta_url || '');
+          setInputValue('home_promo_tile_2_overlay_link_label', source.tile_2_overlay_link_label || '');
+          setInputValue('home_promo_tile_2_overlay_link_url', source.tile_2_overlay_link_url || '');
           setInputValue('home_featured_product_ids', source.featured_ids || '');
           setInputValue('home_faq_1_question', source.faq_1_question || '');
           setInputValue('home_faq_1_answer', source.faq_1_answer || '');
@@ -2047,6 +2281,17 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           setInputValue('home_faq_2_answer', source.faq_2_answer || '');
           setInputValue('home_faq_3_question', source.faq_3_question || '');
           setInputValue('home_faq_3_answer', source.faq_3_answer || '');
+          setInputValue('home_h1_text', source.home_h1_text || '');
+          setInputValue('site_logo_image', source.site_logo_image || '/assets/logo/128.png');
+          setInputValue('site_favicon_ico', source.site_favicon_ico || '/favicon.ico');
+          setInputValue('site_favicon_image', source.site_favicon_image || '/assets/logo/32.png');
+          setInputValue('site_og_image', source.site_og_image || '');
+          setInputValue('site_public_cache_max_age', source.site_public_cache_max_age || '300');
+          setInputValue('site_public_smaxage', source.site_public_smaxage || '600');
+          var sec = document.getElementById('site_enable_security_headers');
+          if (sec) sec.checked = (source.site_enable_security_headers || '1') !== '0';
+          var pc = document.getElementById('site_enable_public_cache');
+          if (pc) pc.checked = (source.site_enable_public_cache || '1') !== '0';
         }
 
         $('#load_live_settings').on('click', function () { loadSettings(publishedSettings); });
@@ -2055,6 +2300,41 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         $('#publish_btn').on('click', function () { $('#home_settings_mode').val('publish'); });
         $('#save_draft_btn_sticky').on('click', function () { $('#home_settings_mode').val('draft'); });
         $('#publish_btn_sticky').on('click', function () { $('#home_settings_mode').val('publish'); });
+
+        var homeForm = document.getElementById('home-hero-form');
+        var homeDirtyIndicator = document.getElementById('home_dirty_indicator');
+        var isHomeDirty = false;
+        function setHomeDirty(flag) {
+          isHomeDirty = !!flag;
+          if (!homeDirtyIndicator) return;
+          if (isHomeDirty) {
+            homeDirtyIndicator.classList.add('is-visible');
+          } else {
+            homeDirtyIndicator.classList.remove('is-visible');
+          }
+        }
+        if (homeForm) {
+          homeForm.addEventListener('input', function () { setHomeDirty(true); });
+          homeForm.addEventListener('change', function () { setHomeDirty(true); });
+          homeForm.addEventListener('submit', function () { setHomeDirty(false); });
+        }
+        $('#load_live_settings,#load_draft_settings').on('click', function () { setHomeDirty(false); });
+        window.addEventListener('beforeunload', function (event) {
+          if (!isHomeDirty) return;
+          event.preventDefault();
+          event.returnValue = '';
+        });
+        document.addEventListener('keydown', function (event) {
+          var isSave = (event.ctrlKey || event.metaKey) && (event.key || '').toLowerCase() === 's';
+          if (!isSave) return;
+          if (!homeForm) return;
+          event.preventDefault();
+          var draftBtn = document.getElementById('save_draft_btn_sticky') || document.getElementById('save_draft_btn');
+          if (draftBtn) {
+            $('#home_settings_mode').val('draft');
+            draftBtn.click();
+          }
+        });
 
         function bindPreview(inputId, imgId, qualityId) {
           var $input = $('#' + inputId);
@@ -2165,8 +2445,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           var ids = [
             'home_hero_title','home_hero_subtitle','home_hero_image','home_hero_image_2x','home_hero_alt',
             'home_hero_cta_label','home_hero_cta_url','home_promo_tile_1_title','home_promo_tile_1_image',
-            'home_promo_tile_1_cta_label','home_promo_tile_1_cta_url','home_promo_tile_2_title','home_promo_tile_2_image',
-            'home_promo_tile_2_cta_label','home_promo_tile_2_cta_url','home_featured_product_ids'
+            'home_promo_tile_1_cta_label','home_promo_tile_1_cta_url','home_promo_tile_1_overlay_link_label','home_promo_tile_1_overlay_link_url',
+            'home_promo_tile_2_title','home_promo_tile_2_image','home_promo_tile_2_cta_label','home_promo_tile_2_cta_url',
+            'home_promo_tile_2_overlay_link_label','home_promo_tile_2_overlay_link_url','home_featured_product_ids'
+            ,'home_h1_text','site_logo_image','site_favicon_ico','site_favicon_image','site_og_image','site_public_cache_max_age','site_public_smaxage'
           ];
           var out = {};
           ids.forEach(function (id) { out[id] = ($('#' + id).val() || '').toString(); });
@@ -2256,6 +2538,148 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             if (filter === 'used') show = $row.attr('data-used') === '1';
             $row.toggle(show);
           });
+        });
+
+        function updateMediaSelectedCount() {
+          var count = $('.media-select:checked').length;
+          $('#media-selected-count').text(count + ' selected');
+        }
+        $(document).on('change', '.media-select', updateMediaSelectedCount);
+        $('#media-select-all-visible').on('click', function () {
+          $('[data-media-row="1"]:visible .media-select').prop('checked', true);
+          updateMediaSelectedCount();
+        });
+        $('#media-clear-selection').on('click', function () {
+          $('.media-select').prop('checked', false);
+          updateMediaSelectedCount();
+        });
+        $('#media-delete-selected').on('click', function () {
+          var ids = [];
+          $('.media-select:checked').each(function () {
+            var raw = ($(this).val() || '').toString();
+            if (raw !== '') ids.push(raw);
+          });
+          if (ids.length === 0) {
+            return;
+          }
+          if (!window.confirm('Delete selected media items?')) {
+            return;
+          }
+          var $inputs = $('#media-bulk-selected-inputs');
+          $inputs.empty();
+          ids.forEach(function (id) {
+            $inputs.append($('<input>').attr({ type: 'hidden', name: 'media_ids[]', value: id }));
+          });
+          $('#media-bulk-form').trigger('submit');
+        });
+        updateMediaSelectedCount();
+
+        function openMediaPicker(target, mediaUrl, mediaTitle) {
+          if (target) {
+            $('#media-picker-target').val(target);
+          }
+          $('#media-picker-url').val(mediaUrl || '');
+          $('#media-picker-title').val(mediaTitle || '');
+          if ((mediaUrl || '').trim() !== '') {
+            $('#media-picker-preview').attr('src', mediaUrl).show();
+            $('#media-picker-preview-empty').hide();
+          } else {
+            $('#media-picker-preview').attr('src', '').hide();
+            $('#media-picker-preview-empty').show();
+          }
+          $('#media-picker-modal').show();
+        }
+
+        $('#media-picker-close').on('click', function () {
+          $('#media-picker-modal').hide();
+        });
+        $('#media-picker-modal').on('click', function (event) {
+          if (event.target === this) {
+            $('#media-picker-modal').hide();
+          }
+        });
+        $('[data-open-media-picker-for]').on('click', function () {
+          openMediaPicker(($(this).attr('data-open-media-picker-for') || 'hero').toString(), '', '');
+          var heroSection = document.getElementById('media-list');
+          if (heroSection && typeof heroSection.scrollIntoView === 'function') {
+            heroSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+        $('[data-open-media-picker]').on('click', function () {
+          var url = ($(this).attr('data-media-url') || '').toString();
+          var title = ($(this).attr('data-media-title') || '').toString();
+          openMediaPicker(($('#media-picker-target').val() || 'hero').toString(), url, title);
+        });
+        $(document).on('click', '[data-media-row="1"]', function (event) {
+          var $target = $(event.target);
+          if ($target.is('button,a,input,form,label') || $target.closest('button,a,input,form,label').length) {
+            return;
+          }
+          var $row = $(this);
+          var url = ($row.find('[data-copy-text]').first().attr('data-copy-text') || '').toString();
+          var title = ($row.find('[data-media-assign]').first().attr('data-media-title') || '').toString();
+          openMediaPicker(($('#media-picker-target').val() || 'hero').toString(), url, title);
+        });
+        $('#media-picker-apply').on('click', function () {
+          var target = ($('#media-picker-target').val() || 'hero').toString();
+          var mediaUrl = ($('#media-picker-url').val() || '').toString();
+          var mediaTitle = ($('#media-picker-title').val() || '').toString();
+          if (mediaUrl.trim() === '') {
+            return;
+          }
+          function submitHomeAssign(target) {
+            var form = document.createElement('form');
+            form.method = 'post';
+            form.style.display = 'none';
+            form.innerHTML =
+              '<input type="hidden" name="action" value="home_media_assign">' +
+              '<input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">' +
+              '<input type="hidden" name="assign_target" value="' + target + '">' +
+              '<input type="hidden" name="assign_url" value="' + $('<div/>').text(mediaUrl).html() + '">' +
+              '<input type="hidden" name="assign_title" value="' + $('<div/>').text(mediaTitle).html() + '">' +
+              '<input type="hidden" name="assign_mode" value="publish">';
+            document.body.appendChild(form);
+            form.submit();
+          }
+          if (target === 'hero') {
+            $('#home_hero_image').val(mediaUrl).trigger('input');
+            if (($('#home_hero_cta_label').val() || '').toString().trim() === '') {
+              $('#home_hero_cta_label').val('Explore Telescopes');
+            }
+            if (($('#home_hero_cta_url').val() || '').toString().trim() === '') {
+              $('#home_hero_cta_url').val('/best-beginner-telescopes');
+            }
+          } else if (target === 'tile1') {
+            $('#home_promo_tile_1_image').val(mediaUrl).trigger('input');
+            if (($('#home_promo_tile_1_title').val() || '').toString().trim() === '' && mediaTitle.trim() !== '') {
+              $('#home_promo_tile_1_title').val(mediaTitle);
+            }
+            if (($('#home_promo_tile_1_cta_label').val() || '').toString().trim() === '') {
+              $('#home_promo_tile_1_cta_label').val('Beginner Telescopes');
+            }
+            if (($('#home_promo_tile_1_cta_url').val() || '').toString().trim() === '') {
+              $('#home_promo_tile_1_cta_url').val('/best-beginner-telescopes');
+            }
+          } else if (target === 'tile2') {
+            $('#home_promo_tile_2_image').val(mediaUrl).trigger('input');
+            if (($('#home_promo_tile_2_title').val() || '').toString().trim() === '' && mediaTitle.trim() !== '') {
+              $('#home_promo_tile_2_title').val(mediaTitle);
+            }
+            if (($('#home_promo_tile_2_cta_label').val() || '').toString().trim() === '') {
+              $('#home_promo_tile_2_cta_label').val('Explore Astrophotography');
+            }
+            if (($('#home_promo_tile_2_cta_url').val() || '').toString().trim() === '') {
+              $('#home_promo_tile_2_cta_url').val('/guides');
+            }
+          } else if (target === 'logo' || target === 'ico') {
+            submitHomeAssign(target);
+            return;
+          }
+          $('#media-picker-modal').hide();
+          var heroSettingsSection = document.getElementById('home-hero-settings');
+          if (heroSettingsSection && typeof heroSettingsSection.scrollIntoView === 'function') {
+            heroSettingsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
         });
         $('[data-copy-post-image-brief]').on('click', function () {
           var $btn = $(this);
@@ -2408,6 +2832,347 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
           setupAutosave($form);
         });
       });
+    </script>
+    <script>
+      (function () {
+        var ready = function (fn) {
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', fn);
+          } else {
+            fn();
+          }
+        };
+
+        ready(function () {
+          var mediaSection = document.getElementById('media-list');
+          var mediaTable = mediaSection ? mediaSection.querySelector('table') : null;
+          if (!mediaSection || !mediaTable) return;
+
+          var storage = {
+            view: 'enma_media_view',
+            pageSize: 'enma_media_page_size',
+            sort: 'enma_media_sort',
+            filterType: 'enma_media_filter_type',
+            filterUsage: 'enma_media_filter_usage',
+            filterQuality: 'enma_media_filter_quality',
+            query: 'enma_media_query'
+          };
+
+          var rows = Array.prototype.slice.call(mediaTable.querySelectorAll('tbody tr[data-media-row="1"]'));
+          rows.forEach(function (row) {
+            var tds = row.querySelectorAll('td');
+            var title = (tds[3] ? tds[3].innerText : '').trim();
+            var fileText = (tds[5] ? tds[5].innerText : '').trim();
+            var url = (tds[6] ? tds[6].innerText : '').trim();
+            var created = (tds[3] ? (tds[3].querySelector('.muted') || {}).innerText : '') || '';
+            var used = row.getAttribute('data-used') === '1';
+            row.dataset.mediaTitle = title;
+            row.dataset.mediaFile = fileText;
+            row.dataset.mediaUrl = url;
+            row.dataset.mediaCreated = created.trim();
+            row.dataset.mediaUsed = used ? 'used' : 'unused';
+          });
+
+          var toolbar = document.createElement('div');
+          toolbar.className = 'media-toolbar-enhanced';
+          toolbar.innerHTML = [
+            '<div class="mte-row">',
+            '<label><span>Search</span><input id="mte-search" type="text" placeholder="Filter loaded rows"></label>',
+            '<label><span>Type</span><select id="mte-type"><option value="all">All</option><option value="image">Images</option><option value="video">Videos</option><option value="document">Docs/Other</option><option value="webp">WebP</option></select></label>',
+            '<label><span>Usage</span><select id="mte-usage"><option value="all">All</option><option value="used">Used</option><option value="unused">Unused</option></select></label>',
+            '<label><span>Quality</span><select id="mte-quality"><option value="all">All</option><option value="missing-alt">Missing alt</option><option value="large">Large files</option><option value="recent">Recent</option></select></label>',
+            '<label><span>Sort</span><select id="mte-sort"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name-asc">Filename A-Z</option><option value="name-desc">Filename Z-A</option><option value="size-desc">Largest</option><option value="size-asc">Smallest</option></select></label>',
+            '<label><span>Page size</span><select id="mte-size"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>',
+            '</div>',
+            '<div class="mte-row mte-row-2">',
+            '<div class="mte-view"><button class="btn" type="button" id="mte-view-table">Table</button><button class="btn" type="button" id="mte-view-grid">Grid</button></div>',
+            '<div class="muted" id="mte-summary">Loaded assets</div>',
+            '<div id="mte-pager-top" class="mte-pager"></div>',
+            '</div>'
+          ].join('');
+          mediaSection.insertBefore(toolbar, mediaSection.querySelector('form'));
+
+          var grid = document.createElement('div');
+          grid.id = 'mte-grid';
+          grid.className = 'mte-grid';
+          grid.style.display = 'none';
+          mediaTable.parentNode.insertBefore(grid, mediaTable.nextSibling);
+
+          var pagerBottom = document.createElement('div');
+          pagerBottom.id = 'mte-pager-bottom';
+          pagerBottom.className = 'mte-pager';
+          mediaTable.parentNode.appendChild(pagerBottom);
+
+          var state = {
+            query: localStorage.getItem(storage.query) || '',
+            type: localStorage.getItem(storage.filterType) || 'all',
+            usage: localStorage.getItem(storage.filterUsage) || 'all',
+            quality: localStorage.getItem(storage.filterQuality) || 'all',
+            sort: localStorage.getItem(storage.sort) || 'newest',
+            pageSize: parseInt(localStorage.getItem(storage.pageSize) || '25', 10),
+            page: 1,
+            view: localStorage.getItem(storage.view) || 'table'
+          };
+
+          var els = {
+            search: document.getElementById('mte-search'),
+            type: document.getElementById('mte-type'),
+            usage: document.getElementById('mte-usage'),
+            quality: document.getElementById('mte-quality'),
+            sort: document.getElementById('mte-sort'),
+            size: document.getElementById('mte-size'),
+            summary: document.getElementById('mte-summary'),
+            pagerTop: document.getElementById('mte-pager-top'),
+            pagerBottom: document.getElementById('mte-pager-bottom'),
+            btnTable: document.getElementById('mte-view-table'),
+            btnGrid: document.getElementById('mte-view-grid')
+          };
+
+          function parseSizeKb(row) {
+            var txt = row.querySelector('td:nth-child(6) .muted');
+            if (!txt) return 0;
+            var m = txt.textContent.match(/(\d+(?:\.\d+)?)\s*KB/i);
+            return m ? parseFloat(m[1]) : 0;
+          }
+
+          function isMissingAlt(row) {
+            var img = row.querySelector('td:nth-child(3) img');
+            if (!img) return false;
+            return !img.getAttribute('alt') || img.getAttribute('alt').trim() === '';
+          }
+
+          function matchFilters(row) {
+            var q = state.query.trim().toLowerCase();
+            if (q) {
+              var hay = (row.dataset.search || '') + ' ' + (row.dataset.mediaTitle || '') + ' ' + (row.dataset.mediaFile || '');
+              if (hay.toLowerCase().indexOf(q) === -1) return false;
+            }
+            if (state.type !== 'all') {
+              if (state.type === 'webp') {
+                if (row.getAttribute('data-webp') !== '1') return false;
+              } else {
+                var t = ((row.querySelector('td:nth-child(5)') || {}).textContent || '').trim().toLowerCase();
+                if (t !== state.type) return false;
+              }
+            }
+            if (state.usage !== 'all' && row.dataset.mediaUsed !== state.usage) return false;
+            if (state.quality === 'missing-alt' && !isMissingAlt(row)) return false;
+            if (state.quality === 'large' && parseSizeKb(row) <= 400) return false;
+            if (state.quality === 'recent' && row.getAttribute('data-recent') !== '1') return false;
+            return true;
+          }
+
+          function sortRows(filtered) {
+            var arr = filtered.slice();
+            arr.sort(function (a, b) {
+              var nameA = (a.dataset.mediaFile || '').toLowerCase();
+              var nameB = (b.dataset.mediaFile || '').toLowerCase();
+              if (state.sort === 'name-asc') return nameA.localeCompare(nameB);
+              if (state.sort === 'name-desc') return nameB.localeCompare(nameA);
+              if (state.sort === 'size-desc') return parseSizeKb(b) - parseSizeKb(a);
+              if (state.sort === 'size-asc') return parseSizeKb(a) - parseSizeKb(b);
+              var idA = parseInt((a.querySelector('td:nth-child(2)') || {}).textContent || '0', 10);
+              var idB = parseInt((b.querySelector('td:nth-child(2)') || {}).textContent || '0', 10);
+              return state.sort === 'oldest' ? idA - idB : idB - idA;
+            });
+            return arr;
+          }
+
+          function renderGrid(pageRows) {
+            grid.innerHTML = '';
+            pageRows.forEach(function (row) {
+              var tds = row.querySelectorAll('td');
+              var preview = tds[2] ? tds[2].innerHTML : '';
+              var title = row.dataset.mediaTitle || '(untitled)';
+              var meta = tds[5] ? tds[5].innerText : '';
+              var url = row.dataset.mediaUrl || '';
+              var used = row.dataset.mediaUsed === 'used' ? '<span class="mte-badge used">Used</span>' : '<span class="mte-badge unused">Unused</span>';
+              var card = document.createElement('article');
+              card.className = 'mte-card';
+              card.innerHTML = [
+                '<div class="mte-thumb">' + preview + '</div>',
+                '<h4>' + title.replace(/</g, '&lt;') + '</h4>',
+                '<div class="mte-meta">' + meta.replace(/</g, '&lt;') + '</div>',
+                '<div class="mte-badges">' + used + '</div>',
+                '<div class="mte-actions"><button class="btn btn-sm mte-preview" type="button">View</button><button class="btn btn-sm mte-copy" type="button">Copy URL</button></div>'
+              ].join('');
+              card.querySelector('.mte-preview').addEventListener('click', function () { openPreview(row); });
+              card.querySelector('.mte-copy').addEventListener('click', function () { navigator.clipboard.writeText(url); });
+              grid.appendChild(card);
+            });
+          }
+
+          function renderPager(target, totalPages) {
+            target.innerHTML = '';
+            if (totalPages <= 1) return;
+            var prev = document.createElement('button'); prev.type = 'button'; prev.className = 'btn'; prev.textContent = 'Prev';
+            prev.disabled = state.page <= 1;
+            prev.addEventListener('click', function () { state.page--; apply(); });
+            target.appendChild(prev);
+            for (var p = 1; p <= totalPages; p++) {
+              var b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (p === state.page ? ' active' : '');
+              b.textContent = String(p);
+              (function (pp) { b.addEventListener('click', function () { state.page = pp; apply(); }); })(p);
+              target.appendChild(b);
+            }
+            var next = document.createElement('button'); next.type = 'button'; next.className = 'btn'; next.textContent = 'Next';
+            next.disabled = state.page >= totalPages;
+            next.addEventListener('click', function () { state.page++; apply(); });
+            target.appendChild(next);
+          }
+
+          function apply() {
+            localStorage.setItem(storage.query, state.query);
+            localStorage.setItem(storage.filterType, state.type);
+            localStorage.setItem(storage.filterUsage, state.usage);
+            localStorage.setItem(storage.filterQuality, state.quality);
+            localStorage.setItem(storage.sort, state.sort);
+            localStorage.setItem(storage.pageSize, String(state.pageSize));
+            localStorage.setItem(storage.view, state.view);
+
+            var filtered = sortRows(rows.filter(matchFilters));
+            var total = filtered.length;
+            var pages = Math.max(1, Math.ceil(total / state.pageSize));
+            if (state.page > pages) state.page = pages;
+            var start = (state.page - 1) * state.pageSize;
+            var end = Math.min(total, start + state.pageSize);
+            var pageRows = filtered.slice(start, end);
+
+            rows.forEach(function (r) { r.style.display = 'none'; });
+            pageRows.forEach(function (r) { r.style.display = ''; });
+            els.summary.textContent = total ? ('Showing ' + (start + 1) + '-' + end + ' of ' + total + ' loaded assets') : 'No assets match current filters';
+            renderPager(els.pagerTop, pages);
+            renderPager(els.pagerBottom, pages);
+            if (state.view === 'grid') {
+              mediaTable.style.display = 'none';
+              grid.style.display = 'grid';
+              renderGrid(pageRows);
+            } else {
+              mediaTable.style.display = '';
+              grid.style.display = 'none';
+            }
+            els.btnTable.classList.toggle('active', state.view === 'table');
+            els.btnGrid.classList.toggle('active', state.view === 'grid');
+          }
+
+          function openPreview(row) {
+            var modal = document.getElementById('mte-preview-modal');
+            if (!modal) return;
+            var img = row.querySelector('td:nth-child(3) img');
+            var title = row.dataset.mediaTitle || '(untitled)';
+            var file = row.dataset.mediaFile || '';
+            var url = row.dataset.mediaUrl || '';
+            modal.querySelector('.mte-p-title').textContent = title;
+            modal.querySelector('.mte-p-file').textContent = file;
+            modal.querySelector('.mte-p-url').textContent = url;
+            modal.querySelector('.mte-p-used').textContent = row.dataset.mediaUsed || 'unknown';
+            var pv = modal.querySelector('.mte-p-image');
+            if (img) { pv.src = img.src; pv.style.display = 'block'; } else { pv.style.display = 'none'; }
+            modal.style.display = 'flex';
+            modal.setAttribute('aria-hidden', 'false');
+          }
+
+          var previewModal = document.createElement('div');
+          previewModal.id = 'mte-preview-modal';
+          previewModal.className = 'mte-preview-modal';
+          previewModal.setAttribute('aria-hidden', 'true');
+          previewModal.style.display = 'none';
+          previewModal.innerHTML = '<div class="mte-preview-dialog"><div class="mte-preview-head"><h3 class="mte-p-title"></h3><button class="btn mte-close" type="button">Close</button></div><img class="mte-p-image" alt=""><div class="mte-preview-meta"><div><strong>File:</strong> <span class="mte-p-file"></span></div><div><strong>URL:</strong> <span class="mte-p-url"></span></div><div><strong>Usage:</strong> <span class="mte-p-used"></span></div><div class="mte-preview-actions"><button type="button" class="btn mte-copy-url">Copy URL</button></div></div></div>';
+          document.body.appendChild(previewModal);
+          previewModal.addEventListener('click', function (e) { if (e.target === previewModal) previewModal.style.display = 'none'; });
+          previewModal.querySelector('.mte-close').addEventListener('click', function () { previewModal.style.display = 'none'; });
+          previewModal.querySelector('.mte-copy-url').addEventListener('click', function () {
+            var u = previewModal.querySelector('.mte-p-url').textContent || '';
+            if (u) navigator.clipboard.writeText(u);
+          });
+          document.addEventListener('keydown', function (e) { if (e.key === 'Escape') previewModal.style.display = 'none'; });
+
+          mediaTable.querySelectorAll('td:nth-child(3) img').forEach(function (img) {
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', function () { openPreview(img.closest('tr')); });
+          });
+
+          mediaTable.querySelectorAll('tbody tr td:last-child').forEach(function (cell) {
+            var buttons = Array.prototype.slice.call(cell.querySelectorAll('button.btn, form'));
+            if (buttons.length < 4 || cell.querySelector('.mte-actions-menu')) return;
+            var quick = cell.querySelector('button[data-copy-text]');
+            var menu = document.createElement('details');
+            menu.className = 'mte-actions-menu';
+            menu.innerHTML = '<summary>Actions</summary><div class="mte-actions-list"></div>';
+            var list = menu.querySelector('.mte-actions-list');
+            buttons.forEach(function (el, i) {
+              if (quick && el === quick) return;
+              if (i === 0) return;
+              list.appendChild(el);
+            });
+            if (quick) quick.classList.add('mte-quick-action');
+            cell.appendChild(menu);
+          });
+
+          // Upload UX
+          var upForm = document.getElementById('media-upload-form-main');
+          var fileInput = document.getElementById('media_file_main');
+          if (upForm && fileInput) {
+            var drop = document.createElement('div');
+            drop.className = 'mte-dropzone';
+            drop.tabIndex = 0;
+            drop.innerHTML = '<strong>Drop media here or click to choose</strong><div class="muted">Max size depends on server settings.</div><div class="mte-file-name"></div><img class="mte-file-preview" alt="" style="display:none;">';
+            upForm.insertBefore(drop, upForm.firstChild.nextSibling);
+            var fileNameEl = drop.querySelector('.mte-file-name');
+            var previewEl = drop.querySelector('.mte-file-preview');
+            function syncFile(f) {
+              if (!f) return;
+              fileNameEl.textContent = f.name + ' (' + Math.round((f.size || 0) / 1024) + 'KB)';
+              if (f.type && f.type.indexOf('image/') === 0) {
+                var reader = new FileReader();
+                reader.onload = function (ev) { previewEl.src = ev.target.result; previewEl.style.display = 'block'; };
+                reader.readAsDataURL(f);
+              } else {
+                previewEl.style.display = 'none';
+              }
+            }
+            fileInput.addEventListener('change', function () { syncFile(fileInput.files[0]); });
+            drop.addEventListener('click', function () { fileInput.click(); });
+            ['dragenter', 'dragover'].forEach(function (evt) {
+              drop.addEventListener(evt, function (e) { e.preventDefault(); drop.classList.add('drag'); });
+            });
+            ['dragleave', 'drop'].forEach(function (evt) {
+              drop.addEventListener(evt, function (e) { e.preventDefault(); drop.classList.remove('drag'); });
+            });
+            drop.addEventListener('drop', function (e) {
+              if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
+              fileInput.files = e.dataTransfer.files;
+              syncFile(e.dataTransfer.files[0]);
+            });
+          }
+
+          // Persist details open/close states
+          document.querySelectorAll('details.home-admin-group').forEach(function (d) {
+            var key = 'enma_details_' + (d.id || d.querySelector('summary').textContent.trim().toLowerCase().replace(/\s+/g, '_'));
+            var saved = localStorage.getItem(key);
+            if (saved === '0') d.open = false;
+            if (saved === '1') d.open = true;
+            d.addEventListener('toggle', function () { localStorage.setItem(key, d.open ? '1' : '0'); });
+          });
+
+          els.search.value = state.query;
+          els.type.value = state.type;
+          els.usage.value = state.usage;
+          els.quality.value = state.quality;
+          els.sort.value = state.sort;
+          els.size.value = String(state.pageSize);
+          els.search.addEventListener('input', function () { state.query = els.search.value; state.page = 1; apply(); });
+          els.type.addEventListener('change', function () { state.type = els.type.value; state.page = 1; apply(); });
+          els.usage.addEventListener('change', function () { state.usage = els.usage.value; state.page = 1; apply(); });
+          els.quality.addEventListener('change', function () { state.quality = els.quality.value; state.page = 1; apply(); });
+          els.sort.addEventListener('change', function () { state.sort = els.sort.value; apply(); });
+          els.size.addEventListener('change', function () { state.pageSize = parseInt(els.size.value, 10) || 25; state.page = 1; apply(); });
+          els.btnTable.addEventListener('click', function () { state.view = 'table'; apply(); });
+          els.btnGrid.addEventListener('click', function () { state.view = 'grid'; apply(); });
+
+          apply();
+        });
+      })();
     </script>
     <style>
         :root {
@@ -2659,6 +3424,49 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         .home-admin-group-body h3 {
             margin: 0 0 8px;
             font-size: 15px;
+        }
+        .home-help {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #122238;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .home-help strong {
+            color: var(--text);
+        }
+        .home-section-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 0 0 12px;
+        }
+        .home-dirty-indicator {
+            margin-left: auto;
+            font-size: 12px;
+            font-weight: 700;
+            color: #ffd65a;
+            display: none;
+        }
+        .home-dirty-indicator.is-visible {
+            display: inline-block;
+        }
+        .workspace-help {
+            margin: 0 0 12px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: #122238;
+            font-size: 13px;
+            color: var(--muted);
+        }
+        .workspace-help strong {
+            color: var(--text);
+        }
+        .workspace-help code {
+            color: #ffd65a;
         }
         .quick-actions {
             display:flex;
@@ -2912,10 +3720,53 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 min-width: 220px;
                 flex: 1;
             }
-	        .btn[disabled] {
-	            opacity: 0.55;
-	            cursor: not-allowed;
-	        }
+        .btn[disabled] {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        .enma-admin { background: #07111f; }
+        .enma-admin .box { background: #0f1f33; border-color: #25415f; }
+        .enma-admin .home-admin-group { background: #10243a; border-color: #25415f; }
+        .enma-admin .home-admin-group > summary { background: #0b1b2e; color: #eaf2ff; }
+        .enma-admin label { color: #cddcf0; font-weight: 700; font-size: 12px; letter-spacing: .02em; }
+        .enma-admin input, .enma-admin textarea, .enma-admin select { background: #0b1b2e; border-color: #25415f; color: #eaf2ff; }
+        .media-table-wrap { overflow-x: auto; border: 1px solid #25415f; border-radius: 10px; }
+        .media-toolbar-enhanced { border: 1px solid #25415f; border-radius: 10px; padding: 10px; background: #10243a; margin: 0 0 12px; }
+        .media-toolbar-enhanced .mte-row { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 8px; align-items: end; }
+        .media-toolbar-enhanced .mte-row-2 { grid-template-columns: 1fr 1fr auto; margin-top: 8px; }
+        .media-toolbar-enhanced label { margin: 0; }
+        .media-toolbar-enhanced label span { display: block; margin-bottom: 4px; font-size: 11px; color: #9fb3c8; }
+        .mte-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .mte-card { border: 1px solid #25415f; border-radius: 10px; background: #10243a; padding: 10px; }
+        .mte-card h4 { margin: 8px 0 6px; font-size: 14px; }
+        .mte-meta { color: #9fb3c8; font-size: 12px; }
+        .mte-badges { margin-top: 8px; }
+        .mte-badge { font-size: 11px; padding: 2px 6px; border-radius: 999px; border: 1px solid #25415f; }
+        .mte-badge.used { color: #87f0b0; border-color: #2b6a44; }
+        .mte-badge.unused { color: #f2c18d; border-color: #7d5830; }
+        .mte-actions { display: flex; gap: 8px; margin-top: 10px; }
+        .mte-pager { margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; }
+        .mte-pager .btn.active, .mte-view .btn.active { outline: 2px solid #4f95ff; }
+        .mte-actions-menu { margin-top: 6px; }
+        .mte-actions-menu summary { cursor: pointer; font-size: 12px; color: #9fb3c8; }
+        .mte-actions-list { display: grid; gap: 6px; margin-top: 6px; }
+        .mte-preview-modal { position: fixed; inset: 0; background: rgba(2,8,15,.72); z-index: 10000; align-items: center; justify-content: center; padding: 16px; }
+        .mte-preview-dialog { width: min(920px, 100%); background: #0f1f33; border: 1px solid #25415f; border-radius: 12px; padding: 14px; }
+        .mte-preview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .mte-preview-meta { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; }
+        .mte-dropzone { border: 1px dashed #40658f; border-radius: 10px; padding: 10px; margin: 0 0 12px; cursor: pointer; background: #10243a; }
+        .mte-dropzone.drag { border-color: #73a7eb; box-shadow: 0 0 0 2px rgba(115,167,235,.2); }
+        .mte-file-name { margin-top: 8px; font-size: 12px; color: #9fb3c8; }
+        .mte-file-preview { margin-top: 8px; max-width: 220px; max-height: 120px; border-radius: 8px; border: 1px solid #25415f; }
+        @media (max-width: 980px) {
+          .media-toolbar-enhanced .mte-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .media-toolbar-enhanced .mte-row-2 { grid-template-columns: 1fr; }
+          .mte-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+        @media (max-width: 680px) {
+          .mte-grid { grid-template-columns: 1fr; }
+          .media-table-wrap table { min-width: 920px; }
+        }
         @media (max-width: 980px) {
             .tabs {
                 position: static;
@@ -2939,8 +3790,13 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	    </style>
 </head>
 <body>
-<div class="wrap">
-    <a class="toplink" href="<?= e(url('/')) ?>">Volver al sitio</a>
+<div class="wrap enma-admin enma-media-pro">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <a class="toplink" href="<?= e(url('/')) ?>">Volver al sitio</a>
+        <button class="tab" type="button" id="enma-theme-toggle" title="Cycle theme">
+            Theme: <span id="enma-theme-label">Dark</span>
+        </button>
+    </div>
 
     <?php foreach ($errors as $error): ?>
         <div class="error"><?= e($error) ?></div>
@@ -2973,7 +3829,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <a class="tab <?= $activeTab === 'indexation' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=indexation')) ?>">Indexacion</a>
             <a class="tab <?= $activeTab === 'prompts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=prompts')) ?>">Prompts</a>
             <a class="tab <?= $activeTab === 'users' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=users')) ?>">Usuarios</a>
-            <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays)) ?>">Visitas</a>
+            <a class="tab <?= $activeTab === 'messages' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=messages')) ?>">Mensajes</a>
+            <a class="tab <?= $activeTab === 'sql' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=sql')) ?>">SQL</a>
+            <a class="tab <?= $activeTab === 'views' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&days=' . $viewDays . '&view_range=' . rawurlencode($viewRange))) ?>">Visitas</a>
             <a class="tab <?= $activeTab === 'analytics' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=analytics')) ?>">Analytics & Seguridad</a>
             <a class="tab <?= $activeTab === 'maintenance' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=maintenance')) ?>">Mantenimiento</a>
         </div>
@@ -2984,11 +3842,20 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <a class="ops-link" href="<?= e(url('/enma/?tab=products#products-not-found-actions')) ?>">Limpieza not found</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=indexation')) ?>">Seguimiento indexacion</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Workspace prompts</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=sql')) ?>">SQL console</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-progress')) ?>">Progreso mantenimiento</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-safe-check')) ?>">Chequeo seguro</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-not-found-review')) ?>">Cola de revision</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Importar catalogo</a>
             </div>
+            <p class="muted" style="margin:8px 0 0;font-size:12px;">
+                ENMA auto-fix:
+                <?php if (!empty($_SESSION['enma_autofix_last_run']) && is_numeric($_SESSION['enma_autofix_last_run'])): ?>
+                    last run <?= e(gmdate('Y-m-d H:i:s', (int) $_SESSION['enma_autofix_last_run'])) ?> UTC
+                <?php else: ?>
+                    pending first run
+                <?php endif; ?>
+            </p>
         </section>
 
         <?php if ($activeTab === 'control'): ?>
@@ -3111,7 +3978,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 </div>
             </form>
             <?php if (is_array($productsAiImportResult ?? null)): ?>
-                <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+                <div style="margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;background:#122238;">
                     <?php if (!empty($productsAiImportResult['ok'])): ?>
                         <p style="margin:0 0 8px;font-size:13px;">Result: <strong class="ok">OK</strong></p>
                         <div style="font-family:monospace;font-size:12px;">Inserted: <?= number_format((int) ($productsAiImportResult['inserted'] ?? 0)) ?></div>
@@ -3362,8 +4229,18 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section id="home-hero-settings" class="box ops-anchor-offset">
             <h2>Home Hero Settings</h2>
             <p class="muted" style="margin:0 0 10px;">Control hero content, promo tiles, and featured home products. Use Media Library URLs in WEBP format when possible.</p>
+            <div class="home-help">
+                <strong>Recommended workflow:</strong> 1) Set Hero, 2) Set Tile 1/2, 3) Set Goals + FAQ, 4) Save Draft, 5) Publish when ready.
+            </div>
+            <div class="home-section-nav">
+                <a class="ops-link" href="#home-group-hero">Hero</a>
+                <a class="ops-link" href="#home-group-tiles">Promo Tiles</a>
+                <a class="ops-link" href="#home-group-banners">Banners</a>
+                <a class="ops-link" href="#home-group-goals-faq">Goals + FAQ</a>
+                <a class="ops-link" href="#home-group-featured">Featured + Presets</a>
+            </div>
             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 12px;">
-                <div style="border:1px solid #d7e0ed;border-radius:10px;padding:10px;background:#fff;">
+                <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
                     <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Published</div>
                     <div style="margin-top:6px;font-size:13px;">
                         <span id="status_pub_hero" style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['published']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['published']['hero'] ? 'OK' : 'Missing' ?></span>
@@ -3371,7 +4248,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <span id="status_pub_tile2" style="display:inline-block;color:<?= $homeVisualStatus['published']['tile2'] ? '#166534' : '#9a3412' ?>;">Tile 2 <?= $homeVisualStatus['published']['tile2'] ? 'OK' : 'Missing' ?></span>
                     </div>
                 </div>
-                <div style="border:1px solid #d7e0ed;border-radius:10px;padding:10px;background:#fff;">
+                <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
                     <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Draft</div>
                     <div style="margin-top:6px;font-size:13px;">
                         <span style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['draft']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['draft']['hero'] ? 'OK' : 'Missing' ?></span>
@@ -3389,10 +4266,11 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <button class="btn" type="button" id="load_draft_settings">Load Draft</button>
                     <button class="btn" type="submit" id="save_draft_btn">Save Draft</button>
                     <button class="btn" type="submit" id="publish_btn">Publish To Home</button>
+                    <span id="home_dirty_indicator" class="home-dirty-indicator">Unsaved changes</span>
                 </div>
                 <div id="home-dup-warning" style="display:none;margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff4e5;border:1px solid #f0c48a;color:#8a3b00;font-size:12px;font-weight:700;"></div>
                 <div class="home-admin-sections">
-                <details class="home-admin-group" open>
+                <details class="home-admin-group" id="home-group-hero" open>
                     <summary>Hero</summary>
                     <div class="home-admin-group-body">
                 <label>Hero title (optional override)</label>
@@ -3403,6 +4281,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input id="home_hero_subtitle" type="text" name="home_hero_subtitle" value="<?= e((string) ($homeHeroSettings['subtitle'] ?? '')) ?>" placeholder="Short value statement">
                 <label>Hero image URL (1x)</label>
                 <input id="home_hero_image" type="text" name="home_hero_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" placeholder="/assets/img/optimized_1.webp or https://...">
+                <button class="btn" type="button" style="margin-top:6px;" data-open-media-picker-for="hero">Choose from Media Library</button>
                 <label>Hero image URL (2x, optional)</label>
                 <input id="home_hero_image_2x" type="text" name="home_hero_image_2x" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image_2x'] ?? '')) ?>" placeholder="/assets/img/optimized_2.webp or https://...">
                 <img id="home_hero_image_preview" src="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
@@ -3445,7 +4324,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     </div>
                 </details>
 
-                <details class="home-admin-group" open>
+                <details class="home-admin-group" id="home-group-tiles" open>
                     <summary>Promo Tiles</summary>
                     <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Promo Tile 1</h3>
@@ -3453,11 +4332,16 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input type="text" name="home_promo_tile_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_eyebrow', '')) ?>" placeholder="Tile 1 eyebrow">
                 <input type="text" name="home_promo_tile_1_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_subtitle', '')) ?>" placeholder="Tile 1 subtitle">
                 <input id="home_promo_tile_1_image" type="text" name="home_promo_tile_1_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
+                <button class="btn" type="button" style="margin:6px 0 0;" data-open-media-picker-for="tile1">Choose from Media Library</button>
                 <img id="home_tile_1_image_preview" src="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_1_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
                 <div id="home_tile_1_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <input id="home_promo_tile_1_cta_label" type="text" name="home_promo_tile_1_cta_label" value="<?= e((string) ($homeHeroSettings['tile_1_cta_label'] ?? '')) ?>" placeholder="Beginner Telescopes">
                     <input id="home_promo_tile_1_cta_url" type="text" name="home_promo_tile_1_cta_url" value="<?= e((string) ($homeHeroSettings['tile_1_cta_url'] ?? '')) ?>" placeholder="/best-beginner-telescopes">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input id="home_promo_tile_1_overlay_link_label" type="text" name="home_promo_tile_1_overlay_link_label" value="<?= e((string) ($homeHeroSettings['tile_1_overlay_link_label'] ?? '')) ?>" placeholder="Overlay link label (e.g. Learn more)">
+                    <input id="home_promo_tile_1_overlay_link_url" type="text" name="home_promo_tile_1_overlay_link_url" value="<?= e((string) ($homeHeroSettings['tile_1_overlay_link_url'] ?? '')) ?>" placeholder="/best-beginner-telescopes">
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
                     <?php $t1Pos = site_setting_get($pdo, 'home_promo_tile_1_text_position', 'bottom-left'); ?>
@@ -3473,11 +4357,16 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input type="text" name="home_promo_tile_2_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_eyebrow', '')) ?>" placeholder="Tile 2 eyebrow">
                 <input type="text" name="home_promo_tile_2_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_subtitle', '')) ?>" placeholder="Tile 2 subtitle">
                 <input id="home_promo_tile_2_image" type="text" name="home_promo_tile_2_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
+                <button class="btn" type="button" style="margin:6px 0 0;" data-open-media-picker-for="tile2">Choose from Media Library</button>
                 <img id="home_tile_2_image_preview" src="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_2_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
                 <div id="home_tile_2_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <input id="home_promo_tile_2_cta_label" type="text" name="home_promo_tile_2_cta_label" value="<?= e((string) ($homeHeroSettings['tile_2_cta_label'] ?? '')) ?>" placeholder="Explore Astrophotography">
                     <input id="home_promo_tile_2_cta_url" type="text" name="home_promo_tile_2_cta_url" value="<?= e((string) ($homeHeroSettings['tile_2_cta_url'] ?? '')) ?>" placeholder="/guides">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <input id="home_promo_tile_2_overlay_link_label" type="text" name="home_promo_tile_2_overlay_link_label" value="<?= e((string) ($homeHeroSettings['tile_2_overlay_link_label'] ?? '')) ?>" placeholder="Overlay link label (e.g. Learn more)">
+                    <input id="home_promo_tile_2_overlay_link_url" type="text" name="home_promo_tile_2_overlay_link_url" value="<?= e((string) ($homeHeroSettings['tile_2_overlay_link_url'] ?? '')) ?>" placeholder="/guides">
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
                     <?php $t2Pos = site_setting_get($pdo, 'home_promo_tile_2_text_position', 'bottom-left'); ?>
@@ -3490,7 +4379,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     </div>
                 </details>
 
-                <details class="home-admin-group">
+                <details class="home-admin-group" id="home-group-banners">
                     <summary>Reusable Banners</summary>
                     <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Reusable Banner 1</h3>
@@ -3531,7 +4420,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     </div>
                 </details>
 
-                <details class="home-admin-group">
+                <details class="home-admin-group" id="home-group-goals-faq">
                     <summary>Goals and FAQ</summary>
                     <div class="home-admin-group-body">
                 <h3 style="margin:14px 0 8px;">Shop by Goal (Admin)</h3>
@@ -3562,7 +4451,43 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     </div>
                 </details>
 
-                <details class="home-admin-group">
+                <details class="home-admin-group" id="home-group-technical">
+                    <summary>SEO / Cache / Security</summary>
+                    <div class="home-admin-group-body">
+                <label>Homepage H1 text (optional override)</label>
+                <input id="home_h1_text" type="text" name="home_h1_text" value="<?= e((string) ($homeHeroSettings['home_h1_text'] ?? '')) ?>" placeholder="Find Your First Telescope">
+                <label>Site logo URL</label>
+                <input id="site_logo_image" type="text" name="site_logo_image" value="<?= e(site_setting_get($pdo, 'site_logo_image', '/assets/logo/128.png')) ?>" placeholder="/assets/logo/128.png">
+                <label>Favicon ICO URL</label>
+                <input id="site_favicon_ico" type="text" name="site_favicon_ico" value="<?= e(site_setting_get($pdo, 'site_favicon_ico', '/favicon.ico')) ?>" placeholder="/favicon.ico">
+                <label>Favicon PNG URL</label>
+                <input id="site_favicon_image" type="text" name="site_favicon_image" value="<?= e(site_setting_get($pdo, 'site_favicon_image', '/assets/logo/32.png')) ?>" placeholder="/assets/logo/32.png">
+                <label>Default OG image URL (used site-wide where not overridden)</label>
+                <input id="site_og_image" type="text" name="site_og_image" value="<?= e((string) ($homeHeroSettings['site_og_image'] ?? '')) ?>" placeholder="/assets/logo/512.png">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <label style="display:flex;align-items:center;gap:8px;">
+                        <input id="site_enable_security_headers" type="checkbox" name="site_enable_security_headers" value="1" <?= (($homeHeroSettings['site_enable_security_headers'] ?? '1') !== '0') ? 'checked' : '' ?>>
+                        Enable security headers
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;">
+                        <input id="site_enable_public_cache" type="checkbox" name="site_enable_public_cache" value="1" <?= (($homeHeroSettings['site_enable_public_cache'] ?? '1') !== '0') ? 'checked' : '' ?>>
+                        Enable public cache headers
+                    </label>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                        <label>Browser max-age (seconds)</label>
+                        <input id="site_public_cache_max_age" type="number" min="60" max="3600" name="site_public_cache_max_age" value="<?= e((string) ($homeHeroSettings['site_public_cache_max_age'] ?? '300')) ?>">
+                    </div>
+                    <div>
+                        <label>CDN s-maxage (seconds)</label>
+                        <input id="site_public_smaxage" type="number" min="60" max="86400" name="site_public_smaxage" value="<?= e((string) ($homeHeroSettings['site_public_smaxage'] ?? '600')) ?>">
+                    </div>
+                </div>
+                    </div>
+                </details>
+
+                <details class="home-admin-group" id="home-group-featured">
                     <summary>Featured Products and Presets</summary>
                     <div class="home-admin-group-body">
                 <label>Most Loved Product IDs (comma-separated, max 4)</label>
@@ -3590,7 +4515,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     </div>
                 </details>
                 </div>
-                <div class="sticky-save-bar" style="position:sticky;bottom:8px;z-index:20;margin-top:12px;padding:10px;border:1px solid #d7e0ed;border-radius:10px;background:#fff;box-shadow:0 8px 16px rgba(10,20,34,.08);display:flex;gap:8px;flex-wrap:wrap;">
+                <div class="sticky-save-bar" style="position:sticky;bottom:8px;z-index:20;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#122238;box-shadow:0 8px 16px rgba(0,0,0,.25);display:flex;gap:8px;flex-wrap:wrap;">
                     <button class="btn" type="submit" id="save_draft_btn_sticky">Save Draft</button>
                     <button class="btn" type="submit" id="publish_btn_sticky">Publish To Home</button>
                 </div>
@@ -3601,7 +4526,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <button class="btn" type="submit">Publish Draft to Live (One Click)</button>
             </form>
 
-            <div style="margin-top:14px;padding:12px;border:1px solid #d7e0ed;border-radius:10px;background:#f8fbff;">
+            <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#122238;">
                 <h3 style="margin:0 0 8px;">Image Prompt Shortcuts</h3>
                 <p class="muted" style="margin:0 0 10px;">Copy, generate image, upload here, then click Use in Hero/Tile buttons in Media Library.</p>
                 <label>Prompt Variant</label>
@@ -3628,7 +4553,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div id="prompt_tile_2_status" class="copy-status" style="display:block;margin-top:4px;"></div>
             </div>
 
-            <div style="margin-top:14px;padding:12px;border:1px solid #d7e0ed;border-radius:10px;background:#f8fbff;">
+            <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#122238;">
                 <h3 style="margin:0 0 8px;">Quick Upload for Home Visuals</h3>
                 <p class="muted" style="margin:0 0 10px;">Upload from here directly. JPG/PNG/GIF will auto-convert to WEBP and appear in Media Library.</p>
                 <form method="post" enctype="multipart/form-data">
@@ -3653,6 +4578,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <option value="hero">Hero</option>
                         <option value="tile1">Tile 1</option>
                         <option value="tile2">Tile 2</option>
+                        <option value="logo">Logo</option>
+                        <option value="ico">ICO/Favicon</option>
                     </select>
                     <label>File</label>
                     <input type="file" name="media_file" required style="padding:6px;">
@@ -3703,11 +4630,19 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <input type="file" name="media_file" required style="padding:6px;">
                 <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
             </form>
-            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB). JPG/PNG/GIF uploads are auto-converted to WEBP.</p>
+            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB). JPG/PNG/GIF/WEBP uploads are compressed and saved as WEBP.</p>
         </section>
 
         <section id="media-list" class="box ops-anchor-offset">
             <h2>Media Assets</h2>
+            <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px;">
+                <input type="hidden" name="tab" value="media">
+                <input type="text" name="media_q" value="<?= e($mediaSearch) ?>" placeholder="Search title, file name, URL, MIME..." style="min-width:280px;">
+                <button class="btn" type="submit">Search</button>
+                <?php if ($mediaSearch !== ''): ?>
+                    <a class="tab" href="<?= e(url('/enma/?tab=media')) ?>">Clear</a>
+                <?php endif; ?>
+            </form>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;">
                 <button class="btn" type="button" data-media-filter="all">All</button>
                 <button class="btn" type="button" data-media-filter="recent">Recent</button>
@@ -3720,9 +4655,21 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             <?php elseif ($allMedia === []): ?>
                 <div class="empty">No media assets yet.</div>
             <?php else: ?>
+                <form method="post" id="media-bulk-form" style="display:none;">
+                    <input type="hidden" name="action" value="media_bulk_delete">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <div id="media-bulk-selected-inputs"></div>
+                </form>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;">
+                    <button class="btn" type="button" id="media-select-all-visible">Select visible</button>
+                    <button class="btn" type="button" id="media-clear-selection">Clear selection</button>
+                    <button class="btn" type="button" id="media-delete-selected">Delete selected</button>
+                    <span class="muted" id="media-selected-count">0 selected</span>
+                </div>
                 <table>
                     <thead>
                     <tr>
+                        <th>Select</th>
                         <th>ID</th>
                         <th>Preview</th>
                         <th>Title</th>
@@ -3761,7 +4708,8 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         }
                         $isUsedInHome = isset($homeUsedImageUrls[$mediaUrl]);
                         ?>
-                        <tr data-media-row="1" data-recent="<?= $isRecentMedia ? '1' : '0' ?>" data-webp="<?= $isWebp ? '1' : '0' ?>" data-landscape="<?= $isLandscape ? '1' : '0' ?>" data-used="<?= $isUsedInHome ? '1' : '0' ?>">
+                        <tr data-media-row="1" data-recent="<?= $isRecentMedia ? '1' : '0' ?>" data-webp="<?= $isWebp ? '1' : '0' ?>" data-landscape="<?= $isLandscape ? '1' : '0' ?>" data-used="<?= $isUsedInHome ? '1' : '0' ?>" data-search="<?= e(strtolower($title . ' ' . $originalName . ' ' . $mimeType . ' ' . $mediaUrl)) ?>">
+                            <td><input type="checkbox" value="<?= $mediaId ?>" class="media-select"></td>
                             <td><?= $mediaId ?></td>
                             <td style="width:100px;">
                                 <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
@@ -3799,6 +4747,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                     <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="hero" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Hero</button>
                                     <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 1</button>
                                     <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile2" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 2</button>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="logo" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as Logo</button>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="ico" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as ICO</button>
+                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-open-media-picker="1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Select</button>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
                                         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -3826,6 +4777,24 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                         <input type="hidden" name="assign_mode" value="publish">
                                         <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Tile 2 + Save</button>
                                     </form>
+                                    <form method="post" style="display:inline;">
+                                        <input type="hidden" name="action" value="home_media_assign">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="assign_target" value="logo">
+                                        <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
+                                        <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
+                                        <input type="hidden" name="assign_mode" value="publish">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Logo + Save</button>
+                                    </form>
+                                    <form method="post" style="display:inline;">
+                                        <input type="hidden" name="action" value="home_media_assign">
+                                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                        <input type="hidden" name="assign_target" value="ico">
+                                        <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
+                                        <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
+                                        <input type="hidden" name="assign_mode" value="publish">
+                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set ICO + Save</button>
+                                    </form>
                                 <?php endif; ?>
                                 <form method="post" style="display:inline;" onsubmit="return confirm('Delete this media asset?');">
                                     <input type="hidden" name="action" value="media_delete">
@@ -3842,10 +4811,44 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <?= $mediaPagination ?>
             <?php endif; ?>
         </section>
+        <div id="media-picker-modal" style="display:none;position:fixed;inset:0;background:rgba(2,6,23,.7);z-index:9999;padding:20px;">
+            <div style="max-width:880px;margin:0 auto;background:#0f1b2b;border-radius:12px;border:1px solid var(--line);max-height:90vh;overflow:auto;padding:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                    <h3 style="margin:0;">Media Picker</h3>
+                    <button class="btn" type="button" id="media-picker-close">Close</button>
+                </div>
+                <p class="muted" style="margin:6px 0 12px;">Pick one image and apply to Hero, Tile, Logo, or ICO.</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                    <div>
+                        <img id="media-picker-preview" src="" alt="" style="width:100%;max-height:240px;object-fit:contain;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;display:none;">
+                        <div id="media-picker-preview-empty" class="muted" style="padding:10px;border:1px dashed #d7e0ed;border-radius:8px;">Select an image row from the library table below.</div>
+                    </div>
+                    <div>
+                        <label>Target</label>
+                        <select id="media-picker-target">
+                            <option value="hero">Hero</option>
+                            <option value="tile1">Tile 1</option>
+                            <option value="tile2">Tile 2</option>
+                            <option value="logo">Logo</option>
+                            <option value="ico">ICO/Favicon</option>
+                        </select>
+                        <label style="margin-top:8px;">Selected URL</label>
+                        <input id="media-picker-url" type="text" readonly>
+                        <label style="margin-top:8px;">Selected Title</label>
+                        <input id="media-picker-title" type="text" readonly>
+                        <button class="btn" type="button" id="media-picker-apply" style="margin-top:10px;">Apply Selection</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <?php elseif ($activeTab === 'posts'): ?>
         <section class="box">
             <h2>Posts Workspace</h2>
             <p class="muted" style="margin:0 0 10px;">Draft faster with SEO helpers, filter content state, and keep editorial flow focused.</p>
+            <div class="workspace-help">
+                <strong>Recommended workflow:</strong> 1) Open <code>Add Post</code> or <code>Edit Post</code>, 2) fill title/excerpt/meta, 3) validate SEO panel, 4) save, 5) verify in <code>Post List</code>.
+                Autosave runs while you edit, and <code>Ctrl/Cmd+S</code> saves draft in Home settings.
+            </div>
             <div class="ops-kpis">
                 <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allPosts)) ?></div></div>
                 <div class="ops-kpi"><div class="k">Total Posts</div><div class="v"><?= number_format($postsTotal) ?></div></div>
@@ -3853,6 +4856,9 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <div class="ops-kpi"><div class="k">Published</div><div class="v"><?= number_format($postsPublishedCount) ?></div></div>
             </div>
             <div class="ops-nav">
+                <?php if ($editingPost): ?>
+                    <a class="ops-link" href="#posts-edit">Edit Current</a>
+                <?php endif; ?>
                 <a class="ops-link" href="#posts-add">Add Post</a>
                 <a class="ops-link" href="#posts-list">Post List</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=indexation')) ?>">Indexation Tracker</a>
@@ -3887,6 +4893,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <label>Post Type</label>
                         <select name="post_type">
                             <option value="post" <?= $editingPost['post_type'] === 'post' ? 'selected' : '' ?>>Standard Post</option>
+                            <option value="review" <?= $editingPost['post_type'] === 'review' ? 'selected' : '' ?>>Review</option>
                             <option value="guide" <?= $editingPost['post_type'] === 'guide' ? 'selected' : '' ?>>Guide (Structured)</option>
                         </select>
                     </div>
@@ -3927,7 +4934,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                <?php if (!empty($editingPost['featured_image'])): ?>
 	                    <div style="margin-bottom:12px;">
 	                        <span class="muted">Current Image:</span><br>
-	                        <img src="<?= e(url($editingPost['featured_image'])) ?>" alt="Preview" style="max-width:100px;max-height:100px;border-radius:6px;margin-top:5px;border:1px solid #ddd;">
+	                        <img src="<?= e(content_asset_path((string) $editingPost['featured_image'])) ?>" alt="Preview" style="max-width:100px;max-height:100px;border-radius:6px;margin-top:5px;border:1px solid #ddd;">
 	                    </div>
 	                <?php endif; ?>
 	                <div class="post-preview-grid" style="margin:8px 0 14px;">
@@ -4011,6 +5018,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         <label>Post Type</label>
                         <select name="post_type">
                             <option value="post">Standard Post</option>
+                            <option value="review">Review</option>
                             <option value="guide">Guide (Structured)</option>
                         </select>
                     </div>
@@ -4143,6 +5151,11 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                     <button class="btn" type="submit">Dark Theme All Posts (One Click)</button>
                 </form>
+                <form method="post" style="margin:0;" onsubmit="return confirm('Reclassify post sections to Blog/Review now?');">
+                    <input type="hidden" name="action" value="bulk_reclassify_post_sections">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <button class="btn" type="submit">Reclassify Post Sections</button>
+                </form>
             </div>
             <?php if ($allPosts === []): ?>
                 <div class="empty">No posts or guides found in database.</div>
@@ -4154,6 +5167,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <tr>
                         <th>Title</th>
                         <th>Type</th>
+                        <th>Section</th>
                         <th>Status</th>
                         <th>Date</th>
                         <th>Actions</th>
@@ -4166,15 +5180,22 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                                 <strong><?= e($p['title']) ?></strong><br>
                                 <span class="muted"><?= e($p['slug']) ?></span>
                             </td>
-                            <td><span class="badge" style="background:#eef2f7;padding:2px 6px;border-radius:4px;font-size:11px;"><?= e(strtoupper($p['post_type'])) ?></span></td>
+                            <td><span class="badge" style="background:#122238;color:var(--text);border:1px solid var(--line);padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;"><?= e(strtoupper($p['post_type'])) ?></span></td>
+                            <td>
+                                <?php
+                                $rowType = trim((string) ($p['post_type'] ?? 'post'));
+                                $rowSection = $rowType === 'guide' ? 'guides' : post_section((array) $p);
+                                ?>
+                                <span class="badge" style="background:#f0f7ff;color:#1b2f4a;border:1px solid #c9d8ee;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;"><?= e(strtoupper((string) $rowSection)) ?></span>
+                            </td>
                             <td><?= e($p['status']) ?></td>
                             <td><?= e(substr((string)$p['published_at'], 0, 10)) ?></td>
                             <td>
                                 <?php $postPublicPath = enma_post_public_path((array) $p); ?>
                                 <?php if ($postPublicPath !== ''): ?>
-                                    <a href="<?= e(url($postPublicPath)) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">View</a>
+                                    <a href="<?= e(url($postPublicPath)) ?>" target="_blank" rel="noopener noreferrer" style="font-size:13px;color:#ffffff;margin-right:10px;text-decoration:none;font-weight:700;">View</a>
                                 <?php endif; ?>
-                                <a href="<?= e(url('/enma/?tab=posts&edit_post=' . $p['id'])) ?>" style="font-size:13px;color:#0b1f3a;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
+                                <a href="<?= e(url('/enma/?tab=posts&edit_post=' . $p['id'])) ?>" style="font-size:13px;color:#ffffff;margin-right:10px;text-decoration:none;font-weight:700;">Edit</a>
                                 <form method="post" style="display:inline;" onsubmit="return confirm('Delete this post?');">
                                     <input type="hidden" name="action" value="delete_post">
                                     <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
@@ -4337,7 +5358,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
 	                            <td><?= (int) $userRow['id'] ?></td>
 	                            <td>
 	                                <strong><?= e((string) ($userRow['display_name'] ?: $userRow['username'])) ?></strong><br>
-	                                <span class="muted"><?= e((string) $userRow['username']) ?> · <?= e((string) $userRow['email']) ?></span>
+	                                <span class="muted"><?= e((string) $userRow['username']) ?> Â· <?= e((string) $userRow['email']) ?></span>
 	                            </td>
 	                            <td><?= e((string) $userRow['role']) ?></td>
 	                            <td><?= e((string) $userRow['status']) ?></td>
@@ -4399,6 +5420,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <?= $activityPagination ?>
   	            <?php endif; ?>
 	        </section>
+            <?php elseif ($activeTab === 'messages'): ?>
+            <?php require __DIR__ . '/views/tabs/messages.php'; ?>
+            <?php elseif ($activeTab === 'sql'): ?>
+            <?php require __DIR__ . '/views/tabs/sql.php'; ?>
 	        <?php elseif ($activeTab === 'analytics'): ?>
         <?php $analyticsPeriods = $analyticsDashboard['stats']['periods'] ?? []; ?>
         <section class="box">
@@ -4428,6 +5453,165 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <?php endforeach; ?>
             </div>
             <p class="muted">Owner/admin traffic is excluded from new tracking events after login.</p>
+        </section>
+
+        <?php $mon = is_array($analyticsDashboard['monetization'] ?? null) ? $analyticsDashboard['monetization'] : []; ?>
+        <?php $monFunnel = is_array($mon['funnel'] ?? null) ? $mon['funnel'] : []; ?>
+        <section class="box">
+            <h2>Monetization Metrics (Last <?= number_format((int) ($mon['days'] ?? 30)) ?> Days)</h2>
+            <p class="muted">From <?= e((string) ($mon['from_date'] ?? '-')) ?> UTC. Focus: views to product views to outbound clicks, and CTR by page/product/guide.</p>
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-k">Page Views</div>
+                    <div class="stat-v"><?= number_format((int) ($monFunnel['page_views'] ?? 0)) ?></div>
+                </div>
+                <div class="stat">
+                    <div class="stat-k">Product Page Views</div>
+                    <div class="stat-v"><?= number_format((int) ($monFunnel['product_page_views'] ?? 0)) ?></div>
+                    <div class="muted"><?= number_format((float) ($monFunnel['page_to_product_percent'] ?? 0.0), 2) ?>% from all pages</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-k">Outbound Clicks</div>
+                    <div class="stat-v"><?= number_format((int) ($monFunnel['outbound_clicks'] ?? 0)) ?></div>
+                    <div class="muted"><?= number_format((float) ($monFunnel['product_to_click_percent'] ?? 0.0), 2) ?>% from product pages</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="box">
+            <h2>CTR by Page</h2>
+            <?php $ctrByPage = is_array($mon['ctr_by_page'] ?? null) ? $mon['ctr_by_page'] : []; ?>
+            <?php if ($ctrByPage === []): ?>
+                <div class="empty">No page CTR data yet for this window.</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>Path</th><th>Views</th><th>Clicks</th><th>CTR</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach (array_slice($ctrByPage, 0, 20) as $row): ?>
+                    <tr>
+                        <td><code><?= e((string) ($row['path'] ?? '')) ?></code></td>
+                        <td><?= number_format((int) ($row['views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                        <td><?= number_format((float) ($row['ctr_percent'] ?? 0.0), 2) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="box">
+            <h2>CTR by Product</h2>
+            <?php $ctrByProduct = is_array($mon['ctr_by_product'] ?? null) ? $mon['ctr_by_product'] : []; ?>
+            <?php if ($ctrByProduct === []): ?>
+                <div class="empty">No product CTR data yet for this window.</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>Product</th><th>Views</th><th>Clicks</th><th>CTR</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach (array_slice($ctrByProduct, 0, 20) as $row): ?>
+                    <tr>
+                        <td>
+                            <?php $slug = trim((string) ($row['slug'] ?? '')); ?>
+                            <?php if ($slug !== ''): ?>
+                                <a href="<?= e(url('/product/' . $slug)) ?>" target="_blank" rel="noopener"><?= e((string) ($row['title'] ?? '')) ?></a>
+                            <?php else: ?>
+                                <?= e((string) ($row['title'] ?? '')) ?>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= number_format((int) ($row['views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                        <td><?= number_format((float) ($row['ctr_percent'] ?? 0.0), 2) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="box">
+            <h2>CTR by Guide</h2>
+            <?php $ctrByGuide = is_array($mon['ctr_by_guide'] ?? null) ? $mon['ctr_by_guide'] : []; ?>
+            <?php if ($ctrByGuide === []): ?>
+                <div class="empty">No guide CTR data yet for this window.</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>Guide</th><th>Views</th><th>Clicks</th><th>CTR</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach (array_slice($ctrByGuide, 0, 20) as $row): ?>
+                    <tr>
+                        <td>
+                            <a href="<?= e(url('/' . (string) ($row['slug'] ?? ''))) ?>" target="_blank" rel="noopener"><?= e((string) ($row['title'] ?? '')) ?></a>
+                        </td>
+                        <td><?= number_format((int) ($row['views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                        <td><?= number_format((float) ($row['ctr_percent'] ?? 0.0), 2) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="box">
+            <h2>Top Pages with Low CTR</h2>
+            <?php $lowCtrPages = is_array($mon['top_pages_low_ctr'] ?? null) ? $mon['top_pages_low_ctr'] : []; ?>
+            <?php if ($lowCtrPages === []): ?>
+                <div class="empty">No low-CTR page candidates yet (or not enough traffic).</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>Path</th><th>Views</th><th>Clicks</th><th>CTR</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($lowCtrPages as $row): ?>
+                    <tr>
+                        <td><code><?= e((string) ($row['path'] ?? '')) ?></code></td>
+                        <td><?= number_format((int) ($row['views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                        <td class="seo-warn"><?= number_format((float) ($row['ctr_percent'] ?? 0.0), 2) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+        </section>
+
+        <section class="box">
+            <h2>Top Products with High CTR</h2>
+            <?php $highCtrProducts = is_array($mon['top_products_high_ctr'] ?? null) ? $mon['top_products_high_ctr'] : []; ?>
+            <?php if ($highCtrProducts === []): ?>
+                <div class="empty">No high-CTR product candidates yet (or not enough traffic).</div>
+            <?php else: ?>
+            <table>
+                <thead>
+                    <tr><th>Product</th><th>Views</th><th>Clicks</th><th>CTR</th></tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($highCtrProducts as $row): ?>
+                    <tr>
+                        <td>
+                            <?php $slug = trim((string) ($row['slug'] ?? '')); ?>
+                            <?php if ($slug !== ''): ?>
+                                <a href="<?= e(url('/product/' . $slug)) ?>" target="_blank" rel="noopener"><?= e((string) ($row['title'] ?? '')) ?></a>
+                            <?php else: ?>
+                                <?= e((string) ($row['title'] ?? '')) ?>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= number_format((int) ($row['views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                        <td class="seo-ok"><?= number_format((float) ($row['ctr_percent'] ?? 0.0), 2) ?>%</td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
         </section>
 
         <section class="box">
@@ -4480,12 +5664,14 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         </section>
 
         <?php elseif ($activeTab === 'views'): ?>
+        <?php $viewsHumanSignal = is_array($viewsDashboard['human_signal'] ?? null) ? $viewsDashboard['human_signal'] : ['human_views' => 0, 'noise_views' => 0, 'human_score' => 0.0]; ?>
         <section class="box">
             <h2>Views Workspace</h2>
             <p class="muted" style="margin:0 0 10px;">Analyze traffic window, compare deltas, and jump directly to funnel/top pages/sources.</p>
             <div class="ops-kpis">
-                <div class="ops-kpi"><div class="k">Window</div><div class="v"><?= number_format((int) ($viewsDashboard['days'] ?? $viewDays)) ?>d</div></div>
+                <div class="ops-kpi"><div class="k">Window</div><div class="v"><?= $viewRange === 'all' ? 'All' : (number_format((int) ($viewsDashboard['days'] ?? $viewDays)) . 'd') ?></div></div>
                 <div class="ops-kpi"><div class="k">Total Views</div><div class="v"><?= number_format((int) (($viewsDashboard['totals']['total_views'] ?? 0))) ?></div></div>
+                <div class="ops-kpi"><div class="k">Human Score</div><div class="v"><?= number_format((float) ($viewsHumanSignal['human_score'] ?? 0.0), 2) ?>%</div></div>
                 <div class="ops-kpi"><div class="k">Outbound Clicks</div><div class="v"><?= number_format((int) (($viewsDashboard['clicks']['total_clicks'] ?? 0))) ?></div></div>
                 <div class="ops-kpi"><div class="k">CTR</div><div class="v"><?= number_format((float) (($viewsDashboard['clicks']['ctr_percent'] ?? 0.0)), 2) ?>%</div></div>
             </div>
@@ -4493,22 +5679,32 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <a class="ops-link" href="#views-overview">Overview</a>
                 <a class="ops-link" href="#views-funnel">Funnel</a>
                 <a class="ops-link" href="#views-top-pages">Top Pages</a>
+                <a class="ops-link" href="#views-commercial-pages">Commercial Pages</a>
                 <a class="ops-link" href="#views-sources">Sources</a>
                 <a class="ops-link" href="#views-referrers">Referrers</a>
+                <a class="ops-link" href="#views-security">Security/Not Found</a>
             </div>
         </section>
         <section id="views-overview" class="box ops-anchor-offset">
             <h2>Views Dashboard</h2>
-            <p style="margin: 0 0 10px; font-size: 14px; color: #334155;">Tracking window: last <?= (int) ($viewsDashboard['days'] ?? $viewDays) ?> days (from <?= e((string) ($viewsDashboard['from_date'] ?? '')) ?> UTC)</p>
+            <p style="margin: 0 0 10px; font-size: 14px; color: #334155;">Tracking window: <?= e($viewWindowLabel) ?> (from <?= e((string) ($viewsDashboard['from_date'] ?? '')) ?> UTC)</p>
             <p class="muted" style="margin: 0 0 10px;">Compared against previous window: <?= e((string) ($viewsDashboard['previous_range']['from_date'] ?? '-')) ?> to <?= e((string) ($viewsDashboard['previous_range']['to_date'] ?? '-')) ?>.</p>
             <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px;">
                 <input type="hidden" name="tab" value="views">
+                <input type="hidden" name="view_range" value="custom">
                 <div style="max-width:160px;">
                     <label>Days</label>
                     <input type="number" name="days" min="1" max="180" value="<?= (int) $viewDays ?>">
                 </div>
                 <button class="btn" type="submit">Refresh</button>
             </form>
+            <div class="copy-actions" style="margin:0 0 12px;">
+                <span class="muted" style="font-size:12px;">Quick range:</span>
+                <a class="tab <?= $viewRange === 'all' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=all')) ?>">All Views Ever</a>
+                <a class="tab <?= $viewRange === 'month' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=month')) ?>">Last Month</a>
+                <a class="tab <?= $viewRange === 'week' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=week')) ?>">Last Week</a>
+                <a class="tab <?= $viewRange === 'today' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=today')) ?>">Today</a>
+            </div>
 
             <div class="stats">
                 <div class="stat">
@@ -4533,6 +5729,11 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <div class="stat-k">CTR</div>
                     <div class="stat-v"><?= number_format((float) (($viewsDashboard['clicks']['ctr_percent'] ?? 0.0)), 2) ?>%</div>
                     <div class="muted <?= ((float) ($viewsCompareDelta['ctr_percent'] ?? 0.0)) >= 0 ? 'seo-ok' : 'seo-warn' ?>"><?= e(enma_signed_number((float) ($viewsCompareDelta['ctr_percent'] ?? 0.0), 2)) ?> pp vs previous</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-k">Human Score</div>
+                    <div class="stat-v"><?= number_format((float) ($viewsHumanSignal['human_score'] ?? 0.0), 2) ?>%</div>
+                    <div class="muted">Human <?= number_format((int) ($viewsHumanSignal['human_views'] ?? 0)) ?> vs noise <?= number_format((int) ($viewsHumanSignal['noise_views'] ?? 0)) ?></div>
                 </div>
             </div>
             <p style="margin: 0; font-size: 12px; color: #5b6678;">Country is best-effort from server/CDN geo headers (fallback: Accept-Language).</p>
@@ -4630,6 +5831,25 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 </tbody>
             </table>
             <?= $viewsTopPagesPagination ?>
+        </section>
+
+        <section id="views-commercial-pages" class="box ops-anchor-offset">
+            <h2>Top Commercial Pages (Clean Traffic)</h2>
+            <table>
+                <thead>
+                <tr><th>Path</th><th>Type</th><th>Slug</th><th>Views</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($viewsTopCommercialPagesAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_type'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_slug'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </section>
 
         <section class="box">
@@ -4743,6 +5963,88 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
             </table>
             <?= $viewsReferrersPagination ?>
         </section>
+
+        <section id="views-security" class="box ops-anchor-offset">
+            <h2>Security / Not Found Traffic</h2>
+            <p class="muted">Kept separate from clean traffic: <code>not_found</code>, <code>security</code>, and <code>bot</code>.</p>
+            <table>
+                <thead>
+                <tr><th>Path</th><th>Type</th><th>Reason/Slug</th><th>Views</th><th>Records</th></tr>
+                </thead>
+                <tbody>
+                <?php foreach ($viewsSecurityTrafficAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_type'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_slug'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['records'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <h3 style="margin:14px 0 8px;">Broken Asset Signals</h3>
+            <table>
+                <thead><tr><th>Path</th><th>Views</th><th>Records</th></tr></thead>
+                <tbody>
+                <?php foreach ($viewsBrokenAssetsAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['records'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <h3 style="margin:14px 0 8px;">Duplicate Route Signals</h3>
+            <table>
+                <thead><tr><th>Type</th><th>Slug</th><th>Path</th><th>Views</th><th>Records</th></tr></thead>
+                <tbody>
+                <?php foreach ($viewsDuplicateRoutesAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['page_type'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_slug'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['records'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <h3 style="margin:14px 0 8px;">Product Route Mismatch</h3>
+            <table>
+                <thead><tr><th>Type</th><th>Slug</th><th>Path</th><th>Views</th><th>Records</th></tr></thead>
+                <tbody>
+                <?php foreach ($viewsProductRouteMismatchAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['page_type'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['page_slug'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['path'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['total_views'] ?? 0)) ?></td>
+                        <td><?= number_format((int) ($row['records'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <h3 style="margin:14px 0 8px;">Outbound Amazon Clicks by Product/ASIN</h3>
+            <table>
+                <thead><tr><th>ASIN</th><th>Slug</th><th>Title</th><th>Clicks</th></tr></thead>
+                <tbody>
+                <?php foreach ($viewsAmazonClicksByProductAll as $row): ?>
+                    <tr>
+                        <td><?= e((string) ($row['asin'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['slug'] ?? '')) ?></td>
+                        <td><?= e((string) ($row['title'] ?? '')) ?></td>
+                        <td><?= number_format((int) ($row['clicks'] ?? 0)) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </section>
         <?php else: ?>
         <?php
         $availableMaintenanceTasks = $availableMaintenanceTasks ?? [];
@@ -4756,6 +6058,10 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
         <section class="box">
             <h2>Maintenance Workspace</h2>
             <p class="muted" style="margin: 0 0 10px;">Workflow focused: copy prompt, paste AI result, run update, then execute routine tasks. Last usage is tracked automatically.</p>
+            <div class="workspace-help">
+                <strong>Recommended workflow:</strong> 1) Check <code>Progress</code>, 2) run <code>Safe Availability Check</code>, 3) execute needed <code>Routine Tasks</code>, 4) review <code>Not Found Review</code>, 5) inspect <code>Task Output</code>.
+                Use <code>Advanced</code> only when routine tools are not enough.
+            </div>
             <div class="ops-kpis">
                 <div class="ops-kpi"><div class="k">Prompt Tools</div><div class="v"><?= number_format($promptToolsCount) ?></div></div>
                 <div class="ops-kpi"><div class="k">AI Actions</div><div class="v"><?= number_format($automationToolsCount) ?></div></div>
@@ -4766,6 +6072,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 <a class="ops-link" href="#ops-progress">Progress</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Prompts Workspace</a>
                 <a class="ops-link" href="#ops-safe-check">Safe Availability Check</a>
+                <a class="ops-link" href="#ops-db-backup">DB Backup</a>
                 <a class="ops-link" href="#ops-routines">Routine Tasks</a>
                 <a class="ops-link" href="#ops-not-found-review">Not Found Review</a>
                 <a class="ops-link" href="#ops-output">Task Output</a>
@@ -4774,10 +6081,18 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                     <a class="ops-link" href="#ops-advanced">Advanced</a>
                 <?php endif; ?>
             </div>
+            <div class="copy-actions" style="margin-top:10px;">
+                <span class="muted" style="font-size:12px;">Views window:</span>
+                <a class="tab <?= $viewRange === 'all' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=all')) ?>">All Views Ever</a>
+                <a class="tab <?= $viewRange === 'month' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=month')) ?>">Last Month</a>
+                <a class="tab <?= $viewRange === 'week' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=week')) ?>">Last Week</a>
+                <a class="tab <?= $viewRange === 'today' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=views&view_range=today')) ?>">Today</a>
+            </div>
             <textarea id="sitemap_public_url_source" class="copy-source" readonly><?= e($sitemapCopyText) ?></textarea>
             <textarea id="db_schema_copy_source" class="copy-source" readonly><?= e($dbSchemaCopyText) ?></textarea>
             <textarea id="products_sql_copy_source" class="copy-source" readonly><?= e($productsSqlCopyText) ?></textarea>
             <textarea id="posts_json_copy_source" class="copy-source" readonly><?= e($postsJsonCopyText) ?></textarea>
+            <textarea id="db_backup_copy_source" class="copy-source" readonly><?= e((string) ($dbBackupLatestContent ?? '')) ?></textarea>
             <textarea id="seo_prompt_copy_source" class="copy-source" readonly><?= e($seoPromptTemplate) ?></textarea>
             <textarea id="seo_prompt_sitemap_copy_source" class="copy-source" readonly><?= e($promptPlusSitemapCopyText) ?></textarea>
             <textarea id="catalog_prompt_copy_source" class="copy-source" readonly><?= e($catalogPromptTemplate) ?></textarea>
@@ -4803,7 +6118,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                 </div>
 
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
-                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fbff;">
+                    <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
                         <h4 style="margin:0 0 6px;">Last Image Fix Run</h4>
                         <?php if ($imageLastRun !== null): ?>
                             <div class="muted" style="margin:0;font-size:12px;">At: <?= e((string) ($imageLastRun['created_at'] ?? '')) ?></div>
@@ -4813,7 +6128,7 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                             <div class="empty">No run recorded yet.</div>
                         <?php endif; ?>
                     </div>
-                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:10px;background:#f8fbff;">
+                    <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
                         <h4 style="margin:0 0 6px;">Last Safe Check</h4>
                         <?php if ($safeCheckLastRun !== null): ?>
                             <div class="muted" style="margin:0;font-size:12px;">At: <?= e((string) ($safeCheckLastRun['created_at'] ?? '')) ?></div>
@@ -4854,6 +6169,39 @@ $analyticsLogsPagination = $authenticated && $activeTab === 'analytics'
                         </table>
                     <?php endif; ?>
                 </div>
+            </div>
+            <div id="ops-db-backup" class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
+                <h3 style="margin:0 0 8px;">DB Backup</h3>
+                <p class="muted" style="margin:0 0 10px;">Create a SQL backup file, download the latest backup, or copy latest backup SQL to clipboard.</p>
+                <p class="muted" style="margin:0 0 10px;">
+                    Latest: <strong><?= e((string) (($dbBackupLatestFilename ?? '') !== '' ? $dbBackupLatestFilename : 'none')) ?></strong>
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="maintenance_db_backup_create">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                        <button class="btn" type="submit">Create DB Backup</button>
+                    </form>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="maintenance_db_backup_download">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                        <button class="btn" type="submit">Download Latest Backup</button>
+                    </form>
+                    <form method="post" style="display:inline;">
+                        <input type="hidden" name="action" value="maintenance_db_backup_copy">
+                        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                        <button class="btn" type="submit">Copy Fresh Backup SQL</button>
+                    </form>
+                </div>
+                <?php if (!empty($dbBackupAutoCopy) && !empty($dbBackupLatestContent)): ?>
+                    <script>
+                    (function () {
+                      var text = document.getElementById('db_backup_copy_source');
+                      if (!text || !navigator.clipboard || !navigator.clipboard.writeText) return;
+                      navigator.clipboard.writeText(text.value || '');
+                    })();
+                    </script>
+                <?php endif; ?>
             </div>
             <div class="box ops-anchor-offset" style="margin-top:12px; margin-bottom:12px;">
                 <h3 style="margin:0 0 8px;">Prompts Workspace</h3>

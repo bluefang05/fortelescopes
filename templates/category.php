@@ -33,14 +33,14 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
     <div class="trust-box">No checkout form on-site, redirect to Amazon</div>
 </section>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">How to use this <?= e(strtolower($data['categoryName'] ?? 'category')) ?> shortlist</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">How to use this <?= e(strtolower($data['categoryName'] ?? 'category')) ?> shortlist</h2>
     <?php if (($data['categoryName'] ?? '') === 'Telescopes'): ?>
         <p class="muted">If you are choosing your first telescope, prioritize ease of setup, mount stability, and how likely you are to use it regularly. Bigger specifications do not always lead to a better beginner experience.</p>
-        <p class="muted" style="margin-top:10px;">Use this page to narrow the field, then open the <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner telescope guide</a> if you want more explanation before buying.</p>
+        <p class="muted u-mt-10">Use this page to narrow the field, then open the <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner telescope guide</a> if you want more explanation before buying.</p>
     <?php else: ?>
         <p class="muted">Accessories work best when they solve a specific observing problem. Start with the upgrade that improves comfort, compatibility, or image quality the most for your current setup.</p>
-        <p class="muted" style="margin-top:10px;">If you want a decision-first breakdown instead of a plain shortlist, open the <a href="<?= e(url('/best-telescope-accessories')) ?>">telescope accessories guide</a>.</p>
+        <p class="muted u-mt-10">If you want a decision-first breakdown instead of a plain shortlist, open the <a href="<?= e(url('/best-telescope-accessories')) ?>">telescope accessories guide</a>.</p>
     <?php endif; ?>
 </section>
 
@@ -82,7 +82,7 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
                 <h3><?= e($item['title']) ?></h3>
                 <p class="card-copy"><?= e($item['description']) ?></p>
                 <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
-                <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
+                <p class="muted u-mt-8 u-mb-0 u-fs-12"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
         </article>
     <?php endforeach; ?>
@@ -108,8 +108,8 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
 <?php endif; ?>
 
 <?php if ($tiers !== []): ?>
-    <section class="panel" style="margin-top: 18px;">
-        <h2 class="section-title" style="margin-top: 0;">Quick Comparison</h2>
+    <section class="panel u-mt-18">
+        <h2 class="section-title u-mt-0">Quick Comparison</h2>
         <div class="compare-table">
             <div class="compare-row">
                 <div class="compare-label">Top</div>
@@ -127,32 +127,32 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
     </section>
 <?php endif; ?>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;"><?= e($data['categoryName'] ?? 'Category') ?> buying guide</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0"><?= e($data['categoryName'] ?? 'Category') ?> buying guide</h2>
     <p class="muted">Use this shortlist to compare quickly, then move to detail pages for fit and use-case checks. This category is updated through the same micro-CMS workflow, so freshness labels and pricing context stay visible.</p>
     <p><a class="btn" href="<?= e(url(($data['categoryName'] ?? '') === 'Telescopes' ? '/best-beginner-telescopes' : '/best-telescope-accessories')) ?>">Open Related Guide</a></p>
-    <p class="muted" style="margin-top: 10px; font-size: 13px;"><a href="<?= e(url('/guides')) ?>">See all astronomy buying guides</a></p>
+    <p class="muted u-mt-10 u-fs-13"><a href="<?= e(url('/guides')) ?>">See all astronomy buying guides</a></p>
 </section>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Frequently asked questions</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Frequently asked questions</h2>
     <?php if (($data['categoryName'] ?? '') === 'Telescopes'): ?>
-        <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-            <summary style="font-weight: 700; cursor: pointer;">What should I look for in a beginner telescope?</summary>
-            <p class="muted" style="margin: 8px 0 0;">Look for a telescope that is easy to set up, stable enough to use comfortably, and realistic for your space and schedule. The <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner guide</a> explains those tradeoffs in more detail.</p>
+        <details class="faq-detail">
+            <summary class="faq-summary">What should I look for in a beginner telescope?</summary>
+            <p class="muted faq-answer">Look for a telescope that is easy to set up, stable enough to use comfortably, and realistic for your space and schedule. The <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner guide</a> explains those tradeoffs in more detail.</p>
         </details>
-        <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-            <summary style="font-weight: 700; cursor: pointer;">Is a bigger telescope always better?</summary>
-            <p class="muted" style="margin: 8px 0 0;">No. A bigger telescope can show more, but a simpler model often wins if it is easier to move, store, and use often enough to build a real observing habit.</p>
+        <details class="faq-detail">
+            <summary class="faq-summary">Is a bigger telescope always better?</summary>
+            <p class="muted faq-answer">No. A bigger telescope can show more, but a simpler model often wins if it is easier to move, store, and use often enough to build a real observing habit.</p>
         </details>
     <?php else: ?>
-        <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-            <summary style="font-weight: 700; cursor: pointer;">Which telescope accessory should I buy first?</summary>
-            <p class="muted" style="margin: 8px 0 0;">Buy the accessory that solves the clearest problem in your sessions, such as comfort, alignment, or magnification flexibility. The <a href="<?= e(url('/best-telescope-accessories')) ?>">accessories guide</a> is the best starting point if you are unsure.</p>
+        <details class="faq-detail">
+            <summary class="faq-summary">Which telescope accessory should I buy first?</summary>
+            <p class="muted faq-answer">Buy the accessory that solves the clearest problem in your sessions, such as comfort, alignment, or magnification flexibility. The <a href="<?= e(url('/best-telescope-accessories')) ?>">accessories guide</a> is the best starting point if you are unsure.</p>
         </details>
-        <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-            <summary style="font-weight: 700; cursor: pointer;">Should beginners buy accessory kits?</summary>
-            <p class="muted" style="margin: 8px 0 0;">Only if the kit clearly matches your telescope and includes items you will actually use. In many cases, one targeted upgrade is more useful than a bundle.</p>
+        <details class="faq-detail">
+            <summary class="faq-summary">Should beginners buy accessory kits?</summary>
+            <p class="muted faq-answer">Only if the kit clearly matches your telescope and includes items you will actually use. In many cases, one targeted upgrade is more useful than a bundle.</p>
         </details>
     <?php endif; ?>
 </section>

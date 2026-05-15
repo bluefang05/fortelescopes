@@ -69,14 +69,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'login
     // Authenticate against database users table
     if ($errors === [] && $user !== '' && $pass !== '') {
         try {
-            $stmt = $pdo->prepare('SELECT id, username, password_hash, role, status FROM users WHERE username = :username OR email = :email LIMIT 1');
+            $stmt = $pdo->prepare(
+                'SELECT id, username, password_hash, role, status
+                 FROM users
+                 WHERE LOWER(username) = LOWER(:username) OR LOWER(email) = LOWER(:email)
+                 LIMIT 1'
+            );
             $stmt->execute([':username' => $user, ':email' => $user]);
             $row = $stmt->fetch();
             
             if ($row && password_verify($pass, $row['password_hash'])) {
-                if ($row['status'] !== 'active') {
+                $status = strtolower(trim((string) ($row['status'] ?? '')));
+                $role = strtolower(trim((string) ($row['role'] ?? '')));
+
+                if (!in_array($status, ['active', 'enabled', '1'], true)) {
                     $errors[] = 'Your account is not active.';
-                } elseif ($row['role'] !== 'admin') {
+                } elseif ($role !== 'admin') {
                     $errors[] = 'Access denied. Admin privileges required.';
                 } else {
                     session_regenerate_id(true);

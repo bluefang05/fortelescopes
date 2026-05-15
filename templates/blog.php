@@ -1,7 +1,9 @@
 <?php
+$contentSection = (string) ($data['content_section'] ?? 'blog');
+$expectedPostType = $contentSection === 'reviews' ? 'review' : 'post';
 $posts = array_values(array_filter(
     $data['posts'] ?? [],
-    static fn(array $post): bool => (($post['post_type'] ?? 'post') === 'post')
+    static fn(array $post): bool => (($post['post_type'] ?? 'post') === $expectedPostType)
 ));
 $pagination = $data['blog_pagination'] ?? [
     'page' => 1,
@@ -16,9 +18,22 @@ $currentPage = max(1, (int) ($pagination['page'] ?? 1));
 $totalPages = max(1, (int) ($pagination['total_pages'] ?? 1));
 $totalItems = max(0, (int) ($pagination['total_items'] ?? 0));
 $isAdminPreview = !empty($data['blog_admin_preview']);
-$buildBlogPageUrl = static function (int $page): string {
+$sectionTitle = $contentSection === 'reviews'
+    ? 'Telescope Reviews & Comparisons'
+    : 'Astronomy Blog Articles';
+$sectionKicker = $contentSection === 'reviews'
+    ? 'Reviews Hub'
+    : 'Blog Hub';
+$sectionIntro = $contentSection === 'reviews'
+    ? 'Product-focused comparisons and review-driven breakdowns for telescope buyers.'
+    : 'Practical telescope, stargazing, and astrophotography articles written for beginner and intermediate hobbyists who are still researching before they buy.';
+$buildBlogPageUrl = static function (int $page) use ($contentSection): string {
     $safePage = max(1, $page);
-    return $safePage === 1 ? url('/blog') : url('/blog?page=' . $safePage);
+    $base = '/blog';
+    if ($contentSection === 'reviews') {
+        $base = '/reviews';
+    }
+    return $safePage === 1 ? url($base) : url($base . '?page=' . $safePage);
 };
 $pageWindow = pagination_window($currentPage, $totalPages, 2);
 
@@ -39,9 +54,28 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
 };
 ?>
 <section class="hero">
-    <span class="hero-kicker">Blog Hub</span>
-    <h1>Astronomy Blog Articles</h1>
-    <p>Practical telescope, stargazing, and astrophotography articles written for beginner and intermediate hobbyists who are still researching before they buy.</p>
+    <span class="hero-kicker"><?= e($sectionKicker) ?></span>
+    <h1><?= e($sectionTitle) ?></h1>
+    <p><?= e($sectionIntro) ?></p>
+    <div class="content-switch" aria-label="Content type switcher">
+        <?php if ($contentSection === 'guides'): ?>
+            <span class="is-active" aria-current="page">Guides</span>
+        <?php else: ?>
+            <a href="<?= e(url('/guides')) ?>">Guides</a>
+        <?php endif; ?>
+
+        <?php if ($contentSection === 'reviews'): ?>
+            <span class="is-active" aria-current="page">Reviews</span>
+        <?php else: ?>
+            <a href="<?= e(url('/reviews')) ?>">Reviews</a>
+        <?php endif; ?>
+
+        <?php if ($contentSection === 'blog'): ?>
+            <span class="is-active" aria-current="page">Posts</span>
+        <?php else: ?>
+            <a href="<?= e(url('/blog')) ?>">Posts</a>
+        <?php endif; ?>
+    </div>
     <div class="trust-row">
         <span class="chip">Clear beginner guidance</span>
         <span class="chip">Actionable checklists</span>
@@ -49,8 +83,8 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Popular beginner research paths</h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0">Popular beginner research paths</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">First telescope</div>
@@ -67,8 +101,8 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;"><?= $currentPage === 1 ? 'Featured posts' : 'Blog posts' ?></h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0"><?= $currentPage === 1 ? 'Featured posts' : 'Blog posts' ?></h2>
     <p class="muted">Start with the latest articles, then use guides and category pages to compare products before buying.</p>
     <?php if ($posts === []): ?>
         <p class="muted">No posts found. Check back soon for new astronomy content.</p>
@@ -84,18 +118,19 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
                     ['excerpt', 'meta_description', 'description', 'summary'],
                     'Read this practical astronomy article and apply the tips to your next observing session.'
                 );
-                $postImage = trim((string) ($post['featured_image'] ?? '')) !== '' ? (string) $post['featured_image'] : '/assets/img/product-placeholder.svg';
+                $postImageRaw = trim((string) ($post['featured_image'] ?? ''));
+                $postImage = $postImageRaw !== '' ? content_asset_path($postImageRaw) : '/assets/img/product-placeholder.svg';
                 ?>
                 <article class="card">
-                    <img src="<?= e(url($postImage)) ?>" alt="<?= e($title) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
+                    <img src="<?= e(content_asset_path($postImage)) ?>" alt="<?= e($title) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
                     <div class="body">
                         <span class="badge"><?= $isDraft ? 'Draft' : 'Article' ?></span>
                         <h3><?= e($title) ?></h3>
                         <p class="card-copy"><?= e($excerpt) ?></p>
                         <?php if ($isDraft && $isAdminPreview): ?>
-                            <p class="muted" style="margin: 8px 0 0; font-size: 12px; color: #7d2d00;">Borrador visible solo para tu sesión admin.</p>
+                            <p class="muted u-mt-8 u-mb-0 u-fs-12 u-color-warm">Borrador visible solo para tu sesión admin.</p>
                         <?php endif; ?>
-                        <a class="card-cta" href="<?= e(url('/blog/' . $slug)) ?>">Read article</a>
+                        <a class="card-cta" href="<?= e(url(post_url_path($post))) ?>">Read article</a>
                     </div>
                 </article>
             <?php endforeach; ?>
@@ -121,8 +156,8 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
     <?php endif; ?>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Category paths</h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0">Category paths</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Guides</div>
@@ -139,14 +174,14 @@ $pickPostText = static function (array $post, array $keys, string $fallback) use
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Frequently asked questions</h2>
-    <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-        <summary style="font-weight: 700; cursor: pointer;">Are blog articles useful before comparing products?</summary>
-        <p class="muted" style="margin: 8px 0 0;">Yes. Informational articles answer the questions people usually search first, then point to deeper guides and category pages once the buying intent becomes clearer.</p>
+<section class="panel faq-panel home-section">
+    <h2 class="section-title u-mt-0">Frequently asked questions</h2>
+    <details>
+        <summary>Are blog articles useful before comparing products?</summary>
+        <p class="muted">Yes. Informational articles answer the questions people usually search first, then point to deeper guides and category pages once the buying intent becomes clearer.</p>
     </details>
-    <details style="border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-        <summary style="font-weight: 700; cursor: pointer;">Where should I go after reading a blog post?</summary>
-        <p class="muted" style="margin: 8px 0 0;">Move into the <a href="<?= e(url('/guides')) ?>">guides hub</a> for more structured buying advice, or straight to <a href="<?= e(url('/telescopes')) ?>">telescopes</a> and <a href="<?= e(url('/accessories')) ?>">accessories</a> if you already know the category you want.</p>
+    <details>
+        <summary>Where should I go after reading a blog post?</summary>
+        <p class="muted">Move into the <a href="<?= e(url('/guides')) ?>">guides hub</a> for more structured buying advice, or straight to <a href="<?= e(url('/telescopes')) ?>">telescopes</a> and <a href="<?= e(url('/accessories')) ?>">accessories</a> if you already know the category you want.</p>
     </details>
 </section>

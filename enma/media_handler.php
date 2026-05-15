@@ -154,6 +154,13 @@ if (!function_exists('enma_apply_home_visual_assignment')) {
             if (site_setting_get($pdo, $prefix . 'home_promo_tile_2_title', '') === '' && $mediaTitle !== '') {
                 enma_set_site_setting($pdo, $prefix . 'home_promo_tile_2_title', $mediaTitle);
             }
+        } elseif ($target === 'logo') {
+            enma_set_site_setting($pdo, $prefix . 'site_logo_image', $mediaUrl);
+        } elseif ($target === 'ico') {
+            enma_set_site_setting($pdo, $prefix . 'site_favicon_ico', $mediaUrl);
+            if (site_setting_get($pdo, $prefix . 'site_favicon_image', '') === '') {
+                enma_set_site_setting($pdo, $prefix . 'site_favicon_image', $mediaUrl);
+            }
         }
     }
 }
@@ -177,6 +184,8 @@ if (!function_exists('enma_media_save_upload')) {
             }
         } elseif ($mimeType === 'image/gif' && function_exists('imagecreatefromgif')) {
             $resource = @imagecreatefromgif($tmpPath);
+        } elseif ($mimeType === 'image/webp' && function_exists('imagecreatefromwebp')) {
+            $resource = @imagecreatefromwebp($tmpPath);
         }
 
         if ($resource === false || $resource === null) {
@@ -246,7 +255,7 @@ if (!function_exists('enma_media_save_upload')) {
         $storedMime = $mime;
 
         // Normalize raster uploads to WebP for better front-end performance.
-        if ($mediaType === 'image' && in_array($mime, ['image/jpeg', 'image/png', 'image/gif'], true)) {
+        if ($mediaType === 'image' && in_array($mime, ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
             $storedExt = 'webp';
             $storedMime = 'image/webp';
             $storedName = $baseName . '.webp';
@@ -271,7 +280,7 @@ if (!function_exists('enma_media_save_upload')) {
             'original_name' => trim((string) ($file['name'] ?? '')),
             'stored_name' => $storedName,
             'file_url' => absolute_url('/assets/uploads/media/' . $storedName),
-            'file_size' => $size,
+            'file_size' => is_file($target) ? (int) filesize($target) : $size,
         ];
     }
 }
@@ -329,7 +338,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'media
                     'file_url' => (string) ($saved['file_url'] ?? ''),
                     'media_type' => (string) ($saved['media_type'] ?? ''),
                 ]);
-                if (in_array($quickAssignTarget, ['hero', 'tile1', 'tile2'], true)) {
+                if (in_array($quickAssignTarget, ['hero', 'tile1', 'tile2', 'logo', 'ico'], true)) {
                     enma_site_settings_init_table($pdo);
                     enma_apply_home_visual_assignment(
                         $pdo,
@@ -358,7 +367,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'home_
         $assignTitle = trim((string) ($_POST['assign_title'] ?? ''));
         $assignMode = trim((string) ($_POST['assign_mode'] ?? 'publish'));
         $publish = $assignMode !== 'draft';
-        if (!in_array($assignTarget, ['hero', 'tile1', 'tile2'], true) || $assignUrl === '') {
+        if (!in_array($assignTarget, ['hero', 'tile1', 'tile2', 'logo', 'ico'], true) || $assignUrl === '') {
             $errors[] = 'Invalid assignment payload.';
         } else {
             try {
@@ -405,15 +414,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'home_
                 'home_promo_tile_1_text_position',
                 'home_promo_tile_1_overlay_strength',
                 'home_promo_tile_1_layout_size',
+                'home_promo_tile_1_overlay_link_label',
+                'home_promo_tile_1_overlay_link_url',
                 'home_promo_tile_2_eyebrow',
                 'home_promo_tile_2_subtitle',
                 'home_promo_tile_2_text_position',
                 'home_promo_tile_2_overlay_strength',
                 'home_promo_tile_2_layout_size',
+                'home_promo_tile_2_overlay_link_label',
+                'home_promo_tile_2_overlay_link_url',
                 'home_banner_1_image','home_banner_1_eyebrow','home_banner_1_title','home_banner_1_subtitle','home_banner_1_cta_label','home_banner_1_cta_url','home_banner_1_text_position','home_banner_1_overlay_strength','home_banner_1_layout_size',
                 'home_banner_2_image','home_banner_2_eyebrow','home_banner_2_title','home_banner_2_subtitle','home_banner_2_cta_label','home_banner_2_cta_url','home_banner_2_text_position','home_banner_2_overlay_strength','home_banner_2_layout_size',
                 'home_goal_1_label','home_goal_1_url','home_goal_2_label','home_goal_2_url','home_goal_3_label','home_goal_3_url','home_goal_4_label','home_goal_4_url',
                 'home_faq_1_question','home_faq_1_answer','home_faq_2_question','home_faq_2_answer','home_faq_3_question','home_faq_3_answer',
+                'home_h1_text','site_logo_image','site_favicon_ico','site_favicon_image','site_og_image','site_enable_security_headers','site_enable_public_cache','site_public_cache_max_age','site_public_smaxage',
             ];
             foreach ($keys as $key) {
                 $draftValue = site_setting_get($pdo, 'draft_' . $key, site_setting_get($pdo, $key, ''));
@@ -461,6 +475,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'media
     }
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'media_bulk_delete') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        $idsRaw = $_POST['media_ids'] ?? [];
+        if (!is_array($idsRaw)) {
+            $idsRaw = [];
+        }
+        $ids = [];
+        foreach ($idsRaw as $rawId) {
+            $id = (int) $rawId;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        $ids = array_values($ids);
+        if ($ids === []) {
+            $errors[] = 'No media items selected.';
+        } else {
+            try {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $selectStmt = $pdo->prepare(
+                    'SELECT id, stored_name FROM media_library WHERE id IN (' . $placeholders . ')'
+                );
+                $selectStmt->execute($ids);
+                $rows = $selectStmt->fetchAll();
+
+                $deleteStmt = $pdo->prepare(
+                    'DELETE FROM media_library WHERE id IN (' . $placeholders . ')'
+                );
+                $deleteStmt->execute($ids);
+                $deletedCount = (int) $deleteStmt->rowCount();
+
+                foreach ($rows as $row) {
+                    $rowId = (int) ($row['id'] ?? 0);
+                    $storedName = trim((string) ($row['stored_name'] ?? ''));
+                    if ($storedName !== '' && preg_match('/^[A-Za-z0-9_.-]+$/', $storedName) === 1) {
+                        $path = __DIR__ . '/../assets/uploads/media/' . $storedName;
+                        if (is_file($path)) {
+                            @unlink($path);
+                        }
+                    }
+                    if ($rowId > 0) {
+                        enma_record_activity($pdo, 'media.delete', 'media', $rowId, ['bulk' => true]);
+                    }
+                }
+
+                $flash = $deletedCount > 0
+                    ? ('Deleted ' . $deletedCount . ' media item(s).')
+                    : 'No media items were deleted.';
+            } catch (Throwable $e) {
+                $errors[] = 'Bulk delete failed: ' . $e->getMessage();
+            }
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_home_hero_settings') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
@@ -485,6 +556,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $tile1Subtitle = trim((string) ($_POST['home_promo_tile_1_subtitle'] ?? ''));
         $tile1CtaLabel = trim((string) ($_POST['home_promo_tile_1_cta_label'] ?? ''));
         $tile1CtaUrl = trim((string) ($_POST['home_promo_tile_1_cta_url'] ?? ''));
+        $tile1OverlayLinkLabel = trim((string) ($_POST['home_promo_tile_1_overlay_link_label'] ?? ''));
+        $tile1OverlayLinkUrl = trim((string) ($_POST['home_promo_tile_1_overlay_link_url'] ?? ''));
         $tile1TextPosition = trim((string) ($_POST['home_promo_tile_1_text_position'] ?? 'bottom-left'));
         $tile1OverlayStrength = trim((string) ($_POST['home_promo_tile_1_overlay_strength'] ?? 'medium'));
         $tile1LayoutSize = trim((string) ($_POST['home_promo_tile_1_layout_size'] ?? 'half'));
@@ -494,6 +567,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $tile2Subtitle = trim((string) ($_POST['home_promo_tile_2_subtitle'] ?? ''));
         $tile2CtaLabel = trim((string) ($_POST['home_promo_tile_2_cta_label'] ?? ''));
         $tile2CtaUrl = trim((string) ($_POST['home_promo_tile_2_cta_url'] ?? ''));
+        $tile2OverlayLinkLabel = trim((string) ($_POST['home_promo_tile_2_overlay_link_label'] ?? ''));
+        $tile2OverlayLinkUrl = trim((string) ($_POST['home_promo_tile_2_overlay_link_url'] ?? ''));
         $tile2TextPosition = trim((string) ($_POST['home_promo_tile_2_text_position'] ?? 'bottom-left'));
         $tile2OverlayStrength = trim((string) ($_POST['home_promo_tile_2_overlay_strength'] ?? 'medium'));
         $tile2LayoutSize = trim((string) ($_POST['home_promo_tile_2_layout_size'] ?? 'half'));
@@ -530,6 +605,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
         $faq3Question = trim((string) ($_POST['home_faq_3_question'] ?? ''));
         $faq3Answer = trim((string) ($_POST['home_faq_3_answer'] ?? ''));
         $featuredProductIds = trim((string) ($_POST['home_featured_product_ids'] ?? ''));
+        $homeH1Text = trim((string) ($_POST['home_h1_text'] ?? ''));
+        $siteLogoImage = trim((string) ($_POST['site_logo_image'] ?? ''));
+        $siteFaviconIco = trim((string) ($_POST['site_favicon_ico'] ?? ''));
+        $siteFaviconImage = trim((string) ($_POST['site_favicon_image'] ?? ''));
+        $siteOgImage = trim((string) ($_POST['site_og_image'] ?? ''));
+        $siteEnableSecurityHeaders = (string) (isset($_POST['site_enable_security_headers']) ? '1' : '0');
+        $siteEnablePublicCache = (string) (isset($_POST['site_enable_public_cache']) ? '1' : '0');
+        $sitePublicCacheMaxAge = (string) max(60, min(3600, (int) ($_POST['site_public_cache_max_age'] ?? 300)));
+        $sitePublicSmaxAge = (string) max((int) $sitePublicCacheMaxAge, min(86400, (int) ($_POST['site_public_smaxage'] ?? 600)));
 
         if (
             !enma_is_valid_hero_url($heroImage)
@@ -538,12 +622,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
             || !enma_is_valid_hero_url($tile2Image)
             || !enma_is_valid_hero_url($banner1Image)
             || !enma_is_valid_hero_url($banner2Image)
+            || !enma_is_valid_hero_url($siteLogoImage)
+            || !enma_is_valid_hero_url($siteFaviconIco)
+            || !enma_is_valid_hero_url($siteFaviconImage)
+            || !enma_is_valid_hero_url($siteOgImage)
         ) {
             $errors[] = 'Image URLs must be absolute URLs or paths starting with "/".';
         } elseif (
             !enma_is_valid_internal_or_external_url($heroCtaUrl)
             || !enma_is_valid_internal_or_external_url($tile1CtaUrl)
+            || !enma_is_valid_internal_or_external_url($tile1OverlayLinkUrl)
             || !enma_is_valid_internal_or_external_url($tile2CtaUrl)
+            || !enma_is_valid_internal_or_external_url($tile2OverlayLinkUrl)
             || !enma_is_valid_internal_or_external_url($banner1CtaUrl)
             || !enma_is_valid_internal_or_external_url($banner2CtaUrl)
             || !enma_is_valid_internal_or_external_url($goal1Url)
@@ -573,6 +663,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_subtitle', $tile1Subtitle);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_cta_label', $tile1CtaLabel);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_cta_url', $tile1CtaUrl);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_overlay_link_label', $tile1OverlayLinkLabel);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_overlay_link_url', $tile1OverlayLinkUrl);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_text_position', $tile1TextPosition);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_overlay_strength', $tile1OverlayStrength);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_1_layout_size', $tile1LayoutSize);
@@ -582,6 +674,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_subtitle', $tile2Subtitle);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_cta_label', $tile2CtaLabel);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_cta_url', $tile2CtaUrl);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_overlay_link_label', $tile2OverlayLinkLabel);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_overlay_link_url', $tile2OverlayLinkUrl);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_text_position', $tile2TextPosition);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_overlay_strength', $tile2OverlayStrength);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_promo_tile_2_layout_size', $tile2LayoutSize);
@@ -618,6 +712,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_3_question', $faq3Question);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_faq_3_answer', $faq3Answer);
                 enma_set_site_setting($pdo, $settingsPrefix . 'home_featured_product_ids', $featuredProductIds);
+                enma_set_site_setting($pdo, $settingsPrefix . 'home_h1_text', $homeH1Text);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_logo_image', $siteLogoImage);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_favicon_ico', $siteFaviconIco);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_favicon_image', $siteFaviconImage);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_og_image', $siteOgImage);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_enable_security_headers', $siteEnableSecurityHeaders);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_enable_public_cache', $siteEnablePublicCache);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_public_cache_max_age', $sitePublicCacheMaxAge);
+                enma_set_site_setting($pdo, $settingsPrefix . 'site_public_smaxage', $sitePublicSmaxAge);
                 enma_record_activity($pdo, 'settings.home_hero.save', 'setting', 0, [
                     'home_hero_image' => $heroImage,
                     'home_hero_image_2x' => $heroImage2x,

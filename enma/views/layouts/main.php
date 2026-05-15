@@ -4,6 +4,27 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($pageTitle ?? 'ENMA Admin') ?></title>
+    <?php
+    $themeCssPath = __DIR__ . '/../../assets/enma-theme.css';
+    $themeJsPath = __DIR__ . '/../../assets/enma-theme.js';
+    $themeCssV = is_file($themeCssPath) ? (string) filemtime($themeCssPath) : '1';
+    $themeJsV = is_file($themeJsPath) ? (string) filemtime($themeJsPath) : '1';
+    ?>
+    <script>
+      (function () {
+        var key = 'enma_theme';
+        var themes = ['light', 'dark', 'midnight', 'navy', 'nord'];
+        var stored = '';
+        try { stored = (localStorage.getItem(key) || '').toLowerCase(); } catch (e) {}
+        var theme = themes.indexOf(stored) !== -1 ? stored : 'dark';
+        var root = document.documentElement;
+        root.setAttribute('data-enma-theme', theme);
+        root.setAttribute('data-theme', theme);
+        root.classList.add('theme-' + theme);
+      })();
+    </script>
+    <link rel="stylesheet" href="/enma/assets/enma-theme.css?v=<?= rawurlencode($themeCssV) ?>">
+    <script defer src="/enma/assets/enma-theme.js?v=<?= rawurlencode($themeJsV) ?>"></script>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
@@ -55,12 +76,15 @@
 <body>
 
 <div class="container-fluid">
+    <div class="py-2 text-end">
+        <button class="btn btn-sm btn-outline-secondary" type="button" id="enma-theme-toggle">Theme: <span id="enma-theme-label">Dark</span></button>
+    </div>
     <div class="row">
         <!-- Sidebar -->
         <div class="col-md-2 sidebar p-0">
             <div class="p-3 text-center brand">
                 <h4><i class="fas fa-shield-alt"></i> ENMA Admin</h4>
-                <small class="text-muted">Panel de Administración</small>
+                <small class="text-muted">Panel de AdministraciÃ³n</small>
             </div>
             <nav class="mt-3">
                 <a href="/enma/?tab=overview" class="<?= ($activePage ?? '') === 'overview' ? 'active' : '' ?>"><i class="fas fa-home me-2"></i> Inicio</a>
@@ -68,7 +92,7 @@
                 <a href="/enma/?tab=products" class="<?= ($activePage ?? '') === 'products' ? 'active' : '' ?>"><i class="fas fa-box me-2"></i> Productos</a>
                 <a href="/enma/?tab=posts" class="<?= ($activePage ?? '') === 'posts' ? 'active' : '' ?>"><i class="fas fa-newspaper me-2"></i> Posts</a>
                 <a href="/enma/?tab=maintenance" class="<?= ($activePage ?? '') === 'maintenance' ? 'active' : '' ?>"><i class="fas fa-tools me-2"></i> Mantenimiento</a>
-                <a href="/enma/?action=logout" class="text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> Cerrar Sesión</a>
+                <a href="/enma/?action=logout" class="text-danger mt-5"><i class="fas fa-sign-out-alt me-2"></i> Cerrar SesiÃ³n</a>
             </nav>
         </div>
 

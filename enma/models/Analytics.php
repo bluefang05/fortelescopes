@@ -289,6 +289,286 @@ class Analytics {
     }
 
     /**
+     * Monetization-focused metrics for the dashboard.
+     */
+    public function getMonetizationMetrics(int $days = 30): array {
+        $days = max(1, min(180, $days));
+        $fromDate = gmdate('Y-m-d', strtotime('-' . ($days - 1) . ' days'));
+
+        $pageViews = 0;
+        $productViews = 0;
+        $outboundClicks = 0;
+
+        if ($this->tableExists('page_views') && $this->columnExists('page_views', 'view_date') && $this->columnExists('page_views', 'views')) {
+            $pageViewsStmt = $this->db->prepare(
+                'SELECT COALESCE(SUM(views), 0)
+                 FROM page_views
+                 WHERE view_date >= :from_date'
+            );
+            $pageViewsStmt->execute([':from_date' => $fromDate]);
+            $pageViews = (int) $pageViewsStmt->fetchColumn();
+
+            $productViewsStmt = $this->db->prepare(
+                'SELECT COALESCE(SUM(views), 0)
+                 FROM page_views
+                 WHERE view_date >= :from_date
+                   AND page_type = "product"'
+            );
+            $productViewsStmt->execute([':from_date' => $fromDate]);
+            $productViews = (int) $productViewsStmt->fetchColumn();
+        }
+
+        if ($this->tableExists('outbound_clicks') && $this->columnExists('outbound_clicks', 'click_date')) {
+            $clicksStmt = $this->db->prepare(
+                'SELECT COUNT(*)
+                 FROM outbound_clicks
+                 WHERE click_date >= :from_date'
+            );
+            $clicksStmt->execute([':from_date' => $fromDate]);
+            $outboundClicks = (int) $clicksStmt->fetchColumn();
+        }
+
+        $ctrByPage = $this->getCtrByPageRows($fromDate);
+        $ctrByProduct = $this->getCtrByProductRows($fromDate);
+        $ctrByGuide = $this->getCtrByGuideRows($fromDate);
+
+        $topPagesLowCtr = array_values(array_filter($ctrByPage, static function (array $row): bool {
+            return ((int) ($row['views'] ?? 0)) >= 30;
+        }));
+        usort($topPagesLowCtr, static function (array $a, array $b): int {
+            $ctrCmp = ((float) ($a['ctr_percent'] ?? 0.0)) <=> ((float) ($b['ctr_percent'] ?? 0.0));
+            if ($ctrCmp !== 0) {
+                return $ctrCmp;
+            }
+            return ((int) ($b['views'] ?? 0)) <=> ((int) ($a['views'] ?? 0));
+        });
+        $topPagesLowCtr = array_slice($topPagesLowCtr, 0, 15);
+
+        $topProductsHighCtr = $ctrByProduct;
+        usort($topProductsHighCtr, static function (array $a, array $b): int {
+            $ctrCmp = ((float) ($b['ctr_percent'] ?? 0.0)) <=> ((float) ($a['ctr_percent'] ?? 0.0));
+            if ($ctrCmp !== 0) {
+                return $ctrCmp;
+            }
+            return ((int) ($b['clicks'] ?? 0)) <=> ((int) ($a['clicks'] ?? 0));
+        });
+        $topProductsHighCtr = array_values(array_filter($topProductsHighCtr, static function (array $row): bool {
+            return ((int) ($row['views'] ?? 0)) >= 20;
+        }));
+        $topProductsHighCtr = array_slice($topProductsHighCtr, 0, 15);
+
+        return [
+            'days' => $days,
+            'from_date' => $fromDate,
+            'funnel' => [
+                'page_views' => $pageViews,
+                'product_page_views' => $productViews,
+                'outbound_clicks' => $outboundClicks,
+                'page_to_product_percent' => $pageViews > 0 ? (($productViews / $pageViews) * 100) : 0.0,
+                'product_to_click_percent' => $productViews > 0 ? (($outboundClicks / $productViews) * 100) : 0.0,
+            ],
+            'ctr_by_page' => array_slice($ctrByPage, 0, 40),
+            'ctr_by_product' => array_slice($ctrByProduct, 0, 40),
+            'ctr_by_guide' => array_slice($ctrByGuide, 0, 40),
+            'top_pages_low_ctr' => $topPagesLowCtr,
+            'top_products_high_ctr' => $topProductsHighCtr,
+        ];
+    }
+
+    private function getCtrByPageRows(string $fromDate): array {
+        if (!$this->tableExists('page_views') || !$this->tableExists('outbound_clicks')) {
+            return [];
+        }
+
+        $viewsStmt = $this->db->prepare(
+            'SELECT path, SUM(views) AS views
+             FROM page_views
+             WHERE view_date >= :from_date
+             GROUP BY path'
+        );
+        $viewsStmt->execute([':from_date' => $fromDate]);
+        $viewsRows = $viewsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $clicksStmt = $this->db->prepare(
+            'SELECT from_path AS path, COUNT(*) AS clicks
+             FROM outbound_clicks
+             WHERE click_date >= :from_date
+             GROUP BY from_path'
+        );
+        $clicksStmt->execute([':from_date' => $fromDate]);
+        $clickRows = $clicksStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $byPath = [];
+        foreach ($viewsRows as $row) {
+            $path = (string) ($row['path'] ?? '');
+            if ($path === '') {
+                continue;
+            }
+            $byPath[$path] = [
+                'path' => $path,
+                'views' => (int) ($row['views'] ?? 0),
+                'clicks' => 0,
+                'ctr_percent' => 0.0,
+            ];
+        }
+
+        foreach ($clickRows as $row) {
+            $path = (string) ($row['path'] ?? '');
+            if ($path === '') {
+                continue;
+            }
+            if (!isset($byPath[$path])) {
+                $byPath[$path] = ['path' => $path, 'views' => 0, 'clicks' => 0, 'ctr_percent' => 0.0];
+            }
+            $byPath[$path]['clicks'] = (int) ($row['clicks'] ?? 0);
+        }
+
+        foreach ($byPath as &$row) {
+            $views = (int) ($row['views'] ?? 0);
+            $clicks = (int) ($row['clicks'] ?? 0);
+            $row['ctr_percent'] = $views > 0 ? (($clicks / $views) * 100) : 0.0;
+        }
+        unset($row);
+
+        $rows = array_values($byPath);
+        usort($rows, static function (array $a, array $b): int {
+            return ((int) ($b['views'] ?? 0)) <=> ((int) ($a['views'] ?? 0));
+        });
+
+        return $rows;
+    }
+
+    private function getCtrByProductRows(string $fromDate): array {
+        if (!$this->tableExists('page_views') || !$this->tableExists('outbound_clicks') || !$this->tableExists('products')) {
+            return [];
+        }
+
+        $viewsStmt = $this->db->prepare(
+            'SELECT pv.product_id, MAX(p.title) AS title, MAX(p.slug) AS slug, SUM(pv.views) AS views
+             FROM page_views pv
+             JOIN products p ON p.id = pv.product_id
+             WHERE pv.view_date >= :from_date
+               AND pv.page_type = "product"
+               AND pv.product_id > 0
+             GROUP BY pv.product_id'
+        );
+        $viewsStmt->execute([':from_date' => $fromDate]);
+        $viewsRows = $viewsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $clicksStmt = $this->db->prepare(
+            'SELECT product_id, COUNT(*) AS clicks
+             FROM outbound_clicks
+             WHERE click_date >= :from_date
+               AND product_id > 0
+             GROUP BY product_id'
+        );
+        $clicksStmt->execute([':from_date' => $fromDate]);
+        $clickRows = $clicksStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $byProduct = [];
+        foreach ($viewsRows as $row) {
+            $id = (int) ($row['product_id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            $byProduct[$id] = [
+                'product_id' => $id,
+                'title' => (string) ($row['title'] ?? ''),
+                'slug' => (string) ($row['slug'] ?? ''),
+                'views' => (int) ($row['views'] ?? 0),
+                'clicks' => 0,
+                'ctr_percent' => 0.0,
+            ];
+        }
+
+        foreach ($clickRows as $row) {
+            $id = (int) ($row['product_id'] ?? 0);
+            if ($id <= 0 || !isset($byProduct[$id])) {
+                continue;
+            }
+            $byProduct[$id]['clicks'] = (int) ($row['clicks'] ?? 0);
+        }
+
+        foreach ($byProduct as &$row) {
+            $views = (int) ($row['views'] ?? 0);
+            $clicks = (int) ($row['clicks'] ?? 0);
+            $row['ctr_percent'] = $views > 0 ? (($clicks / $views) * 100) : 0.0;
+        }
+        unset($row);
+
+        $rows = array_values($byProduct);
+        usort($rows, static function (array $a, array $b): int {
+            return ((int) ($b['views'] ?? 0)) <=> ((int) ($a['views'] ?? 0));
+        });
+
+        return $rows;
+    }
+
+    private function getCtrByGuideRows(string $fromDate): array {
+        if (!$this->tableExists('page_views') || !$this->tableExists('outbound_clicks') || !$this->tableExists('posts')) {
+            return [];
+        }
+
+        $viewsStmt = $this->db->prepare(
+            'SELECT pv.page_slug, MAX(p.title) AS title, SUM(pv.views) AS views
+             FROM page_views pv
+             LEFT JOIN posts p ON p.slug = pv.page_slug AND p.post_type = "guide"
+             WHERE pv.view_date >= :from_date
+               AND pv.page_type = "guide"
+               AND pv.page_slug <> ""
+             GROUP BY pv.page_slug'
+        );
+        $viewsStmt->execute([':from_date' => $fromDate]);
+        $viewsRows = $viewsStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $clicksStmt = $this->db->prepare(
+            'SELECT from_path, COUNT(*) AS clicks
+             FROM outbound_clicks
+             WHERE click_date >= :from_date
+               AND from_path LIKE "/%"
+             GROUP BY from_path'
+        );
+        $clicksStmt->execute([':from_date' => $fromDate]);
+        $clickRows = $clicksStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $clicksBySlug = [];
+        foreach ($clickRows as $row) {
+            $path = trim((string) ($row['from_path'] ?? ''));
+            if (!preg_match('#^/([^/?]+)$#', $path, $m)) {
+                continue;
+            }
+            $slug = (string) ($m[1] ?? '');
+            if ($slug === '') {
+                continue;
+            }
+            $clicksBySlug[$slug] = (int) ($row['clicks'] ?? 0);
+        }
+
+        $rows = [];
+        foreach ($viewsRows as $row) {
+            $slug = (string) ($row['page_slug'] ?? '');
+            if ($slug === '') {
+                continue;
+            }
+            $views = (int) ($row['views'] ?? 0);
+            $clicks = (int) ($clicksBySlug[$slug] ?? 0);
+            $rows[] = [
+                'slug' => $slug,
+                'title' => (string) (($row['title'] ?? '') !== '' ? $row['title'] : $slug),
+                'views' => $views,
+                'clicks' => $clicks,
+                'ctr_percent' => $views > 0 ? (($clicks / $views) * 100) : 0.0,
+            ];
+        }
+
+        usort($rows, static function (array $a, array $b): int {
+            return ((int) ($b['views'] ?? 0)) <=> ((int) ($a['views'] ?? 0));
+        });
+
+        return $rows;
+    }
+
+    /**
      * Detecta bots basandose en User Agent.
      */
     private function countSuspectedBots(): int {

@@ -755,6 +755,13 @@ $maintenanceTaskMeta = [
         'group' => 'weekly',
         'script' => 'scripts/export_db_schema.php',
     ],
+    'export_full_database' => [
+        'label' => 'Export Full Database',
+        'description' => 'Genera backup completo (schema + data) y valida page_views.',
+        'frequency' => 'As needed',
+        'group' => 'as_needed',
+        'script' => 'scripts/export_full_database.php',
+    ],
     'prune_old_logs' => [
         'label' => 'Prune Old Logs',
         'description' => 'Limpia logs y tablas historicas antiguas para evitar crecimiento innecesario.',
@@ -1053,6 +1060,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'avail
         );
     } catch (Throwable $e) {
         $maintenanceLog[] = 'Job run record failed: ' . $e->getMessage();
+    }
+}
+
+if (!function_exists('enma_maintenance_backups_dir')) {
+    function enma_maintenance_backups_dir(): string
+    {
+        $dataDir = realpath(__DIR__ . '/../data');
+        if ($dataDir === false) {
+            $dataDir = __DIR__ . '/../data';
+        }
+        return rtrim($dataDir, '/\\') . DIRECTORY_SEPARATOR . 'backups';
+    }
+}
+
+if (!function_exists('enma_maintenance_latest_db_backup_path')) {
+    function enma_maintenance_latest_db_backup_path(): ?string
+    {
+        $dir = enma_maintenance_backups_dir();
+        if (!is_dir($dir)) {
+            return null;
+        }
+        $preferredLatest = $dir . DIRECTORY_SEPARATOR . 'fortelescopes_data_backup_latest.sql';
+        if (is_file($preferredLatest)) {
+            return $preferredLatest;
+        }
+        $files = glob($dir . DIRECTORY_SEPARATOR . '*.sql') ?: [];
+        if ($files === []) {
+            return null;
+        }
+        usort($files, static fn(string $a, string $b): int => filemtime($b) <=> filemtime($a));
+        return $files[0] ?? null;
     }
 }
 
@@ -1507,15 +1545,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                 $taskRunMessage = 'Image fix failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
-        } elseif ($task === 'backup_content_sql') {
+        } elseif ($task === 'backup_content_sql' || $task === 'export_full_database') {
+            if ($task === 'backup_content_sql') {
+                $task = 'export_full_database';
+            }
             $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
             ob_start();
             try {
-                require $scriptPath;
+                $exportResult = require $scriptPath;
                 $output = trim((string) ob_get_clean());
-                $flash = 'Database data backup completed.';
+                $flash = 'Full database backup completed.';
                 $taskRunOk = true;
-                $taskRunMessage = $output !== '' ? $output : $flash;
+                if (is_array($exportResult) && !empty($exportResult['summary'])) {
+                    $taskRunMessage = (string) $exportResult['summary'];
+                } else {
+                    $taskRunMessage = $output !== '' ? $output : $flash;
+                }
                 if ($output !== '') {
                     foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
                         if (trim((string) $line) !== '') {
@@ -1523,11 +1568,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maint
                         }
                     }
                 }
-                $maintenanceLog[] = 'Task: backup_content_sql';
-                $maintenanceLog[] = 'Output: /workspace/data/backups/db_backup_latest.sql';
+                $maintenanceLog[] = 'Task: export_full_database';
+                if (is_array($exportResult)) {
+                    $maintenanceLog[] = 'Output timestamped: ' . (string) ($exportResult['timestamped_path'] ?? '');
+                    $maintenanceLog[] = 'Output latest: ' . (string) ($exportResult['latest_path'] ?? '');
+                    $maintenanceLog[] = 'Summary: ' . (string) ($exportResult['summary'] ?? '');
+                }
             } catch (Throwable $e) {
                 ob_end_clean();
-                $taskRunMessage = 'Database backup failed: ' . $e->getMessage();
+                $taskRunMessage = 'Database full backup failed: ' . $e->getMessage();
                 $errors[] = $taskRunMessage;
             }
         } elseif ($task === 'export_db_schema') {
@@ -1847,6 +1896,120 @@ if ($availabilityCheckerUrlColumn !== null) {
         }
     } catch (Throwable $e) {
         $maintenanceLog[] = 'Availability dashboard failed: ' . $e->getMessage();
+    }
+}
+
+$dbBackupLatestPath = enma_maintenance_latest_db_backup_path();
+$dbBackupLatestFilename = $dbBackupLatestPath !== null ? basename($dbBackupLatestPath) : '';
+$dbBackupLatestContent = '';
+$dbBackupAutoCopy = false;
+if ($dbBackupLatestPath !== null && is_readable($dbBackupLatestPath)) {
+    $raw = file_get_contents($dbBackupLatestPath);
+    $dbBackupLatestContent = is_string($raw) ? $raw : '';
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_db_backup_create') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token for DB backup.';
+    } else {
+        $task = 'export_full_database';
+        $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+        if ($scriptPath === '') {
+            $errors[] = 'Backup script not available.';
+        } else {
+            ob_start();
+            try {
+                $exportResult = require $scriptPath;
+                ob_end_clean();
+                $dbBackupLatestPath = enma_maintenance_latest_db_backup_path();
+                $dbBackupLatestFilename = $dbBackupLatestPath !== null ? basename($dbBackupLatestPath) : '';
+                $dbBackupLatestContent = ($dbBackupLatestPath !== null && is_readable($dbBackupLatestPath))
+                    ? (string) file_get_contents($dbBackupLatestPath)
+                    : '';
+                $summary = is_array($exportResult) ? (string) ($exportResult['summary'] ?? '') : '';
+                $flash = 'Database full backup created successfully.';
+                $maintenanceLog[] = 'Task: maintenance_db_backup_create';
+                $maintenanceLog[] = 'Output: ' . ($dbBackupLatestPath ?? 'no backup file found');
+                if ($summary !== '') {
+                    $maintenanceLog[] = 'Summary: ' . $summary;
+                    enma_maintenance_record_usage($pdo, 'export_full_database', 'ok', $summary);
+                }
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $errors[] = 'Database backup failed: ' . $e->getMessage();
+                enma_maintenance_record_usage($pdo, 'export_full_database', 'fail', 'Backup failed: ' . $e->getMessage());
+            }
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_db_backup_download') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token for DB backup download.';
+    } else {
+        $task = 'export_full_database';
+        $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+        if ($scriptPath === '') {
+            $errors[] = 'Backup script not available.';
+        } else {
+            ob_start();
+            try {
+                $exportResult = require $scriptPath;
+                ob_end_clean();
+                $summary = is_array($exportResult) ? (string) ($exportResult['summary'] ?? '') : '';
+                if ($summary !== '') {
+                    enma_maintenance_record_usage($pdo, 'export_full_database', 'ok', $summary);
+                }
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $errors[] = 'Database backup failed before download: ' . $e->getMessage();
+                enma_maintenance_record_usage($pdo, 'export_full_database', 'fail', 'Backup failed before download: ' . $e->getMessage());
+            }
+        }
+        $latestPath = enma_maintenance_latest_db_backup_path();
+        if ($latestPath === null || !is_readable($latestPath)) {
+            $errors[] = 'No DB backup file available to download.';
+        } else {
+            $content = (string) file_get_contents($latestPath);
+            enma_maintenance_stream_download(
+                basename($latestPath),
+                'application/sql; charset=UTF-8',
+                $content
+            );
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'maintenance_db_backup_copy') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token for DB backup copy.';
+    } else {
+        $task = 'export_full_database';
+        $scriptPath = (string) ($availableMaintenanceTasks[$task]['script_path'] ?? '');
+        if ($scriptPath === '') {
+            $errors[] = 'Backup script not available.';
+        } else {
+            ob_start();
+            try {
+                $exportResult = require $scriptPath;
+                ob_end_clean();
+                $dbBackupLatestPath = enma_maintenance_latest_db_backup_path();
+                $dbBackupLatestFilename = $dbBackupLatestPath !== null ? basename($dbBackupLatestPath) : '';
+                $dbBackupLatestContent = ($dbBackupLatestPath !== null && is_readable($dbBackupLatestPath))
+                    ? (string) file_get_contents($dbBackupLatestPath)
+                    : '';
+                $summary = is_array($exportResult) ? (string) ($exportResult['summary'] ?? '') : '';
+                $dbBackupAutoCopy = true;
+                $flash = 'Fresh DB backup generated. Copying to clipboard...';
+                if ($summary !== '') {
+                    enma_maintenance_record_usage($pdo, 'export_full_database', 'ok', $summary);
+                }
+            } catch (Throwable $e) {
+                ob_end_clean();
+                $errors[] = 'Database backup failed: ' . $e->getMessage();
+                enma_maintenance_record_usage($pdo, 'export_full_database', 'fail', 'Backup failed before copy: ' . $e->getMessage());
+            }
+        }
     }
 }
 

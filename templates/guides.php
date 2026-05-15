@@ -22,6 +22,11 @@ $buildGuidesPageUrl = static function (int $page): string {
     <span class="hero-kicker">Guides Hub</span>
     <h1>Astronomy Buying Guides</h1>
     <p>Actionable telescope and accessory guides built for first-time stargazers, budget-conscious buyers, and people narrowing down their next upgrade.</p>
+    <div class="content-switch" aria-label="Content type switcher">
+        <span class="is-active" aria-current="page">Guides</span>
+        <a href="<?= e(url('/reviews')) ?>">Reviews</a>
+        <a href="<?= e(url('/blog')) ?>">Posts</a>
+    </div>
     <div class="trust-row">
         <span class="chip">Beginner-first explanations</span>
         <span class="chip">Real product examples</span>
@@ -29,8 +34,8 @@ $buildGuidesPageUrl = static function (int $page): string {
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Choose the guide that matches your search</h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0">Choose the guide that matches your search</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">"best beginner telescope"</div>
@@ -47,13 +52,13 @@ $buildGuidesPageUrl = static function (int $page): string {
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Buying guides</h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0">Buying guides</h2>
     <p class="muted">Start with the guide that matches your current purchase intent, then compare categories and product pages before checkout.</p>
     <div class="grid">
         <?php foreach ($guides as $idx => $guide): ?>
             <?php
-            $guideImage = !empty($guide['featured_image']) ? $guide['featured_image'] : match ($guide['slug'] ?? '') {
+            $guideImage = !empty($guide['featured_image']) ? content_asset_path((string) $guide['featured_image']) : match ($guide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
                 'best-telescope-accessories' => '/assets/img/optimized_2.webp',
                 'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
@@ -62,9 +67,9 @@ $buildGuidesPageUrl = static function (int $page): string {
             ?>
             <article class="card">
                 <?php if ($guideImage): ?>
-                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
+                    <img src="<?= e(content_asset_path($guideImage)) ?>" alt="<?= e($guide['title']) ?>" loading="<?= $idx === 0 ? 'eager' : 'lazy' ?>" decoding="async" fetchpriority="<?= $idx === 0 ? 'high' : 'auto' ?>" width="800" height="600">
                 <?php else: ?>
-                    <div style="height: 200px; background: #0b1625; display: flex; align-items: center; justify-content: center; color: #dce9fa;">No Image</div>
+                    <div class="guide-image-fallback">No Image</div>
                 <?php endif; ?>
                 <div class="body">
                     <span class="badge">Guide</span>
@@ -93,8 +98,8 @@ $buildGuidesPageUrl = static function (int $page): string {
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Category paths</h2>
+<section class="panel home-section">
+    <h2 class="section-title u-mt-0">Category paths</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Telescopes</div>
@@ -107,8 +112,8 @@ $buildGuidesPageUrl = static function (int $page): string {
     </div>
 </section>
 
-<section class="panel faq-panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Frequently asked questions</h2>
+<section class="panel faq-panel home-section">
+    <h2 class="section-title u-mt-0">Frequently asked questions</h2>
     <details>
         <summary>Which astronomy buying guide should I start with?</summary>
         <p class="muted">Start with the guide that matches your immediate decision: first telescope, budget limit, or accessories. That gets you to the right internal pages faster than browsing products at random.</p>

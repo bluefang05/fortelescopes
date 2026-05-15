@@ -82,31 +82,59 @@ if ($postHtmlRaw !== '') {
         return '<a ' . $newAttrs . '>' . $inner . '</a>';
     }, $postHtml) ?? $postHtml;
 }
+$postSection = post_section($post);
+$postHubPath = $postSection === 'reviews' ? '/reviews' : ($postSection === 'learn' ? '/learn' : '/blog');
+$postHubLabel = $postSection === 'reviews' ? 'Reviews' : ($postSection === 'learn' ? 'Learn' : 'Blog');
+$postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
 
 ?>
 <section class="hero">
     <span class="hero-kicker">Astronomy Article</span>
     <?php if (!empty($isDraftPreview)): ?>
-        <span class="hero-kicker" style="background:#7d2d00;margin-left:8px;">Draft Preview</span>
+        <span class="hero-kicker hero-kicker-draft">Draft Preview</span>
     <?php endif; ?>
     <h1><?= e($post['title']) ?></h1>
     <p><?= e($postSummary) ?></p>
+    <div class="content-switch" aria-label="Content type switcher">
+        <?php if ($postType === 'guide'): ?>
+            <span class="is-active" aria-current="page">Guides</span>
+        <?php else: ?>
+            <a href="<?= e(url('/guides')) ?>">Guides</a>
+        <?php endif; ?>
+
+        <?php if ($postType === 'review' || $postSection === 'reviews'): ?>
+            <span class="is-active" aria-current="page">Reviews</span>
+        <?php else: ?>
+            <a href="<?= e(url('/reviews')) ?>">Reviews</a>
+        <?php endif; ?>
+
+        <?php if ($postType === 'post'): ?>
+            <span class="is-active" aria-current="page">Posts</span>
+        <?php else: ?>
+            <a href="<?= e(url('/blog')) ?>">Posts</a>
+        <?php endif; ?>
+    </div>
     <?php
-    $heroImage = (string) ($post['featured_image'] ?? '');
+    $heroImage = content_asset_path((string) ($post['featured_image'] ?? ''));
     $heroTitle = (string) ($post['title'] ?? '');
     require __DIR__ . '/partials/hero-media.php';
     ?>
 </section>
 
 <?php if ($postSummary !== ''): ?>
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Quick answer</h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Quick answer</h2>
     <p class="muted"><?= e($postSummary) ?></p>
 </section>
 <?php endif; ?>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">What to read next</h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Affiliate and editorial note</h2>
+    <p class="muted">Some links on this page may be affiliate links. As an Amazon Associate, this site may earn from qualifying purchases. Product recommendations are based on beginner usability, setup friction, and value.</p>
+</section>
+
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">What to read next</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Need a first scope?</div>
@@ -124,8 +152,8 @@ if ($postHtmlRaw !== '') {
 </section>
 
 <?php if ($postHtml !== ''): ?>
-<section class="panel article-content" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Full article</h2>
+<section class="panel article-content u-mb-18">
+    <h2 class="section-title u-mt-0">Full article</h2>
     <article class="article-prose">
         <?= $postHtml ?>
     </article>
@@ -133,12 +161,12 @@ if ($postHtmlRaw !== '') {
 <?php endif; ?>
 
 <?php if (!empty($data['otherGuides'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">More astronomy buying guides</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">More astronomy buying guides</h2>
     <div class="grid">
         <?php foreach ($data['otherGuides'] as $otherGuide): ?>
             <?php
-            $guideImage = !empty($otherGuide['featured_image']) ? $otherGuide['featured_image'] : match ($otherGuide['slug'] ?? '') {
+            $guideImage = !empty($otherGuide['featured_image']) ? content_asset_path((string) $otherGuide['featured_image']) : match ($otherGuide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
                 'best-telescope-accessories' => '/assets/img/optimized_2.webp',
                 'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
@@ -147,7 +175,7 @@ if ($postHtmlRaw !== '') {
             ?>
             <article class="card">
                 <?php if ($guideImage): ?>
-                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($otherGuide['title']) ?>" loading="lazy">
+                    <img src="<?= e(content_asset_path($guideImage)) ?>" alt="<?= e($otherGuide['title']) ?>" loading="lazy">
                 <?php endif; ?>
                 <div class="body">
                     <span class="badge">Guide</span>
@@ -160,12 +188,12 @@ if ($postHtmlRaw !== '') {
 </section>
 <?php endif; ?>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Related pages</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Related pages</h2>
     <div class="compare-table">
         <div class="compare-row">
-            <div class="compare-label">Blog</div>
-            <div class="compare-value"><a href="<?= e(url('/blog')) ?>" title="Go back to all blog articles.">Back to all articles</a></div>
+            <div class="compare-label"><?= e($postHubLabel) ?></div>
+            <div class="compare-value"><a href="<?= e(url($postHubPath)) ?>" title="Go back to all articles in this section.">Back to all articles</a></div>
         </div>
         <div class="compare-row">
             <div class="compare-label">Guides Hub</div>

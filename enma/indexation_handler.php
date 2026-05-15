@@ -41,7 +41,7 @@ if (!function_exists('enma_indexation_sync_tracker')) {
             'SELECT id, slug, post_type, status
              FROM posts
              WHERE TRIM(COALESCE(slug, "")) <> ""
-               AND post_type IN ("post", "guide")'
+               AND post_type IN ("post", "review", "guide")'
         )->fetchAll();
 
         $existingIds = $pdo->query('SELECT post_id FROM post_indexation_tracker')->fetchAll(PDO::FETCH_COLUMN);
@@ -94,7 +94,7 @@ if (!function_exists('enma_indexation_sync_tracker')) {
 
             $postType = trim((string) ($row['post_type'] ?? 'post'));
             $postStatus = trim((string) ($row['status'] ?? 'draft'));
-            $path = $postType === 'guide' ? '/' . ltrim($slug, '/') : '/blog/' . ltrim($slug, '/');
+            $path = post_url_path($row);
             $canonicalUrl = absolute_url($path);
 
             $upsert->execute([

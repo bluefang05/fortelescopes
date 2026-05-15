@@ -44,6 +44,27 @@ $pct = static function ($count, $base): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ENMA - Analytics & Security</title>
+    <?php
+    $themeCssPath = __DIR__ . '/../../assets/enma-theme.css';
+    $themeJsPath = __DIR__ . '/../../assets/enma-theme.js';
+    $themeCssV = is_file($themeCssPath) ? (string) filemtime($themeCssPath) : '1';
+    $themeJsV = is_file($themeJsPath) ? (string) filemtime($themeJsPath) : '1';
+    ?>
+    <script>
+      (function () {
+        var key = 'enma_theme';
+        var themes = ['light', 'dark', 'midnight', 'navy', 'nord'];
+        var stored = '';
+        try { stored = (localStorage.getItem(key) || '').toLowerCase(); } catch (e) {}
+        var theme = themes.indexOf(stored) !== -1 ? stored : 'dark';
+        var root = document.documentElement;
+        root.setAttribute('data-enma-theme', theme);
+        root.setAttribute('data-theme', theme);
+        root.classList.add('theme-' + theme);
+      })();
+    </script>
+    <link rel="stylesheet" href="/enma/assets/enma-theme.css?v=<?= rawurlencode($themeCssV) ?>">
+    <script defer src="/enma/assets/enma-theme.js?v=<?= rawurlencode($themeJsV) ?>"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -72,19 +93,22 @@ $pct = static function ($count, $base): string {
         .kpi.danger { border-left-color: #ba3232; }
         .kpi.ok { border-left-color: #2d9b62; }
         .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-        .tab-btn { border: 1px solid var(--line); background: #fff; color: #355175; border-radius: 999px; padding: 8px 13px; font-weight: 700; }
+        .tab-btn { border: 1px solid var(--line); background: #122238; color: var(--text); border-radius: 999px; padding: 8px 13px; font-weight: 700; }
         .tab-btn.active { background: var(--brand); color: #fff; border-color: var(--brand); }
         .tab-pane { display: none; }
         .tab-pane.active { display: block; }
         .chart-wrap { height: 340px; }
         .mono { font-family: Consolas, Menlo, Monaco, monospace; font-size: .82rem; }
-        .explain { background: #edf4ff; border: 1px solid #cfe1ff; color: #1c3f6e; border-radius: 10px; padding: 12px; }
+        .explain { background: #122238; border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 12px; }
         .origin-list li { padding-left: 0; padding-right: 0; }
         .origin-list .count { min-width: 110px; text-align: right; }
     </style>
 </head>
 <body>
 <div class="container-fluid shell">
+    <div class="py-2 text-end">
+        <button class="btn btn-sm btn-outline-secondary" type="button" id="enma-theme-toggle">Theme: <span id="enma-theme-label">Dark</span></button>
+    </div>
     <div class="row">
         <aside class="col-lg-2 sidebar p-3">
             <h5 class="mb-1"><i class="fas fa-shield-alt"></i> ENMA</h5>

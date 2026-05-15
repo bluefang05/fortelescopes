@@ -68,6 +68,27 @@ if (!function_exists('enma_posts_table_exists')) {
     }
 }
 
+if (!function_exists('enma_normalize_post_section')) {
+    function enma_normalize_post_section(string $section, string $title = '', string $excerpt = '', string $slug = ''): string
+    {
+        $candidate = strtolower(trim($section));
+        if ($candidate === 'review') {
+            $candidate = 'reviews';
+        }
+        if (in_array($candidate, ['blog', 'reviews'], true)) {
+            return $candidate;
+        }
+
+        $mock = [
+            'section' => $candidate,
+            'title' => $title,
+            'excerpt' => $excerpt,
+            'slug' => $slug,
+        ];
+        return post_section($mock);
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_fix_posts_theme') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
         $errors[] = 'Invalid request token.';
@@ -124,6 +145,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_
             $flash = 'Bulk dark-theme conversion complete. Updated ' . $updated . ' post(s).';
         } catch (Throwable $e) {
             $errors[] = 'Bulk dark-theme conversion failed: ' . $e->getMessage();
+        }
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'bulk_reclassify_post_sections') {
+    if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+        $errors[] = 'Invalid request token.';
+    } else {
+        try {
+            $rows = $pdo->query('SELECT id, slug, title, excerpt, post_type, extra_data FROM posts WHERE post_type = "post"')->fetchAll();
+            $updated = 0;
+            $now = now_iso();
+            $stmt = $pdo->prepare('UPDATE posts SET extra_data = :extra_data, updated_at = :updated_at WHERE id = :id');
+
+            foreach ($rows as $row) {
+                $extra = json_decode((string) ($row['extra_data'] ?? ''), true);
+                if (!is_array($extra)) {
+                    $extra = [];
+                }
+
+                $section = enma_normalize_post_section(
+                    (string) ($extra['section'] ?? ''),
+                    (string) ($row['title'] ?? ''),
+                    (string) ($row['excerpt'] ?? ''),
+                    (string) ($row['slug'] ?? '')
+                );
+                if (($extra['section'] ?? null) === $section) {
+                    continue;
+                }
+
+                $extra['section'] = $section;
+                $payload = json_encode($extra, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if (!is_string($payload) || $payload === '') {
+                    continue;
+                }
+
+                $stmt->execute([
+                    ':extra_data' => $payload,
+                    ':updated_at' => $now,
+                    ':id' => (int) ($row['id'] ?? 0),
+                ]);
+                $updated++;
+            }
+
+            enma_record_activity($pdo, 'post.bulk_reclassify_sections', 'post', null, ['updated' => $updated]);
+            $flash = 'Post section reclassification complete. Updated ' . $updated . ' post(s).';
+        } catch (Throwable $e) {
+            $errors[] = 'Bulk reclassify failed: ' . $e->getMessage();
         }
     }
 }
@@ -212,6 +281,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
     $metaTitle = trim((string) ($_POST['meta_title'] ?? ''));
     $metaDescription = trim((string) ($_POST['meta_description'] ?? ''));
+    $sectionInput = trim((string) ($_POST['section'] ?? ''));
+    $postType = strtolower($postType);
+    if ($postType === 'review') {
+        $sectionInput = 'reviews';
+    } elseif ($postType === 'post') {
+        $sectionInput = 'blog';
+    } elseif ($postType === 'guide') {
+        $sectionInput = '';
+    } else {
+        $postType = 'post';
+        $sectionInput = 'blog';
+    }
 
     $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
     if ($uploaded !== null) {
@@ -225,16 +306,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
     if ($errors === []) {
         $slug = unique_slug_for_posts($pdo, $title);
         $now = now_iso();
+        $section = enma_normalize_post_section($sectionInput, $title, $excerpt, $slug);
+        $extraData = json_encode(['section' => $section], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         try {
             $createdByUserId = (int) ($_SESSION['admin_user_id'] ?? 0);
             $stmt = $pdo->prepare(
                 'INSERT INTO posts (
                     slug, title, excerpt, content_html, featured_image, post_type, status, meta_title, meta_description,
-                    created_by_user_id, created_at, updated_at, published_at
+                    extra_data, created_by_user_id, created_at, updated_at, published_at
                  ) VALUES (
                     :slug, :title, :excerpt, :content_html, :featured_image, :post_type, :status, :meta_title, :meta_description,
-                    :created_by_user_id, :created_at, :updated_at, :published_at
+                    :extra_data, :created_by_user_id, :created_at, :updated_at, :published_at
                  )'
             );
 
@@ -248,6 +331,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 ':status' => 'published',
                 ':meta_title' => $metaTitle !== '' ? $metaTitle : null,
                 ':meta_description' => $metaDescription !== '' ? $metaDescription : null,
+                ':extra_data' => $postType === 'post' ? $extraData : null,
                 ':created_by_user_id' => $createdByUserId > 0 ? $createdByUserId : null,
                 ':created_at' => $now,
                 ':updated_at' => $now,
@@ -259,10 +343,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_p
                 'title' => $title,
                 'slug' => $slug,
                 'post_type' => $postType,
+                'section' => $section,
                 'meta_title' => $metaTitle,
             ]);
-            $postPath = $postType === 'guide' ? '/' . $slug : '/blog/' . $slug;
-            $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+            $postPath = $postType === 'guide'
+                ? '/' . $slug
+                : post_url_path(['slug' => $slug, 'section' => $section, 'post_type' => 'post']);
+            $indexNowTargets = [absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')];
+            if ($postType === 'post') {
+                $indexNowTargets[] = absolute_url('/' . $section);
+            }
+            $indexNowResult = indexnow_submit_urls($indexNowTargets);
             if (!empty($indexNowResult['message'])) {
                 $maintenanceLog[] = (string) $indexNowResult['message'];
             }
@@ -287,6 +378,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     $featuredImage = trim((string) ($_POST['featured_image'] ?? ''));
     $metaTitle = trim((string) ($_POST['meta_title'] ?? ''));
     $metaDescription = trim((string) ($_POST['meta_description'] ?? ''));
+    $sectionInput = trim((string) ($_POST['section'] ?? ''));
+    $postType = strtolower($postType);
+    if ($postType === 'review') {
+        $sectionInput = 'reviews';
+    } elseif ($postType === 'post') {
+        $sectionInput = 'blog';
+    } elseif ($postType === 'guide') {
+        $sectionInput = '';
+    } else {
+        $postType = 'post';
+        $sectionInput = 'blog';
+    }
 
     $uploaded = enma_handle_image_upload('featured_image_file', $errors, 'posts');
     if ($uploaded !== null) {
@@ -310,6 +413,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
     if ($errors === []) {
         $now = now_iso();
+        $slugLookupStmt = $pdo->prepare('SELECT slug, post_type, extra_data FROM posts WHERE id = :id LIMIT 1');
+        $slugLookupStmt->execute([':id' => $id]);
+        $existingPostRow = $slugLookupStmt->fetch() ?: [];
+        $existingSlug = trim((string) ($existingPostRow['slug'] ?? ''));
+        $existingExtra = json_decode((string) ($existingPostRow['extra_data'] ?? ''), true);
+        if (!is_array($existingExtra)) {
+            $existingExtra = [];
+        }
+        $resolvedSection = enma_normalize_post_section(
+            $sectionInput !== '' ? $sectionInput : (string) ($existingExtra['section'] ?? ''),
+            $title,
+            $excerpt,
+            $existingSlug
+        );
+        if ($postType === 'post') {
+            $existingExtra['section'] = $resolvedSection;
+        } else {
+            unset($existingExtra['section']);
+        }
+        $updatedExtraData = $existingExtra !== []
+            ? json_encode($existingExtra, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+            : null;
 
         try {
             $stmt = $pdo->prepare(
@@ -321,6 +446,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                     post_type = :post_type, 
                     meta_title = :meta_title,
                     meta_description = :meta_description,
+                    extra_data = :extra_data,
                     updated_at = :updated_at 
                 WHERE id = :id'
             );
@@ -333,6 +459,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 ':post_type' => $postType,
                 ':meta_title' => $metaTitle !== '' ? $metaTitle : null,
                 ':meta_description' => $metaDescription !== '' ? $metaDescription : null,
+                ':extra_data' => $updatedExtraData,
                 ':updated_at' => $now,
                 ':id' => $id
             ]);
@@ -340,6 +467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
             enma_record_activity($pdo, 'post.update', 'post', $id, [
                 'title' => $title,
                 'post_type' => $postType,
+                'section' => $resolvedSection,
                 'meta_title' => $metaTitle,
             ]);
             $slugStmt = $pdo->prepare('SELECT slug, post_type FROM posts WHERE id = :id LIMIT 1');
@@ -348,8 +476,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
             $savedSlug = trim((string) ($savedPost['slug'] ?? ''));
             $savedType = trim((string) ($savedPost['post_type'] ?? $postType));
             if ($savedSlug !== '') {
-                $postPath = $savedType === 'guide' ? '/' . $savedSlug : '/blog/' . $savedSlug;
-                $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+                $postPath = $savedType === 'guide'
+                    ? '/' . $savedSlug
+                    : post_url_path(['slug' => $savedSlug, 'section' => $resolvedSection, 'post_type' => 'post']);
+                $indexNowTargets = [absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')];
+                if ($savedType === 'post') {
+                    $indexNowTargets[] = absolute_url('/' . $resolvedSection);
+                }
+                $indexNowResult = indexnow_submit_urls($indexNowTargets);
                 if (!empty($indexNowResult['message'])) {
                     $maintenanceLog[] = (string) $indexNowResult['message'];
                 }
@@ -369,7 +503,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     } else {
         $id = (int) ($_POST['id'] ?? 0);
         if ($id > 0) {
-            $titleStmt = $pdo->prepare('SELECT title, slug, post_type FROM posts WHERE id = :id LIMIT 1');
+            $titleStmt = $pdo->prepare('SELECT title, slug, post_type, extra_data FROM posts WHERE id = :id LIMIT 1');
             $titleStmt->execute([':id' => $id]);
             $postRow = $titleStmt->fetch();
             $stmt = $pdo->prepare('DELETE FROM posts WHERE id = :id');
@@ -381,9 +515,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
             ]);
             $deletedSlug = trim((string) ($postRow['slug'] ?? ''));
             $deletedType = trim((string) ($postRow['post_type'] ?? 'post'));
+            $deletedExtra = json_decode((string) ($postRow['extra_data'] ?? ''), true);
+            if (!is_array($deletedExtra)) {
+                $deletedExtra = [];
+            }
+            $deletedSection = enma_normalize_post_section((string) ($deletedExtra['section'] ?? ''), (string) ($postRow['title'] ?? ''), '', $deletedSlug);
             if ($deletedSlug !== '') {
-                $postPath = $deletedType === 'guide' ? '/' . $deletedSlug : '/blog/' . $deletedSlug;
-                $indexNowResult = indexnow_submit_urls([absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')]);
+                $postPath = $deletedType === 'guide'
+                    ? '/' . $deletedSlug
+                    : post_url_path(['slug' => $deletedSlug, 'section' => $deletedSection, 'post_type' => 'post']);
+                $indexNowTargets = [absolute_url($postPath), absolute_url('/blog'), absolute_url('/guides')];
+                if ($deletedType === 'post') {
+                    $indexNowTargets[] = absolute_url('/' . $deletedSection);
+                }
+                $indexNowResult = indexnow_submit_urls($indexNowTargets);
                 if (!empty($indexNowResult['message'])) {
                     $maintenanceLog[] = (string) $indexNowResult['message'];
                 }

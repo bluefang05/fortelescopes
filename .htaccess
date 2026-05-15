@@ -1,68 +1,41 @@
-# Deny access to hidden files like .env, .git, .htaccess, etc.
-<FilesMatch "^\.">
-  Order allow,deny
-  Deny from all
-</FilesMatch>
-
-# Extra explicit protection for sensitive files
-<FilesMatch "^(?:\.env|\.env\.example|composer\.(?:json|lock)|package(?:-lock)?\.json|database\.php|healthcheck\.php)$">
-  Order allow,deny
-  Deny from all
-</FilesMatch>
+DirectoryIndex index.php
 
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteBase /
 
-# Canonical production host + HTTPS (does not affect localhost/XAMPP)
 RewriteCond %{HTTP_HOST} ^(?:www\.)?fortelescopes\.com$ [NC]
 RewriteCond %{HTTPS} !=on [OR]
 RewriteCond %{HTTP_HOST} ^www\.fortelescopes\.com$ [NC]
 RewriteRule ^ https://fortelescopes.com%{REQUEST_URI} [R=301,L,NE]
 
-# Block direct access to sensitive paths/files
-RewriteRule ^(?:includes|scripts|data|templates)/ - [F,L,NC]
-RewriteRule ^(?:\.env|\.env\.example|database\.php|healthcheck\.php)$ - [F,L,NC]
+RewriteRule ^\.well-known(?:/|$) - [L]
+RewriteRule (^|/)\. - [F,L]
+RewriteRule ^(?:includes|scripts|data|templates)(?:/|$) - [F,L,NC]
+RewriteRule ^(?:\.env|\.env\.example|composer\.(?:json|lock)|package(?:-lock)?\.json|phpinfo\.php|db\.sql|backup\.sql|database\.sql|dump\.sql|mysql\.sql|upload\.php|uploader\.php|unzip\.php|unzipper\.php)$ - [F,L,NC]
 
-# Block common WordPress probing paths (this is not a WordPress install)
 RewriteRule ^wp-admin/setup-config\.php$ - [F,L,NC]
+RewriteRule ^wp-admin/install\.php$ - [F,L,NC]
 RewriteRule ^wp-login\.php$ - [F,L,NC]
+RewriteRule ^wordpress/wp-admin/setup-config\.php$ - [F,L,NC]
 
-# Block known spam referrer at edge
-RewriteCond %{HTTP_REFERER} aspierd\.com [NC]
-RewriteRule ^ - [F,L]
+RewriteRule ^category/accessories/?$ /accessories [R=301,L,NC]
+RewriteRule ^category/telescopes/?$ /telescopes [R=301,L,NC]
+RewriteRule ^guides/(.+)/?$ /$1 [R=301,L,NC]
 
-# Keep existing files/directories accessible
-RewriteCond %{REQUEST_FILENAME} -f [OR]
-RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^sitemap\.xml$ index.php [L,QSA]
+
+RewriteRule ^enma/?$ enma/index.php [L,QSA]
+
+RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^ - [L]
 
-# Route everything else through index.php
-RewriteRule . index.php [L,QSA]
-</IfModule>
-
-<IfModule mod_expires.c>
-ExpiresActive On
-ExpiresByType text/html "access plus 5 minutes"
-ExpiresByType text/css "access plus 7 days"
-ExpiresByType application/javascript "access plus 7 days"
-ExpiresByType text/javascript "access plus 7 days"
-ExpiresByType application/json "access plus 1 hour"
-ExpiresByType image/webp "access plus 30 days"
-ExpiresByType image/avif "access plus 30 days"
-ExpiresByType image/svg+xml "access plus 30 days"
-ExpiresByType image/png "access plus 30 days"
-ExpiresByType image/jpeg "access plus 30 days"
-ExpiresByType image/x-icon "access plus 30 days"
-ExpiresByType font/woff2 "access plus 30 days"
+RewriteRule ^ index.php [L,QSA]
 </IfModule>
 
 <IfModule mod_headers.c>
-Header set X-Content-Type-Options "nosniff"
-Header set Referrer-Policy "strict-origin-when-cross-origin"
-Header always append Vary "Accept-Encoding"
-</IfModule>
-
-<IfModule mod_deflate.c>
-AddOutputFilterByType DEFLATE text/plain text/html text/css text/javascript application/javascript application/json application/xml image/svg+xml
+    <FilesMatch "^index\.php$">
+        Header always unset Expires
+        Header always unset Pragma
+    </FilesMatch>
 </IfModule>

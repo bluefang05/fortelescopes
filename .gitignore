@@ -1,4 +1,14 @@
-Nothing needs to be added to .gitignore since only a single PHP source file was added without any build artifacts, dependencies, or temporary files.
 # Local secrets
+.env
 local_gemini_credentials.env
 
+# Runtime/generated data
+/data/backups/
+/data/logs/
+/data/reports/
+/data/tmp/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp

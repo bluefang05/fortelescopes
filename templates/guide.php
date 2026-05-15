@@ -46,12 +46,12 @@ if ($fullGuideHtmlRaw !== '') {
 <section class="hero">
     <span class="hero-kicker">Buying Guide</span>
     <?php if (!empty($isDraftPreview)): ?>
-        <span class="hero-kicker" style="background:#7d2d00;margin-left:8px;">Draft Preview</span>
+        <span class="hero-kicker hero-kicker-draft">Draft Preview</span>
     <?php endif; ?>
     <h1><?= e($guide['title']) ?></h1>
     <p><?= e((string) (($guide['description'] ?? '') !== '' ? $guide['description'] : ($guide['excerpt'] ?? ''))) ?></p>
     <?php
-    $heroImage = (string) ($guide['featured_image'] ?? '');
+    $heroImage = content_asset_path((string) ($guide['featured_image'] ?? ''));
     $heroTitle = (string) ($guide['title'] ?? '');
     require __DIR__ . '/partials/hero-media.php';
     ?>
@@ -62,17 +62,35 @@ if ($fullGuideHtmlRaw !== '') {
     </div>
 </section>
 
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Quick answer</h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Affiliate disclosure</h2>
+    <p class="muted">As an Amazon Associate, this site may earn from qualifying purchases. We only recommend products that match the buying scenario explained in this guide.</p>
+</section>
+
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">How we evaluate beginner telescopes</h2>
+    <div class="compare-table">
+        <div class="compare-row"><div class="compare-label">Aperture vs price</div><div class="compare-value">We prioritize usable optical gain per dollar, not inflated marketing specs.</div></div>
+        <div class="compare-row"><div class="compare-label">Mount stability</div><div class="compare-value">Unstable mounts create frustration quickly, so stability weighs heavily.</div></div>
+        <div class="compare-row"><div class="compare-label">Setup friction</div><div class="compare-value">Products that are easier to align and use win for first-time buyers.</div></div>
+        <div class="compare-row"><div class="compare-label">Included accessories</div><div class="compare-value">We look at what is genuinely usable from day one, not box-fillers.</div></div>
+        <div class="compare-row"><div class="compare-label">Upgrade path</div><div class="compare-value">Recommendations favor gear that can scale without forcing immediate replacement.</div></div>
+        <div class="compare-row"><div class="compare-label">Beginner risk</div><div class="compare-value">We filter out options likely to disappoint due to unrealistic expectations.</div></div>
+    </div>
+    <p class="muted u-mt-10">Written by Fortelescopes editors for beginner stargazers. Recommendations prioritize practical use and value over hype.</p>
+</section>
+
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Quick answer</h2>
     <p class="muted"><?= e($guide['intro'] ?? '') ?></p>
 
     <?php if (!empty($guide['article_intro']) && is_array($guide['article_intro'])): ?>
         <?php foreach ($guide['article_intro'] as $introParagraph): ?>
-            <p class="muted" style="margin-bottom: 10px;"><?= e((string) $introParagraph) ?></p>
+            <p class="muted u-mb-10"><?= e((string) $introParagraph) ?></p>
         <?php endforeach; ?>
     <?php endif; ?>
 
-    <h2 class="section-title" style="margin-top: 18px;"><?= $isBeginnerGuide ? 'How to choose your first telescope without wasting money' : ($isAccessoriesGuide ? 'How to choose upgrades that actually help' : ($isUnder500Guide ? 'How to choose a telescope under $500 without regret' : 'How to choose without wasting money')) ?></h2>
+    <h2 class="section-title u-mt-18"><?= $isBeginnerGuide ? 'How to choose your first telescope without wasting money' : ($isAccessoriesGuide ? 'How to choose upgrades that actually help' : ($isUnder500Guide ? 'How to choose a telescope under $500 without regret' : 'How to choose without wasting money')) ?></h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Step 1</div>
@@ -90,21 +108,21 @@ if ($fullGuideHtmlRaw !== '') {
 </section>
 
 <?php if ($fullGuideHtml !== ''): ?>
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Full guide</h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Full guide</h2>
     <div class="guide-prose"><?= $fullGuideHtml ?></div>
 </section>
 <?php endif; ?>
 
 <?php if (!empty($guide['key_factors']) && is_array($guide['key_factors'])): ?>
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Key factors to consider</h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0">Key factors to consider</h2>
     <?php foreach ($guide['key_factors'] as $factor): ?>
-        <h3 style="margin: 0 0 8px; font-size: 20px;"><?= e((string) ($factor['title'] ?? '')) ?></h3>
+        <h3 class="u-h3-feature"><?= e((string) ($factor['title'] ?? '')) ?></h3>
         <?php if (!empty($factor['points']) && is_array($factor['points'])): ?>
-            <ul style="margin: 0 0 14px 18px; color: #334155; line-height: 1.5;">
+            <ul class="u-list-feature">
                 <?php foreach ($factor['points'] as $point): ?>
-                    <li style="margin-bottom: 6px;"><?= e((string) $point) ?></li>
+                    <li class="u-list-item-6"><?= e((string) $point) ?></li>
                 <?php endforeach; ?>
             </ul>
         <?php endif; ?>
@@ -113,8 +131,8 @@ if ($fullGuideHtmlRaw !== '') {
 <?php endif; ?>
 
 <?php if ($top !== null): ?>
-<section class="panel" style="margin-bottom: 18px;">
-    <h2 class="section-title" style="margin-top: 0;"><?= $isBeginnerGuide ? 'Top recommended beginner telescopes' : 'Top recommendations for this guide' ?></h2>
+<section class="panel u-mb-18">
+    <h2 class="section-title u-mt-0"><?= $isBeginnerGuide ? 'Top recommended beginner telescopes' : 'Top recommendations for this guide' ?></h2>
     <div class="tier-grid">
         <article class="tier-card">
             <span class="tier-tag tier-top">Top Pick</span>
@@ -156,21 +174,21 @@ if ($fullGuideHtmlRaw !== '') {
                 <h3><?= e($item['title']) ?></h3>
                 <p class="card-copy"><?= e($item['description']) ?></p>
                 <?php if ($isBeginnerGuide || $isAccessoriesGuide || $isUnder500Guide): ?>
-                    <p class="muted" style="margin: 8px 0 0; font-size: 13px;"><?= e($bestForMap[$item['asin']] ?? product_best_for($item)) ?></p>
+                    <p class="muted u-mt-8 u-mb-0 u-fs-13"><?= e($bestForMap[$item['asin']] ?? product_best_for($item)) ?></p>
                 <?php endif; ?>
                 <a class="card-cta amazon-btn" href="<?= e(outbound_url((string) $item['affiliate_url'], (int) ($item['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener">View on Amazon</a>
-                <p class="muted" style="margin:8px 0 0;font-size:12px;"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
+                <p class="muted u-mt-8 u-mb-0 u-fs-12"><a href="<?= e(url('/product/' . $item['slug'])) ?>">Open product page</a></p>
             </div>
         </article>
     <?php endforeach; ?>
 </div>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;"><?= $isBeginnerGuide ? 'Common mistakes beginners make' : ($isAccessoriesGuide ? 'Accessory mistakes to avoid' : ($isUnder500Guide ? 'Common under-$500 buying mistakes' : 'Common beginner mistakes')) ?></h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0"><?= $isBeginnerGuide ? 'Common mistakes beginners make' : ($isAccessoriesGuide ? 'Accessory mistakes to avoid' : ($isUnder500Guide ? 'Common under-$500 buying mistakes' : 'Common beginner mistakes')) ?></h2>
     <?php if ($mistakes !== []): ?>
-        <ul style="margin: 0 0 0 18px; color: #334155; line-height: 1.55;">
+        <ul class="u-list-body">
             <?php foreach ($mistakes as $mistake): ?>
-                <li style="margin-bottom: 8px;"><?= e((string) $mistake) ?></li>
+                <li class="u-list-item-8"><?= e((string) $mistake) ?></li>
             <?php endforeach; ?>
         </ul>
     <?php else: ?>
@@ -192,8 +210,8 @@ if ($fullGuideHtmlRaw !== '') {
 </section>
 
 <?php if ($showComparison && $items !== []): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Quick comparison</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Quick comparison</h2>
     <div class="compare-table">
         <?php if (($isAccessoriesGuide || $isUnder500Guide) && !empty($guide['comparisons']) && is_array($guide['comparisons'])): ?>
             <?php foreach ($guide['comparisons'] as $entry): ?>
@@ -214,54 +232,54 @@ if ($fullGuideHtmlRaw !== '') {
 </section>
 
 <?php if (($isAccessoriesGuide || $isUnder500Guide) && !empty($guide['upgrade_timing']) && is_array($guide['upgrade_timing'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">When upgrades make sense</h2>
-    <ul style="margin: 0 0 0 18px; color: #334155; line-height: 1.55;">
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">When upgrades make sense</h2>
+    <ul class="u-list-body">
         <?php foreach ($guide['upgrade_timing'] as $row): ?>
-            <li style="margin-bottom: 8px;"><?= e((string) $row) ?></li>
+            <li class="u-list-item-8"><?= e((string) $row) ?></li>
         <?php endforeach; ?>
     </ul>
 </section>
 <?php endif; ?>
 
 <?php if (($isAccessoriesGuide || $isUnder500Guide) && !empty($guide['avoid_list']) && is_array($guide['avoid_list'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Low-value upgrades to skip</h2>
-    <ul style="margin: 0 0 0 18px; color: #334155; line-height: 1.55;">
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Low-value upgrades to skip</h2>
+    <ul class="u-list-body">
         <?php foreach ($guide['avoid_list'] as $row): ?>
-            <li style="margin-bottom: 8px;"><?= e((string) $row) ?></li>
+            <li class="u-list-item-8"><?= e((string) $row) ?></li>
         <?php endforeach; ?>
     </ul>
 </section>
 <?php endif; ?>
 
 <?php if (($isAccessoriesGuide || $isUnder500Guide) && !empty($guide['budget_notes']) && is_array($guide['budget_notes'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Budget vs performance</h2>
-    <ul style="margin: 0 0 0 18px; color: #334155; line-height: 1.55;">
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Budget vs performance</h2>
+    <ul class="u-list-body">
         <?php foreach ($guide['budget_notes'] as $row): ?>
-            <li style="margin-bottom: 8px;"><?= e((string) $row) ?></li>
+            <li class="u-list-item-8"><?= e((string) $row) ?></li>
         <?php endforeach; ?>
     </ul>
 </section>
 <?php endif; ?>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Final recommendation</h2>
-    <p class="muted" style="margin-bottom: 10px;">
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Final recommendation</h2>
+    <p class="muted u-mb-10">
         <?= e((string) ($guide['final_recommendation'] ?? 'For most first-time stargazers, start with a simple and stable model that you can use consistently from week one. If you are still comparing options, open the top pick first and verify availability on Amazon.')) ?>
     </p>
     <?php if ($top !== null): ?>
         <a class="btn amazon-btn" href="<?= e(outbound_url((string) $top['affiliate_url'], (int) ($top['id'] ?? 0))) ?>" target="_blank" rel="nofollow sponsored noopener"><?= e((string) ($guide['cta_text'] ?? 'View on Amazon')) ?></a>
         <?php if (!empty($guide['cta_note'])): ?>
-            <p class="muted" style="margin-top: 8px; font-size: 13px;"><?= e((string) $guide['cta_note']) ?></p>
+            <p class="muted u-mt-8 u-fs-13"><?= e((string) $guide['cta_note']) ?></p>
         <?php endif; ?>
     <?php endif; ?>
 </section>
 <?php endif; ?>
 
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">Related pages</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">Related pages</h2>
     <div class="compare-table">
         <div class="compare-row">
             <div class="compare-label">Guides Hub</div>
@@ -279,24 +297,24 @@ if ($fullGuideHtmlRaw !== '') {
 </section>
 
 <?php if (!empty($guide['faq'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">FAQ</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">FAQ</h2>
     <?php foreach ($guide['faq'] as $faq): ?>
-        <details style="margin-bottom: 10px; border: 1px solid #e8edf3; border-radius: 10px; padding: 10px 12px; background: #fff;">
-            <summary style="font-weight: 700; cursor: pointer;"><?= e($faq['q']) ?></summary>
-            <p class="muted" style="margin: 8px 0 0;"><?= e($faq['a']) ?></p>
+        <details class="faq-detail">
+            <summary class="faq-summary"><?= e($faq['q']) ?></summary>
+            <p class="muted faq-answer"><?= e($faq['a']) ?></p>
         </details>
     <?php endforeach; ?>
 </section>
 <?php endif; ?>
 
 <?php if (!empty($data['otherGuides'])): ?>
-<section class="panel" style="margin-top: 18px;">
-    <h2 class="section-title" style="margin-top:0;">More astronomy buying guides</h2>
+<section class="panel u-mt-18">
+    <h2 class="section-title u-mt-0">More astronomy buying guides</h2>
     <div class="grid">
         <?php foreach ($data['otherGuides'] as $otherGuide): ?>
             <?php
-            $guideImage = !empty($otherGuide['featured_image']) ? $otherGuide['featured_image'] : match ($otherGuide['slug'] ?? '') {
+            $guideImage = !empty($otherGuide['featured_image']) ? content_asset_path((string) $otherGuide['featured_image']) : match ($otherGuide['slug'] ?? '') {
                 'best-beginner-telescopes' => '/assets/img/optimized_1.webp',
                 'best-telescope-accessories' => '/assets/img/optimized_2.webp',
                 'best-telescopes-under-500' => '/assets/img/optimized_3.webp',
@@ -305,7 +323,7 @@ if ($fullGuideHtmlRaw !== '') {
             ?>
             <article class="card">
                 <?php if ($guideImage): ?>
-                    <img src="<?= e(url($guideImage)) ?>" alt="<?= e($otherGuide['title']) ?>" loading="lazy">
+                    <img src="<?= e(content_asset_path($guideImage)) ?>" alt="<?= e($otherGuide['title']) ?>" loading="lazy">
                 <?php endif; ?>
                 <div class="body">
                     <span class="badge">Guide</span>

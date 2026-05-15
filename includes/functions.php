@@ -100,6 +100,7 @@ function get_sitemap_entries(PDO $pdo): array
         ['loc' => absolute_url('/telescopes'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/accessories'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/guides'), 'lastmod' => $latestGuideMod],
+        ['loc' => absolute_url('/reviews'), 'lastmod' => $latestBlogMod],
         ['loc' => absolute_url('/blog'), 'lastmod' => $latestBlogMod],
         ['loc' => absolute_url('/about'), 'lastmod' => $nowIso],
         ['loc' => absolute_url('/affiliate-disclosure'), 'lastmod' => $nowIso],
@@ -154,20 +155,14 @@ function get_sitemap_entries(PDO $pdo): array
         if ($slug === '') {
             continue;
         }
-        $entries[] = [
-            'loc' => absolute_url('/blog/' . $slug),
-            'lastmod' => sitemap_lastmod_value((string) ($post['updated_at'] ?? $post['published_at'] ?? ''), $nowIso),
-        ];
-    }
-
-    foreach (get_categories($pdo) as $category) {
-        $categorySlug = trim((string) ($category['category_slug'] ?? ''));
-        if ($categorySlug === '') {
-            continue;
+        $section = post_section($post);
+        $detailPath = '/blog/' . $slug;
+        if ($section === 'reviews') {
+            $detailPath = '/reviews/' . $slug;
         }
         $entries[] = [
-            'loc' => absolute_url('/category/' . $categorySlug),
-            'lastmod' => $nowIso,
+            'loc' => absolute_url($detailPath),
+            'lastmod' => sitemap_lastmod_value((string) ($post['updated_at'] ?? $post['published_at'] ?? ''), $nowIso),
         ];
     }
 
@@ -685,6 +680,69 @@ function format_post_row(array $row): array
     return $row;
 }
 
+function post_section(array $post): string
+{
+    $postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
+    if ($postType === 'guide') {
+        return 'guides';
+    }
+    if ($postType === 'review') {
+        return 'reviews';
+    }
+    if ($postType === 'post') {
+        return 'blog';
+    }
+
+    $explicit = strtolower(trim((string) ($post['section'] ?? '')));
+    if ($explicit !== '') {
+        if ($explicit === 'review') {
+            return 'reviews';
+        }
+        if (in_array($explicit, ['blog', 'reviews'], true)) {
+            return $explicit;
+        }
+    }
+
+    $slug = strtolower(trim((string) ($post['slug'] ?? '')));
+    $title = strtolower(trim((string) ($post['title'] ?? '')));
+    $excerpt = strtolower(trim((string) ($post['excerpt'] ?? '')));
+    $haystack = $slug . ' ' . $title . ' ' . $excerpt;
+
+    $reviewSignals = ['review', '-vs-', ' vs ', 'comparison', 'compare', 'best-', 'top-', 'under-'];
+    foreach ($reviewSignals as $signal) {
+        if (strpos($haystack, $signal) !== false) {
+            return 'reviews';
+        }
+    }
+
+    return 'blog';
+}
+
+function post_url_path(array $post): string
+{
+    $slug = trim((string) ($post['slug'] ?? ''));
+    if ($slug === '') {
+        return '/blog';
+    }
+
+    $postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
+    if ($postType === 'guide') {
+        return '/' . $slug;
+    }
+    if ($postType === 'review') {
+        return '/reviews/' . $slug;
+    }
+    if ($postType === 'post') {
+        return '/blog/' . $slug;
+    }
+
+    $section = post_section($post);
+    if ($section === 'reviews') {
+        return '/reviews/' . $slug;
+    }
+    return '/blog/' . $slug;
+}
+
 function money(?float $amount, string $currency = 'USD'): string
 {
     if ($amount === null) {
@@ -727,6 +785,15 @@ function csrf_is_valid(?string $token): bool
 
 function frontend_admin_preview_enabled(): bool
 {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        return !empty($_SESSION['admin_ok'])
+            || (!empty($_SESSION['admin_user_id']) && !empty($_SESSION['admin_username']));
+    }
+
+    if (empty($_COOKIE[session_name()])) {
+        return false;
+    }
+
     if (session_status() !== PHP_SESSION_ACTIVE) {
         @session_start();
     }
@@ -947,6 +1014,21 @@ function detect_country_code(): string
     return parse_accept_language_country($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '');
 }
 
+function analytics_excluded_countries(): array
+{
+    // Keep this list short and explicit. Add/remove countries as needed.
+    return ['DO'];
+}
+
+function should_skip_analytics_for_country(string $countryCode): bool
+{
+    $countryCode = strtoupper(trim($countryCode));
+    if ($countryCode === '') {
+        return false;
+    }
+    return in_array($countryCode, analytics_excluded_countries(), true);
+}
+
 function detect_referrer_host(): string
 {
     $ref = trim((string) ($_SERVER['HTTP_REFERER'] ?? ''));
@@ -977,6 +1059,88 @@ function detect_source_type(string $referrerHost): string
     return 'other';
 }
 
+function clean_content_page_types(): array
+{
+    return ['home', 'blog', 'guides', 'guide', 'category', 'page', 'post', 'product'];
+}
+
+function suspicious_path_patterns(): array
+{
+    return [
+        'wp-admin',
+        'wp-login',
+        'wordpress',
+        '.env',
+        '.aws',
+        'phpinfo',
+        '_profiler',
+        'db.sql',
+        'database.sql',
+        'backup.sql',
+        'dump.sql',
+        'mysql.sql',
+        'upload.php',
+        'uploader.php',
+        'unzip.php',
+        'unzipper.php',
+        '_ignition',
+        'etc/passwd',
+        'id3/license.txt',
+        'assets/js/auth.js',
+        'assets/js/message.js',
+        'bot-connect.js',
+        'static/style/protect',
+        'static/style/sys_files',
+        'js/twint_ch.js',
+        'js/lkk_ch.js',
+        'css/support_parent.css',
+    ];
+}
+
+function suspicious_path_reason(string $path): string
+{
+    $normalized = strtolower(normalize_public_path($path));
+    foreach (suspicious_path_patterns() as $pattern) {
+        if (strpos($normalized, strtolower($pattern)) !== false) {
+            return $pattern;
+        }
+    }
+    return '';
+}
+
+function is_encoded_external_path(string $path): bool
+{
+    $raw = strtolower(trim($path));
+    if ($raw === '') {
+        return false;
+    }
+
+    $decoded = strtolower(rawurldecode($raw));
+    $normalized = strtolower(normalize_public_path($decoded));
+
+    // Common malformed tracker paths like /https%3A/www.amazon... or /http%3A/fortelescopes.com
+    if (
+        str_starts_with($normalized, '/http://')
+        || str_starts_with($normalized, '/https://')
+        || str_starts_with($normalized, '/http:/')
+        || str_starts_with($normalized, '/https:/')
+    ) {
+        return true;
+    }
+
+    // Encoded absolute URLs without protocol slash normalization.
+    if (
+        strpos($decoded, 'https%3a') !== false
+        || strpos($decoded, 'http%3a') !== false
+        || strpos($decoded, 'fonts.googleapis.com') !== false
+        || strpos($decoded, 'amazon.com/') !== false
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
 function anonymized_ip_hash(): string
 {
     $ip = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
@@ -991,20 +1155,135 @@ function is_owner_visit(): bool
     return ($_COOKIE['ft_owner_visit'] ?? '') === '1';
 }
 
+function normalize_public_path(string $path): string
+{
+    $pathOnly = parse_url(trim($path), PHP_URL_PATH);
+    $pathOnly = is_string($pathOnly) ? $pathOnly : '/';
+    $pathOnly = '/' . ltrim($pathOnly, '/');
+    $pathOnly = preg_replace('#/+#', '/', $pathOnly) ?? $pathOnly;
+    $pathOnly = rtrim($pathOnly, '/');
+    return $pathOnly === '' ? '/' : $pathOnly;
+}
+
+function category_has_clean_route(PDO $pdo, string $slug): bool
+{
+    $slug = slugify($slug);
+    if ($slug === '') {
+        return false;
+    }
+
+    // Only redirect when we know the root route is intentionally mapped.
+    return in_array($slug, ['accessories', 'telescopes'], true);
+}
+
+function canonical_public_path(PDO $pdo, string $path, array $options = []): string
+{
+    $normalized = normalize_public_path($path);
+    $parts = array_values(array_filter(explode('/', trim($normalized, '/')), static fn($v): bool => $v !== ''));
+    $guideDetailMode = (string) ($options['guide_detail_mode'] ?? 'guides');
+
+    if ($parts === []) {
+        return '/';
+    }
+
+    if ($parts[0] === 'category' && isset($parts[1])) {
+        $slug = slugify((string) $parts[1]);
+        if (category_has_clean_route($pdo, $slug)) {
+            return '/' . $slug;
+        }
+        return '/category/' . $slug;
+    }
+
+    if ($parts[0] === 'product' && isset($parts[1])) {
+        return '/product/' . slugify((string) $parts[1]);
+    }
+
+    if ($parts[0] === 'blog' && isset($parts[1])) {
+        return '/blog/' . slugify((string) $parts[1]);
+    }
+
+    if ($parts[0] === 'guides' && isset($parts[1])) {
+        $slug = slugify((string) $parts[1]);
+        return $guideDetailMode === 'root' ? '/' . $slug : '/guides/' . $slug;
+    }
+
+    if ($parts[0] === 'guides') {
+        return '/guides';
+    }
+
+    if ($parts[0] === 'blog') {
+        return '/blog';
+    }
+
+    if (in_array($parts[0], ['accessories', 'telescopes'], true)) {
+        return '/' . $parts[0];
+    }
+
+    return $normalized;
+}
+
+function content_asset_path(string $value, string $fallback = ''): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return $fallback;
+    }
+
+    if (preg_match('#^/(https?://)#i', $value) === 1) {
+        $value = ltrim($value, '/');
+    }
+
+    if (preg_match('#^https?://#i', $value) === 1 || str_starts_with($value, '//')) {
+        return $value;
+    }
+
+    if (str_starts_with($value, '/')) {
+        return $value;
+    }
+
+    return '/' . ltrim($value, '/');
+}
+
 function track_page_view(PDO $pdo, string $path, string $pageType, string $pageSlug = '', int $productId = 0): void
 {
     if (is_owner_visit()) {
         return;
     }
 
-    $path = '/' . ltrim(trim($path), '/');
-    $path = substr($path, 0, 255) ?: '/';
+    $canonicalPath = canonical_public_path($pdo, $path, ['guide_detail_mode' => 'guides']);
+    $path = substr($canonicalPath, 0, 255) ?: '/';
     $pageType = substr(trim($pageType), 0, 40) ?: 'page';
     $pageSlug = substr(trim($pageSlug), 0, 255);
     $productId = max(0, $productId);
+
+    if (str_starts_with($path, '/product/')) {
+        $pathParts = explode('/', trim($path, '/'));
+        $slug = slugify((string) ($pathParts[1] ?? ''));
+        $pageType = 'product';
+        $pageSlug = $slug;
+        if ($productId <= 0) {
+            $product = find_product_by_slug($pdo, $slug);
+            if ($product !== null) {
+                $productId = (int) ($product['id'] ?? 0);
+            }
+        }
+    } elseif (preg_match('#^/(accessories|telescopes)$#', $path, $m) === 1) {
+        $pageType = 'category';
+        $pageSlug = $m[1];
+    } elseif (preg_match('#^/blog/([^/]+)$#', $path, $m) === 1) {
+        $pageType = 'post';
+        $pageSlug = slugify((string) $m[1]);
+    } elseif (preg_match('#^/guides/([^/]+)$#', $path, $m) === 1) {
+        $pageType = 'guide';
+        $pageSlug = slugify((string) $m[1]);
+    }
+
     $now = now_iso();
     $viewDate = gmdate('Y-m-d');
     $countryCode = substr(detect_country_code(), 0, 8) ?: 'UNK';
+    if (should_skip_analytics_for_country($countryCode)) {
+        return;
+    }
     $referrerHost = detect_referrer_host();
     $sourceType = detect_source_type($referrerHost);
     $ipHash = anonymized_ip_hash();
@@ -1076,15 +1355,19 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
     $prevToDate = gmdate('Y-m-d', strtotime($fromDate . ' -1 day'));
     $prevFromDate = gmdate('Y-m-d', strtotime($fromDate . ' -' . $days . ' days'));
 
+    $cleanTypes = clean_content_page_types();
+    $cleanTypePlaceholders = implode(',', array_fill(0, count($cleanTypes), '?'));
+
     $totalsStmt = $pdo->prepare(
         'SELECT
             COALESCE(SUM(views), 0) AS total_views,
             COUNT(*) AS rows_count,
             COUNT(DISTINCT path) AS unique_paths
          FROM page_views
-         WHERE view_date >= :from_date'
+         WHERE view_date >= ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')'
     );
-    $totalsStmt->execute([':from_date' => $fromDate]);
+    $totalsStmt->execute(array_merge([$fromDate], $cleanTypes));
     $totals = $totalsStmt->fetch() ?: ['total_views' => 0, 'rows_count' => 0, 'unique_paths' => 0];
 
     $previousTotalsStmt = $pdo->prepare(
@@ -1093,36 +1376,36 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
             COUNT(*) AS rows_count,
             COUNT(DISTINCT path) AS unique_paths
          FROM page_views
-         WHERE view_date BETWEEN :from_date AND :to_date'
+         WHERE view_date BETWEEN ? AND ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')'
     );
-    $previousTotalsStmt->execute([
-        ':from_date' => $prevFromDate,
-        ':to_date' => $prevToDate,
-    ]);
+    $previousTotalsStmt->execute(array_merge([$prevFromDate, $prevToDate], $cleanTypes));
     $previousTotals = $previousTotalsStmt->fetch() ?: ['total_views' => 0, 'rows_count' => 0, 'unique_paths' => 0];
 
     $topPagesStmt = $pdo->prepare(
         'SELECT path, page_type, SUM(views) AS total_views
          FROM page_views
-         WHERE view_date >= :from_date
+         WHERE view_date >= ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')
          GROUP BY path, page_type
          ORDER BY total_views DESC
          LIMIT 30'
     );
-    $topPagesStmt->execute([':from_date' => $fromDate]);
+    $topPagesStmt->execute(array_merge([$fromDate], $cleanTypes));
     $topPages = $topPagesStmt->fetchAll();
 
     $topProductsStmt = $pdo->prepare(
         'SELECT pv.product_id, p.title, p.slug, SUM(pv.views) AS total_views
          FROM page_views pv
          JOIN products p ON p.id = pv.product_id
-         WHERE pv.view_date >= :from_date
+         WHERE pv.view_date >= ?
+           AND pv.page_type = \'product\'
            AND pv.product_id > 0
          GROUP BY pv.product_id, p.title, p.slug
          ORDER BY total_views DESC
          LIMIT 30'
     );
-    $topProductsStmt->execute([':from_date' => $fromDate]);
+    $topProductsStmt->execute([$fromDate]);
     $topProducts = $topProductsStmt->fetchAll();
 
     $topCountriesStmt = $pdo->prepare(
@@ -1203,9 +1486,10 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
             COALESCE(SUM(CASE WHEN page_type = \'product\' THEN views ELSE 0 END), 0) AS product_views,
             COALESCE(SUM(CASE WHEN page_type IN (\'home\', \'category\', \'guide\', \'guides\', \'blog\', \'post\', \'page\') THEN views ELSE 0 END), 0) AS discovery_views
          FROM page_views
-         WHERE view_date >= :from_date'
+         WHERE view_date >= ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')'
     );
-    $funnelTotalsStmt->execute([':from_date' => $fromDate]);
+    $funnelTotalsStmt->execute(array_merge([$fromDate], $cleanTypes));
     $funnelTotals = $funnelTotalsStmt->fetch() ?: ['product_views' => 0, 'discovery_views' => 0];
     $productViews = (int) ($funnelTotals['product_views'] ?? 0);
     $discoveryViews = (int) ($funnelTotals['discovery_views'] ?? 0);
@@ -1213,21 +1497,121 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
     $pathViewsCurrentStmt = $pdo->prepare(
         'SELECT path, SUM(views) AS total_views
          FROM page_views
-         WHERE view_date >= :from_date
+         WHERE view_date >= ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')
          GROUP BY path'
     );
-    $pathViewsCurrentStmt->execute([':from_date' => $fromDate]);
+    $pathViewsCurrentStmt->execute(array_merge([$fromDate], $cleanTypes));
     $pathViewsCurrent = $pathViewsCurrentStmt->fetchAll();
     $pathViewsPrevStmt = $pdo->prepare(
         'SELECT path, SUM(views) AS total_views
          FROM page_views
-         WHERE view_date BETWEEN :from_date AND :to_date
+         WHERE view_date BETWEEN ? AND ?
+           AND page_type IN (' . $cleanTypePlaceholders . ')
          GROUP BY path'
     );
-    $pathViewsPrevStmt->execute([
-        ':from_date' => $prevFromDate,
-        ':to_date' => $prevToDate,
-    ]);
+    $pathViewsPrevStmt->execute(array_merge([$prevFromDate, $prevToDate], $cleanTypes));
+
+    $securityTrafficStmt = $pdo->prepare(
+        'SELECT path, page_slug, page_type, SUM(views) AS total_views, COUNT(*) AS records
+         FROM page_views
+         WHERE view_date >= ?
+           AND page_type IN (\'not_found\', \'security\', \'bot\')
+         GROUP BY path, page_slug, page_type
+         ORDER BY total_views DESC
+         LIMIT 100'
+    );
+    $securityTrafficStmt->execute([$fromDate]);
+    $securityTraffic = $securityTrafficStmt->fetchAll() ?: [];
+    $noiseViewsStmt = $pdo->prepare(
+        'SELECT COALESCE(SUM(views), 0) AS noise_views
+         FROM page_views
+         WHERE view_date >= ?
+           AND page_type IN (\'not_found\', \'security\', \'bot\')'
+    );
+    $noiseViewsStmt->execute([$fromDate]);
+    $noiseViewsRow = $noiseViewsStmt->fetch() ?: ['noise_views' => 0];
+    $noiseViews = (int) ($noiseViewsRow['noise_views'] ?? 0);
+    $humanViews = max(0, $totalViews);
+    $trafficTotal = $humanViews + $noiseViews;
+    $humanScore = $trafficTotal > 0 ? round(($humanViews / $trafficTotal) * 100, 2) : 100.0;
+
+    $brokenAssetsStmt = $pdo->prepare(
+        'SELECT path, SUM(views) AS total_views, COUNT(*) AS records
+         FROM page_views
+         WHERE view_date >= ?
+           AND page_type IN (\'not_found\', \'security\')
+           AND (
+                path LIKE \'%.ico%\' OR
+                path LIKE \'%.png%\' OR
+                path LIKE \'%.jpg%\' OR
+                path LIKE \'%.jpeg%\' OR
+                path LIKE \'%.webp%\' OR
+                path LIKE \'%.svg%\' OR
+                path LIKE \'/%https://%\'
+           )
+         GROUP BY path
+         ORDER BY total_views DESC
+         LIMIT 100'
+    );
+    $brokenAssetsStmt->execute([$fromDate]);
+    $brokenAssets = $brokenAssetsStmt->fetchAll() ?: [];
+
+    $duplicateRoutesStmt = $pdo->prepare(
+        'SELECT pv.page_type, pv.page_slug, pv.path, SUM(pv.views) AS total_views, COUNT(*) AS records
+         FROM page_views pv
+         INNER JOIN (
+            SELECT page_type, page_slug
+            FROM page_views
+            WHERE view_date >= ?
+              AND page_slug <> \'\'
+            GROUP BY page_type, page_slug
+            HAVING COUNT(DISTINCT path) > 1
+         ) d ON d.page_type = pv.page_type AND d.page_slug = pv.page_slug
+         WHERE pv.view_date >= ?
+         GROUP BY pv.page_type, pv.page_slug, pv.path
+         ORDER BY total_views DESC
+         LIMIT 100'
+    );
+    $duplicateRoutesStmt->execute([$fromDate, $fromDate]);
+    $duplicateRoutes = $duplicateRoutesStmt->fetchAll() ?: [];
+
+    $productMismatchStmt = $pdo->prepare(
+        'SELECT page_type, page_slug, path, SUM(views) AS total_views, COUNT(*) AS records
+         FROM page_views
+         WHERE view_date >= ?
+           AND path LIKE \'/product/%\'
+           AND page_type <> \'product\'
+         GROUP BY page_type, page_slug, path
+         ORDER BY total_views DESC
+         LIMIT 100'
+    );
+    $productMismatchStmt->execute([$fromDate]);
+    $productRouteMismatch = $productMismatchStmt->fetchAll() ?: [];
+
+    $commercialPagesStmt = $pdo->prepare(
+        'SELECT path, page_type, page_slug, SUM(views) AS total_views
+         FROM page_views
+         WHERE view_date >= ?
+           AND page_type IN (\'category\', \'guide\', \'guides\', \'blog\', \'post\', \'page\', \'home\')
+         GROUP BY path, page_type, page_slug
+         ORDER BY total_views DESC
+         LIMIT 100'
+    );
+    $commercialPagesStmt->execute([$fromDate]);
+    $topCommercialPages = $commercialPagesStmt->fetchAll() ?: [];
+
+    $amazonClicksStmt = $pdo->prepare(
+        'SELECT p.asin, p.slug, p.title, COUNT(*) AS clicks
+         FROM outbound_clicks oc
+         LEFT JOIN products p ON p.id = oc.product_id
+         WHERE oc.click_date >= ?
+         GROUP BY p.asin, p.slug, p.title
+         ORDER BY clicks DESC
+         LIMIT 100'
+    );
+    $amazonClicksStmt->execute([$fromDate]);
+    $amazonClicksByProduct = $amazonClicksStmt->fetchAll() ?: [];
     $pathViewsPrev = $pathViewsPrevStmt->fetchAll();
 
     $pathMap = [];
@@ -1328,6 +1712,18 @@ function get_views_dashboard(PDO $pdo, int $days = 30): array
             'ctr_percent' => $ctr,
             'top_products' => $topClickedProducts,
         ],
+        'human_signal' => [
+            'human_views' => $humanViews,
+            'noise_views' => $noiseViews,
+            'total_views_including_noise' => $trafficTotal,
+            'human_score' => $humanScore,
+        ],
+        'security_traffic' => $securityTraffic,
+        'broken_assets' => $brokenAssets,
+        'duplicate_routes' => $duplicateRoutes,
+        'product_route_mismatch' => $productRouteMismatch,
+        'top_commercial_pages' => $topCommercialPages,
+        'amazon_clicks_by_product' => $amazonClicksByProduct,
     ];
 }
 
@@ -1604,6 +2000,9 @@ function track_outbound_click(PDO $pdo, string $targetUrl, int $productId = 0, s
     $fromPath = '/' . ltrim(trim($fromPath), '/');
     $fromPath = substr($fromPath, 0, 255) ?: '/';
     $countryCode = substr(detect_country_code(), 0, 8) ?: 'UNK';
+    if (should_skip_analytics_for_country($countryCode)) {
+        return;
+    }
     $referrerHost = detect_referrer_host();
     $sourceType = detect_source_type($referrerHost);
 
@@ -1866,7 +2265,7 @@ function lazy_load_youtube_embeds(string $content): string
             </svg>
         </div>
     </div>
-    <div class="youtube-iframe-placeholder" data-src="https://www.youtube-nocookie.com/embed/' . e($videoId) . '?rel=0&modestbranding=1" style="display:none;"></div>
+    <div class="youtube-iframe-placeholder" data-src="https://www.youtube-nocookie.com/embed/' . e($videoId) . '?rel=0&modestbranding=1"></div>
 </div>';
     }, $content) ?? $content;
 }
@@ -2047,16 +2446,24 @@ function generate_dynamic_schema(array $post, string $baseUrl): array
  */
 function apply_security_checks(): void
 {
-    // Block spam referrers
-    if (is_spam_referrer()) {
-        http_response_code(403);
-        header('X-Robots-Tag: noindex, nofollow');
-        exit('Access denied.');
-    }
-    
-    // Block access to setup-config.php (WordPress already installed)
-    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
-    if (strpos($requestUri, '/wp-admin/setup-config.php') !== false) {
+    // Block common probing paths (this is not a WordPress install)
+    $requestUri = strtolower((string) ($_SERVER['REQUEST_URI'] ?? ''));
+    if (
+        strpos($requestUri, '/wp-admin/setup-config.php') !== false
+        || strpos($requestUri, '/wp-admin/install.php') !== false
+        || strpos($requestUri, '/wordpress/wp-admin/setup-config.php') !== false
+        || strpos($requestUri, '/wordpress/wp-admin/install.php') !== false
+        || strpos($requestUri, '/wp-admin') !== false
+        || strpos($requestUri, '/wordpress') !== false
+        || strpos($requestUri, '/xmlrpc.php') !== false
+        || strpos($requestUri, '/etc/passwd') !== false
+        || strpos($requestUri, '/@fs/etc/passwd') !== false
+        || strpos($requestUri, '/.env') !== false
+        || strpos($requestUri, '/lander/sber') !== false
+        || strpos($requestUri, '/sberbank-quiz') !== false
+        || strpos($requestUri, '/tink_chat') !== false
+        || strpos($requestUri, '/rosneft') !== false
+    ) {
         http_response_code(403);
         header('X-Robots-Tag: noindex, nofollow');
         exit('Access denied.');

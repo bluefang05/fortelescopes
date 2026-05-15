@@ -6,18 +6,18 @@
         <span class="help-icon" title="Que: resume para que sirve cada prompt. Por que: te ayuda a elegir rapido el prompt correcto sin repetir trabajo." aria-label="Ayuda: que y por que">?</span>
         para recordar que hace cada bloque y por que conviene usarlo.
     </p>
-    <div style="margin:0 0 12px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fbff;">
-        <strong style="font-size:13px;">Claude / ChatGPT Flow:</strong>
-        <ol style="margin:8px 0 0 18px;padding:0;">
+    <div style="margin:0 0 12px;padding:12px 14px;border:1px solid #2a486d;border-radius:10px;background:linear-gradient(180deg,#0f223a 0%,#0c1d33 100%);color:#d7e7ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);">
+        <strong style="font-size:14px;color:#ffffff;">Claude / ChatGPT Flow:</strong>
+        <ol style="margin:8px 0 0 20px;padding:0;color:#d7e7ff;line-height:1.45;">
             <li>Copy Operator Layer una vez por chat.</li>
             <li>Copy Mission Prompt segun tipo de contenido.</li>
             <li>Generate draft.</li>
             <li>Run Post-Generation QA prompt before publishing/importing.</li>
         </ol>
     </div>
-    <div style="margin:0 0 12px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;">
-        <strong style="font-size:13px;">Frequency Order (most used first):</strong>
-        <ol style="margin:8px 0 0 18px;padding:0;">
+    <div style="margin:0 0 12px;padding:12px 14px;border:1px solid #2a486d;border-radius:10px;background:linear-gradient(180deg,#0f223a 0%,#0c1d33 100%);color:#d7e7ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.03);">
+        <strong style="font-size:14px;color:#ffffff;">Frequency Order (most used first):</strong>
+        <ol style="margin:8px 0 0 20px;padding:0;color:#d7e7ff;line-height:1.45;">
             <li>Full Run Pack: Posts</li>
             <li>Full Run Pack: Guides</li>
             <li>Full Run Pack: New Products</li>
@@ -29,8 +29,16 @@
     <div class="copy-toolbar" style="margin-bottom:12px;">
         <h3 style="margin:0;">Legacy Prompt (First)</h3>
         <div class="copy-actions">
-            <button class="btn btn-copy" type="button" data-copy-target="legacy_blog_prompt_with_sitemap_copy_source" data-copy-status="legacy_blog_prompt_with_sitemap_copy_status">Copy Old Prompt + Current Sitemap</button>
-            <span id="legacy_blog_prompt_with_sitemap_copy_status" class="copy-status"></span>
+            <button class="btn btn-copy" type="button" data-copy-target="legacy_post_prompt_with_sitemap_copy_source" data-copy-status="legacy_post_prompt_with_sitemap_copy_status">Copy Legacy Post Prompt + Sitemap</button>
+            <span id="legacy_post_prompt_with_sitemap_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="legacy_guide_prompt_with_sitemap_copy_source" data-copy-status="legacy_guide_prompt_with_sitemap_copy_status">Copy Legacy Guide Prompt + Sitemap</button>
+            <span id="legacy_guide_prompt_with_sitemap_copy_status" class="copy-status"></span>
+        </div>
+        <div class="copy-actions">
+            <button class="btn btn-copy" type="button" data-copy-target="legacy_review_prompt_with_sitemap_copy_source" data-copy-status="legacy_review_prompt_with_sitemap_copy_status">Copy Legacy Review Prompt + Sitemap</button>
+            <span id="legacy_review_prompt_with_sitemap_copy_status" class="copy-status"></span>
         </div>
     </div>
     <div class="copy-toolbar" style="margin-bottom:12px;">
@@ -115,7 +123,9 @@
             <span id="catalog_prompt_copy_status" class="copy-status"></span>
         </div>
     </div>
-    <textarea id="legacy_blog_prompt_with_sitemap_copy_source" class="copy-source" readonly><?= e($legacyBlogPromptWithSitemapCopyText) ?></textarea>
+    <textarea id="legacy_post_prompt_with_sitemap_copy_source" class="copy-source" readonly><?= e($legacyPostPromptWithSitemapCopyText) ?></textarea>
+    <textarea id="legacy_guide_prompt_with_sitemap_copy_source" class="copy-source" readonly><?= e($legacyGuidePromptWithSitemapCopyText) ?></textarea>
+    <textarea id="legacy_review_prompt_with_sitemap_copy_source" class="copy-source" readonly><?= e($legacyReviewPromptWithSitemapCopyText) ?></textarea>
     <textarea id="blog_cms_ready_prompt_copy_source" class="copy-source" readonly><?= e($blogCmsReadyPromptCopyText) ?></textarea>
     <textarea id="full_run_pack_posts_copy_source" class="copy-source" readonly><?= e($fullRunPackPostsCopyText) ?></textarea>
     <textarea id="full_run_pack_guides_copy_source" class="copy-source" readonly><?= e($fullRunPackGuidesCopyText) ?></textarea>
@@ -151,7 +161,7 @@
         </div>
     </form>
     <?php if (is_array($catalogImportResult ?? null)): ?>
-        <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+        <div style="margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;background:#122238;">
             <p style="margin:0 0 8px;font-size:13px;">
                 Result:
                 <strong class="<?= !empty($catalogImportResult['ok']) ? 'ok' : 'fail' ?>">
@@ -215,7 +225,7 @@
         </div>
     </form>
     <?php if (is_array($affiliateDraftResult ?? null)): ?>
-        <div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;padding:10px;background:#f8fbff;">
+        <div style="margin-top:10px;border:1px solid var(--line);border-radius:8px;padding:10px;background:#122238;">
             <p style="margin:0 0 8px;font-size:13px;">
                 Result:
                 <strong class="<?= !empty($affiliateDraftResult['ok']) ? 'ok' : 'fail' ?>">

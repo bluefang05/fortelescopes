@@ -1,0 +1,104 @@
+﻿:root {
+  --bg: #070d16;
+  --bg-accent-1: #17304a;
+  --bg-accent-2: #143a33;
+  --panel: #0f1b2b;
+  --panel-soft: #122238;
+  --panel-hover: #182c48;
+  --text: #e6edf8;
+  --text-strong: #eaf1fc;
+  --muted: #9db0c9;
+  --line: rgba(155, 181, 214, 0.22);
+  --brand: #1f4f8e;
+  --brand-2: #2d6bc0;
+  --focus: #4f95ff;
+  --ok-bg: #e4f8ea;
+  --ok-text: #165f2b;
+  --error-bg: #ffe5e5;
+  --error-text: #8a1f1f;
+}
+
+html[data-enma-theme="light"], html.theme-light {
+  --bg: #f3f6fa; --bg-accent-1: #dde8f5; --bg-accent-2: #e8f1f7;
+  --panel: #ffffff; --panel-soft: #f7fbff; --panel-hover: #eef4fb;
+  --text: #122036; --text-strong: #0b172a; --muted: #4e5f77;
+  --line: rgba(29, 54, 88, 0.18); --brand: #1f4f8e; --brand-2: #2d6bc0; --focus: #2f70d6;
+  --ok-bg: #ddf5e5; --ok-text: #145d2d; --error-bg: #ffe8e8; --error-text: #8d1f1f;
+}
+html[data-enma-theme="dark"], html.theme-dark {
+  --bg: #070d16; --bg-accent-1: #17304a; --bg-accent-2: #143a33;
+  --panel: #0f1b2b; --panel-soft: #122238; --panel-hover: #182c48;
+  --text: #e6edf8; --text-strong: #eaf1fc; --muted: #9db0c9;
+  --line: rgba(155, 181, 214, 0.22); --brand: #1f4f8e; --brand-2: #2d6bc0; --focus: #4f95ff;
+}
+html[data-enma-theme="midnight"], html.theme-midnight {
+  --bg: #030711; --bg-accent-1: #0d1e3c; --bg-accent-2: #101b33;
+  --panel: #091224; --panel-soft: #0d1a31; --panel-hover: #132446;
+  --text: #dbe7fb; --text-strong: #f1f6ff; --muted: #90a8cc;
+  --line: rgba(127, 160, 205, 0.24); --brand: #2454a8; --brand-2: #3d78d8; --focus: #5fa1ff;
+}
+html[data-enma-theme="navy"], html.theme-navy {
+  --bg: #0b1525; --bg-accent-1: #20365c; --bg-accent-2: #1c2f4f;
+  --panel: #12243f; --panel-soft: #183053; --panel-hover: #24426f;
+  --text: #e5efff; --text-strong: #f2f7ff; --muted: #adc0df;
+  --line: rgba(151, 181, 221, 0.28); --brand: #2b63b5; --brand-2: #4b86de; --focus: #6ca8ff;
+}
+html[data-enma-theme="nord"], html.theme-nord {
+  --bg: #2e3440; --bg-accent-1: #3b4252; --bg-accent-2: #434c5e;
+  --panel: #3b4252; --panel-soft: #434c5e; --panel-hover: #4c566a;
+  --text: #eceff4; --text-strong: #f7f9fc; --muted: #d8dee9;
+  --line: rgba(216, 222, 233, 0.26); --brand: #5e81ac; --brand-2: #81a1c1; --focus: #88c0d0;
+}
+
+html[data-enma-theme], html[data-theme] body, html[class*="theme-"] body, body[class*="theme-"] {
+  color: var(--text) !important;
+  background: radial-gradient(1200px 500px at 90% -10%, var(--bg-accent-1) 0%, transparent 60%),
+              radial-gradient(700px 350px at -10% -15%, var(--bg-accent-2) 0%, transparent 55%), var(--bg) !important;
+}
+
+html[data-enma-theme], html[data-theme] .box, html[data-enma-theme], html[data-theme] .tabs, html[data-enma-theme], html[data-theme] .tab,
+html[data-enma-theme], html[data-theme] .stat, html[data-enma-theme], html[data-theme] .ops-nav, html[data-enma-theme], html[data-theme] .ops-link,
+html[data-enma-theme], html[data-theme] .maintenance-card, html[data-enma-theme], html[data-theme] .home-admin-group,
+html[data-enma-theme], html[data-theme] .home-admin-group > summary, html[data-enma-theme], html[data-theme] .workspace-help,
+html[data-enma-theme], html[data-theme] .home-help, html[data-enma-theme], html[data-theme] .ops-kpi, html[data-enma-theme], html[data-theme] .seo-panel,
+html[data-enma-theme], html[data-theme] .seo-metric, html[data-enma-theme], html[data-theme] .seo-checklist li,
+html[data-enma-theme], html[data-theme] .post-preview-card, html[data-enma-theme], html[data-theme] .post-render-preview,
+html[data-enma-theme], html[data-theme] .post-render-preview .hero-preview, html[data-enma-theme], html[data-theme] .empty {
+  background: var(--panel-soft) !important; border-color: var(--line) !important; color: var(--text) !important;
+}
+html[data-enma-theme], html[data-theme] .box, html[data-enma-theme], html[data-theme] .tabs, html[data-enma-theme], html[data-theme] .home-admin-group,
+html[data-enma-theme], html[data-theme] .maintenance-card, html[data-enma-theme], html[data-theme] .post-render-preview { background: var(--panel) !important; }
+
+html[data-enma-theme], html[data-theme] input, html[data-enma-theme], html[data-theme] textarea, html[data-enma-theme], html[data-theme] select,
+html[data-enma-theme], html[data-theme] .tab, html[data-enma-theme], html[data-theme] th {
+  background: var(--panel-soft) !important; color: var(--text) !important; border-color: var(--line) !important;
+}
+html[data-enma-theme], html[data-theme] th, html[data-enma-theme], html[data-theme] .stat-v, html[data-enma-theme], html[data-theme] .ops-kpi .v,
+html[data-enma-theme], html[data-theme] .seo-score, html[data-enma-theme], html[data-theme] h1, html[data-enma-theme], html[data-theme] h2,
+html[data-enma-theme], html[data-theme] h3, html[data-enma-theme], html[data-theme] h4, html[data-enma-theme], html[data-theme] h5, html[data-enma-theme], html[data-theme] h6 {
+  color: var(--text-strong) !important;
+}
+html[data-enma-theme], html[data-theme] .muted, html[data-enma-theme], html[data-theme] .stat-k, html[data-enma-theme], html[data-theme] .maintenance-meta,
+html[data-enma-theme], html[data-theme] .maintenance-last, html[data-enma-theme], html[data-theme] .preview-muted, html[data-enma-theme], html[data-theme] .copy-status {
+  color: var(--muted) !important;
+}
+html[data-enma-theme], html[data-theme] tbody tr:nth-child(even) { background: color-mix(in srgb, var(--panel-soft) 88%, transparent) !important; }
+html[data-enma-theme], html[data-theme] tbody tr:hover { background: var(--panel-hover) !important; }
+
+html[data-enma-theme], html[data-theme] .btn, html[data-enma-theme], html[data-theme] button.btn, html[data-enma-theme], html[data-theme] .tab.active {
+  background: linear-gradient(180deg, var(--brand-2), var(--brand)) !important;
+  border-color: var(--brand) !important; color: #fff !important;
+}
+html[data-enma-theme], html[data-theme] .error { background: var(--error-bg) !important; color: var(--error-text) !important; }
+html[data-enma-theme], html[data-theme] .ok { background: var(--ok-bg) !important; color: var(--ok-text) !important; }
+
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#fff"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #fff"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#ffffff"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #ffffff"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#f8fbff"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #f8fbff"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#f9fcff"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #f9fcff"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#fbfdff"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #fbfdff"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#f6f9fc"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #f6f9fc"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#f9fafb"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #f9fafb"],
+html[data-enma-theme], html[data-theme] .wrap [style*="background:#eef2f7"], html[data-enma-theme], html[data-theme] .wrap [style*="background: #eef2f7"] {
+  background: var(--panel-soft) !important; border-color: var(--line) !important; color: var(--text) !important;
+}

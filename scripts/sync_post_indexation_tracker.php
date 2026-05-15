@@ -39,10 +39,10 @@ $pdo->exec(
 );
 
 $postRows = $pdo->query(
-    'SELECT id, slug, post_type, status
+    'SELECT id, slug, post_type, status, extra_data
      FROM posts
      WHERE TRIM(COALESCE(slug, "")) <> ""
-       AND post_type IN ("post", "guide")'
+       AND post_type IN ("post", "review", "guide")'
 )->fetchAll();
 
 $existingIds = $pdo->query('SELECT post_id FROM post_indexation_tracker')->fetchAll(PDO::FETCH_COLUMN);
@@ -93,7 +93,9 @@ foreach ($postRows as $row) {
     }
     $postType = trim((string) ($row['post_type'] ?? 'post'));
     $postStatus = trim((string) ($row['status'] ?? 'draft'));
-    $path = $postType === 'guide' ? '/' . ltrim($slug, '/') : '/blog/' . ltrim($slug, '/');
+    $path = $postType === 'guide'
+        ? '/guides/' . ltrim($slug, '/')
+        : post_url_path(format_post_row($row));
     $canonicalUrl = absolute_url($path);
     $defaultState = $postStatus === 'published' ? 'pending' : 'excluded';
     $defaultIndexed = $postStatus === 'published' ? 0 : 0;
