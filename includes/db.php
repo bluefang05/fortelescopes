@@ -222,6 +222,26 @@ function init_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4'
     );
 
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS contact_messages (
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(120) NOT NULL,
+            email VARCHAR(190) NOT NULL,
+            subject VARCHAR(190) NOT NULL,
+            message_text TEXT NOT NULL,
+            status ENUM(\'new\',\'read\',\'archived\') NOT NULL DEFAULT \'new\',
+            source_path VARCHAR(255) NOT NULL DEFAULT \'/contact\',
+            ip_address VARCHAR(64) DEFAULT NULL,
+            user_agent VARCHAR(255) DEFAULT NULL,
+            admin_notes TEXT DEFAULT NULL,
+            read_at DATETIME DEFAULT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            KEY idx_contact_messages_status_created (status, created_at),
+            KEY idx_contact_messages_email_created (email, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+
     $stmt = $pdo->prepare('SHOW COLUMNS FROM posts LIKE \'post_type\'');
     $stmt->execute();
     if (!$stmt->fetch()) {
