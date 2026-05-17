@@ -36,7 +36,7 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, shrink-to-fit=no">
     <title><?= e($pageTitle) ?></title>
     <meta name="description" content="<?= e($meta['description'] ?? 'Affiliate product recommendations for telescope accessories.') ?>">
     <meta name="robots" content="<?= e($meta['robots'] ?? 'index,follow') ?>">
@@ -67,7 +67,7 @@ if (!empty($breadcrumbs) && is_array($breadcrumbs) && count($breadcrumbs) > 1) {
     <?php foreach (($jsonLd ?? []) as $schema): ?>
         <script type="application/ld+json"><?= json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?></script>
     <?php endforeach; ?>
-    <link rel="stylesheet" href="<?= e(url('/assets/css/site.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('/assets/css/site.css?v=' . (string) @filemtime(__DIR__ . '/../assets/css/site.css'))) ?>">
 </head>
 <body class="<?= $isHomePage ? 'page-home' : 'page-inner' ?>">
 <a class="skip-link" href="#content">Skip to content</a>

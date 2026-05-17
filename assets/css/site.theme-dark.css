@@ -1,0 +1,222 @@
+        /* Global dark theme */
+        :root {
+            --bg-ink: #070d16;
+            --bg-deep: #0d1a2a;
+            --bg-soft: #0a1422;
+            --text: #e6edf8;
+            --text-soft: #9db0c9;
+            --line: rgba(155, 181, 214, 0.18);
+            --card-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+        }
+
+        body {
+            background:
+                radial-gradient(1400px 420px at 10% -5%, #17304a 0%, transparent 60%),
+                radial-gradient(1200px 360px at 95% 0%, #143a33 0%, transparent 58%),
+                linear-gradient(180deg, #040a12 0 220px, #0a1422 220px 100%);
+            color: var(--text);
+        }
+
+        .panel,
+        .card,
+        .compare-table,
+        .faq-panel details,
+        .tier-card,
+        .trust-box {
+            background: #0f1b2b;
+            border-color: var(--line);
+            box-shadow: var(--card-shadow);
+        }
+
+        .trust-box {
+            background: #122238;
+            border-color: rgba(164, 192, 228, 0.3);
+            color: #e6f0ff;
+        }
+
+        .trust-box[style*="background-color: transparent"] {
+            background: #122238 !important;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #0f1b2b 0%, #0d1726 100%);
+            border-color: var(--line);
+        }
+
+        .hero p {
+            color: var(--text-soft);
+        }
+
+        .muted,
+        .card-copy,
+        .compare-value,
+        .faq-panel .muted,
+        .hint,
+        .pagination-info {
+            color: var(--text-soft);
+        }
+
+        .section-title,
+        .card h3,
+        .faq-panel summary,
+        .compare-label,
+        .brand-sub {
+            color: #eaf1fc;
+        }
+
+        .compare-label {
+            background: #122238;
+            border-right: 1px solid var(--line);
+        }
+
+        .card img,
+        .home-most-loved .card img,
+        .grid .card img,
+        .product-hero-media {
+            background: #0b1625;
+        }
+
+        .chip {
+            background: rgba(12, 26, 42, 0.9);
+            border-color: rgba(164, 192, 228, 0.32);
+            color: #dce9fa;
+        }
+
+        .goal-links a {
+            background: #122238;
+            border-color: #28415f;
+            color: #dce9fa;
+        }
+
+        .pagination-link {
+            background: #122238;
+            border-color: #2a4362;
+            color: #dce9fa;
+        }
+
+        .pagination-link:hover {
+            border-color: #4a6b94;
+        }
+
+        footer {
+            color: #9bb0cb;
+            border-top-color: rgba(142, 172, 209, 0.2);
+            background: #07101d;
+        }
+
+        footer a {
+            color: #d2e3fa;
+        }
+
+        /* Dark theme polish */
+        .topbar {
+            background:
+                linear-gradient(180deg, rgba(4, 11, 20, 0.98) 0%, rgba(4, 11, 20, 0.92) 100%),
+                radial-gradient(1200px 300px at 10% 0%, rgba(36, 72, 120, 0.18) 0%, transparent 70%);
+            border-bottom: 1px solid rgba(156, 185, 224, 0.2);
+        }
+
+        nav a,
+        .nav-current {
+            font-size: 13px;
+            letter-spacing: 0.07em;
+        }
+
+        nav a {
+            color: rgba(224, 236, 252, 0.92);
+        }
+
+        .brand-sub {
+            color: rgba(202, 220, 246, 0.9);
+        }
+
+        .panel {
+            background: linear-gradient(180deg, #0f1b2b 0%, #0d1726 100%);
+        }
+
+        .card {
+            background: linear-gradient(180deg, #122033 0%, #0f1a2b 100%);
+            border-color: rgba(155, 181, 214, 0.22);
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+        }
+
+        .badge {
+            color: #dce9fa;
+            background: linear-gradient(120deg, rgba(48, 93, 148, 0.42) 0%, rgba(34, 112, 94, 0.38) 100%);
+            border: 1px solid rgba(144, 178, 218, 0.28);
+        }
+
+        .compare-row {
+            border-bottom: 1px solid rgba(150, 178, 212, 0.16);
+        }
+
+        .compare-value a,
+        .muted a {
+            color: #c8dcfb;
+            text-underline-offset: 2px;
+        }
+
+        .article-prose {
+            color: #dce9fa;
+        }
+
+        .article-prose h1,
+        .article-prose h2,
+        .article-prose h3,
+        .article-prose h4,
+        .article-prose .blog-post > header h1,
+        .article-prose .discussion-reference h3 {
+            color: #f4f8ff;
+        }
+
+        .article-prose p,
+        .article-prose li,
+        .article-prose .post-content {
+            color: #dce9fa;
+        }
+
+        .article-prose .post-meta,
+        .article-prose .price-note,
+        .article-prose .amazon-disclaimer {
+            color: #b9cce6;
+        }
+
+        .article-prose a {
+            color: #9fc7ff;
+            text-underline-offset: 3px;
+        }
+
+        .article-prose blockquote,
+        .article-prose .discussion-reference {
+            background: #122238;
+            border-color: rgba(150, 178, 212, 0.36);
+            color: #dce9fa;
+        }
+
+        .article-prose .post-tags {
+            border-top-color: rgba(150, 178, 212, 0.2);
+        }
+
+        .article-prose .post-tags span {
+            background: rgba(48, 93, 148, 0.42);
+            color: #dce9fa;
+        }
+
+        .faq-panel details {
+            background: linear-gradient(180deg, #16263b 0%, #122033 100%) !important;
+            border-color: rgba(150, 178, 212, 0.34) !important;
+            color: #dce9fa !important;
+        }
+
+        .faq-panel summary {
+            color: #f2f7ff !important;
+        }
+
+        .faq-panel .muted {
+            color: #d0def3 !important;
+        }
+

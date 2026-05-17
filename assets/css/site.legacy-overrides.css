@@ -1,0 +1,35 @@
+        /* Force-dark legacy inline FAQ blocks used in some templates */
+        details[style*="background: #fff"],
+        details[style*="background:#fff"],
+        details[style*="background: #ffffff"],
+        details[style*="background:#ffffff"] {
+            background: linear-gradient(180deg, #16263b 0%, #122033 100%) !important;
+            border-color: rgba(150, 178, 212, 0.34) !important;
+            color: #dce9fa !important;
+        }
+
+        details[style*="border: 1px solid #e8edf3"],
+        details[style*="border:1px solid #e8edf3"] {
+            border-color: rgba(150, 178, 212, 0.34) !important;
+        }
+
+        details[style*="background: #fff"] > summary[style*="font-weight: 700"],
+        details[style*="background:#fff"] > summary[style*="font-weight: 700"],
+        details[style*="background: #ffffff"] > summary[style*="font-weight: 700"],
+        details[style*="background:#ffffff"] > summary[style*="font-weight: 700"] {
+            color: #f2f7ff !important;
+        }
+
+        details[style*="background: #fff"] .muted,
+        details[style*="background:#fff"] .muted,
+        details[style*="background: #ffffff"] .muted,
+        details[style*="background:#ffffff"] .muted {
+            color: #d0def3 !important;
+        }
+
+        .notice {
+            background: linear-gradient(180deg, #122034 0%, #0f1a2b 100%);
+            border-color: rgba(145, 173, 208, 0.28);
+            color: #d8e6fb;
+        }
+

@@ -1,0 +1,239 @@
+        @media (max-width: 760px) {
+            html {
+                -webkit-text-size-adjust: 100%;
+            }
+            body {
+                width: 100%;
+                max-width: 100%;
+                overflow-x: hidden;
+            }
+            body.page-inner main {
+                width: 100%;
+                max-width: none;
+                padding: 10px 10px 88px;
+            }
+            body.page-inner .hero,
+            body.page-inner .panel {
+                width: 100%;
+                margin-left: 0;
+                margin-right: 0;
+            }
+            body.page-inner .panel {
+                padding: 16px 14px;
+                border-radius: 14px;
+            }
+            .hero { padding: 18px 16px; border-radius: 16px; }
+            .hero--with-image {
+                min-height: clamp(320px, 86vw, 520px);
+            }
+            .hero-visual-block .visual-text-block,
+            .hero-visual-block .trust-row {
+                display: none;
+            }
+            .hero-visual-block .visual-overlay-content {
+                justify-content: flex-end;
+                padding: 16px 14px 20px;
+            }
+            .hero-visual-block .visual-overlay-content .hero-main-cta {
+                width: auto;
+                max-width: calc(100% - 20px);
+                min-width: 0;
+                padding: 10px 14px;
+                font-size: 13px;
+                line-height: 1.2;
+                box-sizing: border-box;
+            }
+            .hero h1, .hero h2 { font-size: clamp(26px, 9vw, 38px); }
+            .hero p {
+                font-size: 15px;
+                line-height: 1.55;
+            }
+            .section-title {
+                font-size: 22px;
+                line-height: 1.2;
+            }
+            .article-prose {
+                font-size: 16px;
+                line-height: 1.72;
+            }
+            .article-prose h2 {
+                font-size: 25px;
+            }
+            .article-prose h3 {
+                font-size: 21px;
+            }
+            .article-prose .telescope-cta-section {
+                padding: 22px 14px;
+                border-radius: 14px;
+            }
+            .article-prose .telescope-cta-section a[href*="amazon.com"] {
+                width: 100%;
+                min-width: 0;
+                padding: 13px 16px;
+                border-radius: 14px;
+            }
+            .hero-visual {
+                min-height: 180px;
+            }
+            .topbar { padding: 10px 14px 12px; }
+            nav { gap: 12px; }
+            nav a, .nav-current { font-size: 12px; letter-spacing: 0.06em; }
+            .brand { gap: 10px; }
+            .brand-logo-wrap { width: 88px; height: 88px; }
+            .brand-logo { width: 84px; height: 84px; }
+            .brand-title { font-size: clamp(20px, 7vw, 26px); letter-spacing: 0.045em; }
+            .brand-sub { font-size: 9px; letter-spacing: 0.14em; }
+            main { padding: 0 0 88px; }
+            .content-constrained { padding: 0 14px; }
+            .card img { height: 188px; }
+            .trust-strip { grid-template-columns: 1fr; }
+            .hero--with-image .trust-row { grid-template-columns: 1fr; }
+            .goal-links { grid-template-columns: 1fr 1fr; }
+            .promo-strip { grid-template-columns: 1fr; }
+            .promo-goal-links { grid-template-columns: 1fr 1fr; }
+            .promo-tile { min-height: 220px; }
+            .visual-size-full,
+            .visual-size-half,
+            .visual-size-third { grid-column: span 1; min-height: 220px; }
+            .tier-grid { grid-template-columns: 1fr; }
+            .compare-row { grid-template-columns: 1fr; }
+            .compare-label {
+                border-right: 0;
+                border-bottom: 1px solid rgba(150, 178, 212, 0.18);
+            }
+            .product-hero-media { height: clamp(240px, 72vw, 420px); }
+            .product-hero-media {
+                max-width: 100%;
+                aspect-ratio: 1 / 1;
+                height: auto;
+            }
+            .mobile-sticky-cta {
+                position: fixed;
+                left: 10px;
+                right: 10px;
+                bottom: 10px;
+                z-index: 50;
+                display: block;
+                padding: 12px 14px;
+                border-radius: 14px;
+                text-align: center;
+                background: linear-gradient(140deg, var(--brand) 0%, #ff5c00 100%);
+                color: #fff;
+                text-decoration: none;
+                font-size: 14px;
+                font-weight: 800;
+                box-shadow: 0 16px 24px rgba(255, 92, 0, 0.35);
+            }
+            
+            /* YouTube Lazy Load - Mobile */
+            .youtube-lazy-wrapper {
+                position: relative;
+                width: 100%;
+                max-width: 100%;
+                aspect-ratio: 16 / 9;
+                margin: 18px 0;
+                border-radius: 12px;
+                overflow: hidden;
+                background: #000;
+                cursor: pointer;
+            }
+            .youtube-thumbnail {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-size: contain;
+                background-position: center;
+                background-repeat: no-repeat;
+                background-color: #000;
+            }
+            .mobile-context-cta {
+                position: fixed;
+                left: 10px;
+                right: 10px;
+                bottom: 62px;
+                z-index: 49;
+                display: block;
+                padding: 11px 14px;
+                border-radius: 12px;
+                text-align: center;
+                background: #0f2238;
+                color: #f4f8ff;
+                border: 1px solid rgba(201, 224, 255, 0.28);
+                text-decoration: none;
+                font-size: 13px;
+                font-weight: 800;
+                box-shadow: 0 12px 18px rgba(6, 12, 22, 0.3);
+            }
+            .youtube-play-button {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 68px;
+                height: 48px;
+                transition: transform 200ms ease;
+            }
+            .youtube-lazy-wrapper:hover .youtube-play-button {
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+
+            .blog-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 1060px) and (min-width: 761px) {
+            .blog-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        
+        /* YouTube Lazy Load Styles - Desktop & Mobile */
+        .youtube-lazy-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+            aspect-ratio: 16 / 9;
+            margin: 18px 0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+        .youtube-thumbnail {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-color: #000;
+        }
+        .youtube-play-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 68px;
+            height: 48px;
+            transition: transform 200ms ease;
+            opacity: 0.9;
+        }
+        .youtube-lazy-wrapper:hover .youtube-play-button {
+            transform: translate(-50%, -50%) scale(1.1);
+            opacity: 1;
+        }
+        .youtube-lazy-wrapper iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: 0;
+        }
+
