@@ -86,6 +86,11 @@ $postSection = post_section($post);
 $postHubPath = $postSection === 'reviews' ? '/reviews' : ($postSection === 'learn' ? '/learn' : '/blog');
 $postHubLabel = $postSection === 'reviews' ? 'Reviews' : ($postSection === 'learn' ? 'Learn' : 'Blog');
 $postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
+$postSlug = strtolower(trim((string) ($post['slug'] ?? '')));
+$renderIntroBlocks = !empty($post['render_intro_blocks']);
+if ($postSlug === 'why-is-my-telescope-blurry') {
+    $renderIntroBlocks = false;
+}
 
 ?>
 <section class="hero">
@@ -121,13 +126,14 @@ $postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
     ?>
 </section>
 
-<?php if ($postSummary !== ''): ?>
+<?php if ($renderIntroBlocks && $postSummary !== ''): ?>
 <section class="panel u-mb-18">
     <h2 class="section-title u-mt-0">Quick answer</h2>
     <p class="muted"><?= e($postSummary) ?></p>
 </section>
 <?php endif; ?>
 
+<?php if ($renderIntroBlocks): ?>
 <section class="panel u-mb-18">
     <h2 class="section-title u-mt-0">Affiliate and editorial note</h2>
     <p class="muted">Some links on this page may be affiliate links. As an Amazon Associate, this site may earn from qualifying purchases. Product recommendations are based on beginner usability, setup friction, and value.</p>
@@ -150,10 +156,13 @@ $postType = strtolower(trim((string) ($post['post_type'] ?? 'post')));
         </div>
     </div>
 </section>
+<?php endif; ?>
 
 <?php if ($postHtml !== ''): ?>
 <section class="panel article-content u-mb-18">
-    <h2 class="section-title u-mt-0">Full article</h2>
+    <?php if ($renderIntroBlocks): ?>
+        <h2 class="section-title u-mt-0">Full article</h2>
+    <?php endif; ?>
     <article class="article-prose">
         <?= $postHtml ?>
     </article>

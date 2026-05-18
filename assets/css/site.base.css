@@ -16,8 +16,11 @@
             --brand: #ff7a1a;
             --brand-dark: #cc5300;
             --mint: #b8ffe5;
-            --text: #101826;
-            --text-soft: #4d5666;
+            --text: #111827;
+            --text-soft: #374151;
+            --text-muted: #4b5563;
+            --text-meta: #6b7280;
+            --link: #1d4ed8;
             --line: rgba(10, 24, 40, 0.12);
             --card-shadow: 0 16px 30px rgba(7, 14, 20, 0.16);
             --radius: 18px;
@@ -36,6 +39,13 @@
         }
 
         a { color: inherit; }
+
+        main a:not(.btn):not(.card-cta):not(.brand):not(nav a),
+        footer a {
+            color: var(--link);
+            font-weight: 700;
+            text-underline-offset: 3px;
+        }
         .sr-only {
             position: absolute;
             width: 1px;
@@ -926,7 +936,8 @@
         .muted {
             margin: 0 0 20px;
             font-size: 15px;
-            color: var(--text-soft);
+            color: var(--text-muted);
+            line-height: 1.62;
         }
 
         .grid {
@@ -992,7 +1003,7 @@
 
         .card-copy {
             margin: 0;
-            color: #4d5666;
+            color: #374151;
             font-size: 14px;
             line-height: 1.46;
             min-height: 42px;
@@ -1015,7 +1026,7 @@
 
         .hint {
             font-size: 12px;
-            color: #5f6b7d;
+            color: var(--text-meta);
             font-weight: 600;
         }
 
@@ -1080,7 +1091,7 @@
 
         .pagination-info {
             font-size: 13px;
-            color: var(--text-soft);
+            color: var(--text-muted);
             font-weight: 700;
         }
 
@@ -1171,7 +1182,7 @@
         }
 
         .article-prose {
-            color: #1c2940;
+            color: #1f2937;
             font-size: 16px;
             line-height: 1.75;
         }
@@ -1226,7 +1237,7 @@
             background: #f6f9ff;
             border-radius: 10px;
             padding: 12px 14px;
-            color: #2b3c57;
+            color: #1f2937;
         }
 
         .article-prose .blog-post > header {
@@ -1245,7 +1256,7 @@
 
         .article-prose .post-meta {
             margin: 0;
-            color: #52627a;
+            color: var(--text-meta);
             font-size: 16px;
         }
 
@@ -1438,7 +1449,7 @@
 
         .tier-card p {
             margin: 0 0 8px;
-            color: #4d5666;
+            color: #374151;
             font-size: 13px;
         }
 
@@ -1470,6 +1481,24 @@
             padding: 11px 12px;
             font-size: 14px;
             color: #1f2a3d;
+        }
+
+        .category-quick-compare .compare-value {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            line-height: 1.45;
+        }
+
+        .category-quick-compare .compare-product-title {
+            color: inherit;
+            font-size: 15px;
+            font-weight: 800;
+        }
+
+        .category-quick-compare .compare-rationale {
+            opacity: 0.92;
         }
 
         .pill {
@@ -1505,14 +1534,14 @@
             width: 100%;
             margin: 0;
             padding: 24px 28px 42px;
-            color: #2f3d58;
+            color: #374151;
             font-size: 14px;
             text-align: center;
             border-top: 1px solid rgba(33, 59, 99, 0.16);
             margin-top: 24px;
         }
 
-        footer a { color: #213b63; text-underline-offset: 2px; }
+        footer a { text-underline-offset: 3px; }
 
         body.page-inner main {
             max-width: 1180px;
@@ -1566,7 +1595,7 @@
             margin: 10px 0 0;
             font-size: 15px;
             line-height: 1.6;
-            color: #3b4f69;
+            color: #374151;
         }
 
         @keyframes rise {

@@ -4,7 +4,10 @@
             --bg-deep: #0d1a2a;
             --bg-soft: #0a1422;
             --text: #e6edf8;
-            --text-soft: #9db0c9;
+            --text-soft: #cbd5e1;
+            --text-muted: #d0def3;
+            --text-meta: #b9cbe5;
+            --link: #9fc7ff;
             --line: rgba(155, 181, 214, 0.18);
             --card-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
         }
@@ -53,7 +56,7 @@
         .faq-panel .muted,
         .hint,
         .pagination-info {
-            color: var(--text-soft);
+            color: var(--text-muted);
         }
 
         .section-title,
@@ -99,7 +102,7 @@
         }
 
         footer {
-            color: #9bb0cb;
+            color: #c8d6ea;
             border-top-color: rgba(142, 172, 209, 0.2);
             background: #07101d;
         }
@@ -156,8 +159,16 @@
 
         .compare-value a,
         .muted a {
+            color: #9fc7ff;
+            text-underline-offset: 3px;
+        }
+
+        .category-quick-compare .compare-product-title {
+            color: #eef5ff;
+        }
+
+        .category-quick-compare .compare-rationale {
             color: #c8dcfb;
-            text-underline-offset: 2px;
         }
 
         .article-prose {
@@ -182,7 +193,7 @@
         .article-prose .post-meta,
         .article-prose .price-note,
         .article-prose .amazon-disclaimer {
-            color: #b9cce6;
+            color: var(--text-meta);
         }
 
         .article-prose a {

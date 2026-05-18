@@ -123,7 +123,7 @@ require_once __DIR__ . '/maintenance.php';
 $authenticated = !empty($_SESSION['admin_ok']);
 
 $activeTab = $authenticated ? (string) ($_GET['tab'] ?? 'control') : 'overview';
-if (!in_array($activeTab, ['control', 'overview', 'products', 'media', 'posts', 'indexation', 'prompts', 'users', 'messages', 'sql', 'views', 'analytics', 'maintenance'], true)) {
+if (!in_array($activeTab, ['control', 'overview', 'products', 'home', 'media', 'posts', 'indexation', 'prompts', 'users', 'messages', 'sql', 'views', 'analytics', 'maintenance'], true)) {
     $activeTab = 'control';
 }
 $viewRange = $authenticated ? strtolower(trim((string) ($_GET['view_range'] ?? 'custom'))) : 'custom';
@@ -394,9 +394,9 @@ $postsTotalPages = 1;
 $postsDraftCount = 0;
 $postsPublishedCount = 0;
 $allPosts = [];
-$postsStatusFilter = $authenticated ? strtolower(trim((string) ($_GET['posts_status'] ?? 'all'))) : 'all';
+$postsStatusFilter = $authenticated ? strtolower(trim((string) ($_GET['posts_status'] ?? 'published'))) : 'published';
 if (!in_array($postsStatusFilter, ['all', 'published', 'draft'], true)) {
-    $postsStatusFilter = 'all';
+    $postsStatusFilter = 'published';
 }
 if ($authenticated && $activeTab === 'posts') {
     $postsDraftCount = (int) $pdo->query("SELECT COUNT(*) FROM posts WHERE status = 'draft'")->fetchColumn();
@@ -562,7 +562,7 @@ $mediaPerPage = 24;
 $mediaTotal = 0;
 $mediaTotalPages = 1;
 $mediaTableReady = false;
-if ($authenticated && $activeTab === 'media') {
+if ($authenticated && in_array($activeTab, ['home', 'media'], true)) {
     try {
         $mediaTableReady = function_exists('enma_media_table_exists') && enma_media_table_exists($pdo);
         if ($mediaTableReady) {
@@ -671,7 +671,7 @@ $homeHeroSettings = [
     'site_public_smaxage' => '600',
 ];
 $homeHeroDraftSettings = $homeHeroSettings;
-if ($authenticated && $activeTab === 'media') {
+if ($authenticated && in_array($activeTab, ['home', 'media'], true)) {
     $homeHeroSettings['image'] = site_setting_get($pdo, 'home_hero_image', '');
     $homeHeroSettings['image_2x'] = site_setting_get($pdo, 'home_hero_image_2x', '');
     $homeHeroSettings['alt'] = site_setting_get($pdo, 'home_hero_alt', '');
@@ -2239,6 +2239,10 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
           }
 
           var heroSection = document.getElementById('home-hero-settings');
+          if (!heroSection && ['hero', 'tile1', 'tile2'].indexOf(assign) !== -1) {
+            postAssign(assign);
+            return;
+          }
           if (heroSection && typeof heroSection.scrollIntoView === 'function') {
             heroSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }
@@ -2529,6 +2533,8 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
 
         $('[data-media-filter]').on('click', function () {
           var filter = ($(this).attr('data-media-filter') || 'all').toString();
+          $('[data-media-filter]').removeClass('active');
+          $(this).addClass('active');
           $('[data-media-row="1"]').each(function () {
             var $row = $(this);
             var show = true;
@@ -2885,7 +2891,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
             '<label><span>Page size</span><select id="mte-size"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>',
             '</div>',
             '<div class="mte-row mte-row-2">',
-            '<div class="mte-view"><button class="btn" type="button" id="mte-view-table">Table</button><button class="btn" type="button" id="mte-view-grid">Grid</button></div>',
+            '<div class="mte-view"><button class="btn media-btn" type="button" id="mte-view-table">Table</button><button class="btn media-btn" type="button" id="mte-view-grid">Grid</button></div>',
             '<div class="muted" id="mte-summary">Loaded assets</div>',
             '<div id="mte-pager-top" class="mte-pager"></div>',
             '</div>'
@@ -2994,7 +3000,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                 '<h4>' + title.replace(/</g, '&lt;') + '</h4>',
                 '<div class="mte-meta">' + meta.replace(/</g, '&lt;') + '</div>',
                 '<div class="mte-badges">' + used + '</div>',
-                '<div class="mte-actions"><button class="btn btn-sm mte-preview" type="button">View</button><button class="btn btn-sm mte-copy" type="button">Copy URL</button></div>'
+                '<div class="mte-actions"><button class="btn media-btn media-btn-secondary mte-preview" type="button">View</button><button class="btn media-btn media-btn-copy mte-copy" type="button">Copy URL</button></div>'
               ].join('');
               card.querySelector('.mte-preview').addEventListener('click', function () { openPreview(row); });
               card.querySelector('.mte-copy').addEventListener('click', function () { navigator.clipboard.writeText(url); });
@@ -3005,17 +3011,17 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
           function renderPager(target, totalPages) {
             target.innerHTML = '';
             if (totalPages <= 1) return;
-            var prev = document.createElement('button'); prev.type = 'button'; prev.className = 'btn'; prev.textContent = 'Prev';
+            var prev = document.createElement('button'); prev.type = 'button'; prev.className = 'btn media-btn media-btn-secondary'; prev.textContent = 'Prev';
             prev.disabled = state.page <= 1;
             prev.addEventListener('click', function () { state.page--; apply(); });
             target.appendChild(prev);
             for (var p = 1; p <= totalPages; p++) {
-              var b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (p === state.page ? ' active' : '');
+              var b = document.createElement('button'); b.type = 'button'; b.className = 'btn media-btn media-btn-secondary' + (p === state.page ? ' active' : '');
               b.textContent = String(p);
               (function (pp) { b.addEventListener('click', function () { state.page = pp; apply(); }); })(p);
               target.appendChild(b);
             }
-            var next = document.createElement('button'); next.type = 'button'; next.className = 'btn'; next.textContent = 'Next';
+            var next = document.createElement('button'); next.type = 'button'; next.className = 'btn media-btn media-btn-secondary'; next.textContent = 'Next';
             next.disabled = state.page >= totalPages;
             next.addEventListener('click', function () { state.page++; apply(); });
             target.appendChild(next);
@@ -3077,7 +3083,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
           previewModal.className = 'mte-preview-modal';
           previewModal.setAttribute('aria-hidden', 'true');
           previewModal.style.display = 'none';
-          previewModal.innerHTML = '<div class="mte-preview-dialog"><div class="mte-preview-head"><h3 class="mte-p-title"></h3><button class="btn mte-close" type="button">Close</button></div><img class="mte-p-image" alt=""><div class="mte-preview-meta"><div><strong>File:</strong> <span class="mte-p-file"></span></div><div><strong>URL:</strong> <span class="mte-p-url"></span></div><div><strong>Usage:</strong> <span class="mte-p-used"></span></div><div class="mte-preview-actions"><button type="button" class="btn mte-copy-url">Copy URL</button></div></div></div>';
+          previewModal.innerHTML = '<div class="mte-preview-dialog"><div class="mte-preview-head"><h3 class="mte-p-title"></h3><button class="btn media-btn media-btn-secondary mte-close" type="button">Close</button></div><img class="mte-p-image" alt=""><div class="mte-preview-meta"><div><strong>File:</strong> <span class="mte-p-file"></span></div><div><strong>URL:</strong> <span class="mte-p-url"></span></div><div><strong>Usage:</strong> <span class="mte-p-used"></span></div><div class="mte-preview-actions"><button type="button" class="btn media-btn media-btn-copy mte-copy-url">Copy URL</button></div></div></div>';
           document.body.appendChild(previewModal);
           previewModal.addEventListener('click', function (e) { if (e.target === previewModal) previewModal.style.display = 'none'; });
           previewModal.querySelector('.mte-close').addEventListener('click', function () { previewModal.style.display = 'none'; });
@@ -3338,6 +3344,32 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
         }
         .empty { padding:14px; border:1px dashed #3a5272; border-radius:8px; color:#9db0c9; background:#0d1726; }
         .note-editor { margin-bottom: 12px; }
+        .note-editor,
+        .note-editing-area,
+        .note-editable {
+            background: #07111f !important;
+            color: #f8fafc !important;
+            border-color: var(--line) !important;
+        }
+        .note-editable,
+        .note-editable p,
+        .note-editable div,
+        .note-editable li,
+        .note-editable h1,
+        .note-editable h2,
+        .note-editable h3,
+        .note-editable h4 {
+            color: #f8fafc !important;
+        }
+        .note-editable a {
+            color: #93c5fd !important;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+        }
+        .note-toolbar {
+            background: #f8fafc !important;
+            border-color: var(--line) !important;
+        }
         .maintenance-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -3728,44 +3760,914 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
         .enma-admin .box { background: #0f1f33; border-color: #25415f; }
         .enma-admin .home-admin-group { background: #10243a; border-color: #25415f; }
         .enma-admin .home-admin-group > summary { background: #0b1b2e; color: #eaf2ff; }
-        .enma-admin label { color: #cddcf0; font-weight: 700; font-size: 12px; letter-spacing: .02em; }
+        .enma-admin label { color: #d8e6f7; font-weight: 800; font-size: 12px; letter-spacing: .02em; }
         .enma-admin input, .enma-admin textarea, .enma-admin select { background: #0b1b2e; border-color: #25415f; color: #eaf2ff; }
-        .media-table-wrap { overflow-x: auto; border: 1px solid #25415f; border-radius: 10px; }
-        .media-toolbar-enhanced { border: 1px solid #25415f; border-radius: 10px; padding: 10px; background: #10243a; margin: 0 0 12px; }
-        .media-toolbar-enhanced .mte-row { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 8px; align-items: end; }
-        .media-toolbar-enhanced .mte-row-2 { grid-template-columns: 1fr 1fr auto; margin-top: 8px; }
+        .enma-media-pro {
+            --media-bg: #06101d;
+            --media-panel: #0b1829;
+            --media-card: #102033;
+            --media-card-soft: #12263d;
+            --media-line: rgba(139, 169, 207, .22);
+            --media-line-strong: rgba(139, 169, 207, .34);
+            --media-text: #edf5ff;
+            --media-body: #d7e4f5;
+            --media-muted: #a9bad1;
+            --media-blue: #3478d8;
+            --media-blue-2: #255da9;
+            --media-danger: #b84b56;
+            --media-danger-bg: rgba(184, 75, 86, .13);
+        }
+        .home-page-hero,
+        .home-editor-panel,
+        .home-prompt-panel {
+            background: linear-gradient(180deg, rgba(13, 28, 47, .98), rgba(9, 20, 35, .98)) !important;
+            border: 1px solid var(--media-line) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, .28) !important;
+            overflow: visible !important;
+        }
+        .home-page-heading h2,
+        .home-section-head h2 {
+            margin: 0 !important;
+            color: var(--media-text) !important;
+            font-size: clamp(24px, 3vw, 34px) !important;
+            letter-spacing: 0;
+        }
+        .home-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin: 0 0 16px;
+        }
+        .home-prompt-panel .home-section-head h3 {
+            margin: 0;
+            color: var(--media-text);
+            font-size: 22px;
+        }
+        .home-eyebrow {
+            margin: 0 0 5px;
+            color: #8fb8f2;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .home-page-copy {
+            margin: 8px 0 0 !important;
+            color: var(--media-muted) !important;
+            font-size: 14px !important;
+            line-height: 1.55;
+        }
+        .home-stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+            gap: 12px !important;
+            margin: 18px 0 16px !important;
+        }
+        .home-stat-card {
+            padding: 14px !important;
+            border-radius: 14px !important;
+            background: rgba(16, 32, 51, .78) !important;
+            border-color: var(--media-line) !important;
+        }
+        .home-stat-card .k {
+            color: var(--media-muted) !important;
+            font-size: 12px !important;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+        .home-stat-card .v {
+            color: var(--media-text) !important;
+            font-size: 24px !important;
+            margin-top: 4px;
+        }
+        .home-status-text {
+            font-size: 16px !important;
+            line-height: 1.35 !important;
+        }
+        .home-editor-panel .home-help,
+        .home-health-card {
+            border: 1px solid var(--media-line) !important;
+            border-radius: 14px !important;
+            background: rgba(7, 17, 31, .58) !important;
+            color: var(--media-muted) !important;
+        }
+        .home-health-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin: 0 0 16px;
+        }
+        .home-health-card {
+            padding: 12px;
+        }
+        .home-health-card [style*="color:#1f3558"] {
+            color: var(--media-muted) !important;
+        }
+        .home-health-card [style*="color:#166534"] {
+            color: #9cf2bb !important;
+        }
+        .home-health-card [style*="color:#9a3412"] {
+            color: #ffd09a !important;
+        }
+        .home-local-nav,
+        .home-section-nav {
+            padding: 8px !important;
+            background: rgba(8, 18, 32, .55) !important;
+            border-radius: 12px !important;
+        }
+        .home-publish-bar,
+        .home-sticky-actions,
+        .home-live-publish-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 12px;
+            border: 1px solid var(--media-line);
+            border-radius: 14px;
+            background: rgba(7, 17, 31, .68);
+            margin: 0 0 14px;
+        }
+        .home-sticky-actions {
+            position: sticky;
+            bottom: 10px;
+            z-index: 20;
+            margin-top: 18px;
+            box-shadow: 0 16px 36px rgba(0,0,0,.34);
+        }
+        .home-sticky-label {
+            color: var(--media-muted);
+            font-size: 13px;
+            font-weight: 800;
+            margin-right: auto;
+        }
+        .home-live-publish-form {
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+        .home-btn,
+        .enma-media-pro .home-btn {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            border-radius: 10px !important;
+            padding: 8px 12px !important;
+            border: 1px solid transparent !important;
+            font-size: 13px !important;
+            font-weight: 800 !important;
+            text-decoration: none !important;
+            box-shadow: none !important;
+        }
+        .home-btn-primary,
+        .enma-media-pro .btn.home-btn-primary {
+            background: linear-gradient(180deg, var(--media-blue), var(--media-blue-2)) !important;
+            border-color: rgba(124, 178, 255, .42) !important;
+            color: #fff !important;
+        }
+        .home-btn-secondary,
+        .enma-media-pro .btn.home-btn-secondary,
+        .enma-media-pro a.btn[href*="tab=media"],
+        #home-group-featured .btn {
+            background: rgba(16, 32, 51, .85) !important;
+            border-color: var(--media-line) !important;
+            color: var(--media-body) !important;
+        }
+        .home-btn-live,
+        .enma-media-pro .btn.home-btn-live {
+            background: rgba(185, 119, 42, .18) !important;
+            border-color: rgba(245, 174, 92, .44) !important;
+            color: #ffd9a6 !important;
+        }
+        #home-hero-form input,
+        #home-hero-form textarea,
+        #home-hero-form select,
+        .home-prompt-panel input,
+        .home-prompt-panel textarea,
+        .home-prompt-panel select {
+            min-height: 44px;
+            border-radius: 11px !important;
+            background: rgba(5, 15, 29, .86) !important;
+            border-color: var(--media-line) !important;
+            color: var(--media-text) !important;
+            font-size: 14px;
+        }
+        #home-hero-form textarea,
+        .home-prompt-panel textarea {
+            min-height: 96px;
+            line-height: 1.5;
+            resize: vertical;
+        }
+        .home-prompt-panel textarea {
+            font-family: Consolas, "Courier New", monospace;
+            min-height: 112px;
+        }
+        #home-hero-form label,
+        .home-prompt-panel label {
+            color: #d8e6f7;
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 5px;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .03em;
+        }
+        #home-hero-form a.btn[href*="tab=media"] {
+            margin: 4px 0 10px !important;
+        }
+        .home-admin-sections {
+            gap: 14px !important;
+        }
+        .home-admin-group {
+            border: 1px solid var(--media-line) !important;
+            border-radius: 15px !important;
+            background: rgba(8, 18, 32, .62) !important;
+            overflow: hidden;
+        }
+        .home-admin-group > summary {
+            position: relative;
+            padding: 15px 18px !important;
+            background: rgba(16, 32, 51, .82) !important;
+            border-bottom: 1px solid var(--media-line) !important;
+            color: var(--media-text) !important;
+            font-size: 15px;
+        }
+        .home-admin-group > summary::after {
+            content: "Expand";
+            float: right;
+            color: var(--media-muted);
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .home-admin-group[open] > summary::after {
+            content: "Collapse";
+        }
+        .home-admin-group-body {
+            padding: 18px !important;
+        }
+        #home-group-hero .home-admin-group-body {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(280px, .9fr);
+            gap: 14px 18px;
+            align-items: start;
+        }
+        #home-group-hero .home-admin-group-body > label,
+        #home-group-hero .home-admin-group-body > input,
+        #home-group-hero .home-admin-group-body > select,
+        #home-group-hero .home-admin-group-body > div:not([id]),
+        #home-group-hero .home-admin-group-body > a {
+            grid-column: 1;
+        }
+        #home_hero_image_preview {
+            grid-column: 2 !important;
+            grid-row: 1 / span 8;
+            display: block;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            min-height: 260px;
+            object-fit: cover;
+            border-radius: 14px !important;
+            border-color: var(--media-line) !important;
+            background: rgba(5, 15, 29, .8);
+        }
+        #home_hero_image_quality {
+            grid-column: 2 !important;
+            color: #ffd09a !important;
+        }
+        #home-group-tiles .home-admin-group-body {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+        }
+        .home-tile-card {
+            border: 1px solid var(--media-line);
+            border-radius: 14px;
+            background: rgba(7, 17, 31, .46);
+            padding: 14px;
+        }
+        #home-group-tiles .home-admin-group-body h3 {
+            margin: 0 0 8px !important;
+            color: var(--media-text);
+        }
+        #home_tile_1_image_preview,
+        #home_tile_2_image_preview {
+            display: block;
+            width: 100% !important;
+            max-width: none !important;
+            max-height: none !important;
+            min-height: 170px;
+            object-fit: cover;
+            border-radius: 13px !important;
+            border-color: var(--media-line) !important;
+            background: rgba(5, 15, 29, .8);
+            margin: 10px 0;
+        }
+        #home-group-banners .home-admin-group-body,
+        #home-group-goals-faq .home-admin-group-body,
+        #home-group-technical .home-admin-group-body,
+        #home-group-featured .home-admin-group-body {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px 14px;
+        }
+        #home-group-banners .home-admin-group-body h3,
+        #home-group-goals-faq .home-admin-group-body h3 {
+            grid-column: 1 / -1;
+            margin: 8px 0 0 !important;
+            color: var(--media-text);
+        }
+        #home-group-banners .home-admin-group-body > div,
+        #home-group-goals-faq .home-admin-group-body > div,
+        #home-group-technical .home-admin-group-body > div,
+        #home-group-featured .home-admin-group-body > div {
+            grid-column: 1 / -1;
+        }
+        #home-group-goals-faq textarea,
+        #home-group-goals-faq label,
+        #home-group-goals-faq input,
+        #home-group-technical label,
+        #home-group-technical input,
+        #home-group-featured select[multiple],
+        #home-group-featured label,
+        #home-group-featured input,
+        #home-group-technical input[id="site_og_image"] {
+            grid-column: 1 / -1;
+        }
+        .home-prompt-panel {
+            margin-top: 18px;
+            padding: 18px;
+        }
+        .home-prompt-panel .copy-status {
+            display: block;
+            min-height: 16px;
+            margin-top: 5px;
+        }
+        .enma-media-pro .tabs,
+        .enma-media-pro .quick-actions {
+            background: rgba(8, 18, 32, .82);
+            border-color: var(--media-line);
+            box-shadow: 0 12px 26px rgba(0, 0, 0, .22);
+        }
+        .enma-media-pro .tab,
+        .enma-media-pro .ops-link {
+            border-radius: 10px !important;
+            padding: 9px 12px !important;
+            background: rgba(18, 38, 61, .72) !important;
+            border: 1px solid var(--media-line) !important;
+            color: var(--media-body) !important;
+            font-size: 13px !important;
+            line-height: 1.1;
+            box-shadow: none !important;
+        }
+        .enma-media-pro .tab:hover,
+        .enma-media-pro .ops-link:hover {
+            background: rgba(27, 54, 86, .88) !important;
+            color: var(--media-text) !important;
+            border-color: var(--media-line-strong) !important;
+        }
+        .enma-media-pro .tab.active {
+            background: linear-gradient(180deg, rgba(61, 120, 216, .95), rgba(37, 93, 169, .95)) !important;
+            border-color: rgba(119, 168, 239, .48) !important;
+            color: #fff !important;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.08), 0 8px 22px rgba(37, 93, 169, .18) !important;
+        }
+        .enma-media-pro .tabs .tab.active {
+            background: linear-gradient(180deg, rgba(61, 120, 216, .95), rgba(37, 93, 169, .95)) !important;
+            border-color: rgba(119, 168, 239, .48) !important;
+        }
+        .media-page-hero,
+        .media-panel {
+            background: linear-gradient(180deg, rgba(13, 28, 47, .98), rgba(9, 20, 35, .98)) !important;
+            border: 1px solid var(--media-line) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, .28) !important;
+            overflow: visible !important;
+        }
+        .media-page-heading h2,
+        .media-section-head h2 {
+            margin: 0 !important;
+            color: var(--media-text) !important;
+            font-size: clamp(24px, 3vw, 34px) !important;
+            letter-spacing: 0;
+        }
+        .media-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin: 0 0 16px;
+        }
+        .media-eyebrow {
+            margin: 0 0 5px;
+            color: #8fb8f2;
+            font-size: 12px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .media-page-copy,
+        .media-help-text {
+            margin: 8px 0 0 !important;
+            color: var(--media-muted) !important;
+            font-size: 14px !important;
+            line-height: 1.55;
+        }
+        .media-stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+            gap: 12px !important;
+            margin: 18px 0 16px !important;
+        }
+        .media-stat-card {
+            padding: 14px !important;
+            border-radius: 14px !important;
+            background: rgba(16, 32, 51, .78) !important;
+            border-color: var(--media-line) !important;
+        }
+        .media-stat-card .k {
+            color: var(--media-muted) !important;
+            font-size: 12px !important;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+        .media-stat-card .v {
+            color: var(--media-text) !important;
+            font-size: 24px !important;
+            margin-top: 4px;
+        }
+        .media-status-text {
+            font-size: 16px !important;
+            line-height: 1.35 !important;
+        }
+        .media-section-nav {
+            padding: 8px !important;
+            background: rgba(8, 18, 32, .55) !important;
+            border-radius: 12px !important;
+        }
+        .media-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .media-upload-form input,
+        .media-upload-form textarea,
+        .media-upload-form select,
+        .media-server-search input,
+        .media-toolbar-enhanced input,
+        .media-toolbar-enhanced select {
+            min-height: 44px;
+            border-radius: 11px !important;
+            background: rgba(5, 15, 29, .86) !important;
+            border-color: var(--media-line) !important;
+            color: var(--media-text) !important;
+        }
+        .media-file-input {
+            padding: 10px !important;
+            cursor: pointer;
+        }
+        .media-btn,
+        .enma-media-pro .media-btn {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            min-height: 38px;
+            border-radius: 10px !important;
+            padding: 8px 12px !important;
+            font-size: 13px !important;
+            font-weight: 800 !important;
+            border: 1px solid transparent !important;
+            text-decoration: none !important;
+            box-shadow: none !important;
+        }
+        .media-btn-primary,
+        .enma-media-pro .media-btn-primary,
+        .enma-media-pro .btn.media-btn-primary {
+            background: linear-gradient(180deg, var(--media-blue), var(--media-blue-2)) !important;
+            border-color: rgba(124, 178, 255, .42) !important;
+            color: #fff !important;
+        }
+        .media-btn-secondary,
+        .enma-media-pro .media-btn-secondary,
+        .enma-media-pro .btn.media-btn-secondary,
+        .enma-media-pro .tab.media-btn-secondary,
+        .media-btn-muted,
+        .enma-media-pro .media-btn-muted,
+        .enma-media-pro .btn.media-btn-muted {
+            background: rgba(16, 32, 51, .85) !important;
+            border-color: var(--media-line) !important;
+            color: var(--media-body) !important;
+        }
+        .media-btn-muted,
+        .enma-media-pro .media-btn-muted {
+            min-height: 34px;
+            padding: 7px 10px !important;
+            color: var(--media-muted) !important;
+        }
+        .media-btn-danger,
+        .enma-media-pro .media-btn-danger,
+        .enma-media-pro .btn.media-btn-danger {
+            background: var(--media-danger-bg) !important;
+            border-color: rgba(223, 111, 123, .42) !important;
+            color: #ffc2c9 !important;
+        }
+        .media-btn-copy,
+        .enma-media-pro .media-btn-copy,
+        .enma-media-pro .btn.media-btn-copy {
+            min-height: 32px;
+            padding: 6px 9px !important;
+            background: rgba(12, 24, 40, .88) !important;
+            border-color: var(--media-line) !important;
+            color: var(--media-body) !important;
+            font-size: 12px !important;
+        }
+        .media-server-search {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) auto auto;
+            gap: 10px;
+            align-items: center;
+            margin: 0 0 12px;
+            padding: 12px;
+            border-radius: 14px;
+            background: rgba(7, 17, 31, .58);
+            border: 1px solid var(--media-line);
+        }
+        .media-server-search input {
+            margin: 0 !important;
+            min-width: 0 !important;
+        }
+        .media-quick-filters,
+        .media-bulk-toolbar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin: 0 0 12px;
+        }
+        .media-toolbar-enhanced {
+            border: 1px solid var(--media-line);
+            border-radius: 16px;
+            padding: 14px;
+            background: rgba(7, 17, 31, .66);
+            margin: 0 0 12px;
+        }
+        .media-toolbar-enhanced .mte-row {
+            display: grid;
+            grid-template-columns: minmax(220px, 1.4fr) repeat(5, minmax(120px, 1fr));
+            gap: 10px;
+            align-items: end;
+        }
+        .media-toolbar-enhanced .mte-row-2 {
+            grid-template-columns: auto minmax(180px, 1fr) auto;
+            margin-top: 12px;
+            align-items: center;
+        }
         .media-toolbar-enhanced label { margin: 0; }
-        .media-toolbar-enhanced label span { display: block; margin-bottom: 4px; font-size: 11px; color: #9fb3c8; }
-        .mte-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-        .mte-card { border: 1px solid #25415f; border-radius: 10px; background: #10243a; padding: 10px; }
-        .mte-card h4 { margin: 8px 0 6px; font-size: 14px; }
-        .mte-meta { color: #9fb3c8; font-size: 12px; }
-        .mte-badges { margin-top: 8px; }
-        .mte-badge { font-size: 11px; padding: 2px 6px; border-radius: 999px; border: 1px solid #25415f; }
-        .mte-badge.used { color: #87f0b0; border-color: #2b6a44; }
-        .mte-badge.unused { color: #f2c18d; border-color: #7d5830; }
+        .media-toolbar-enhanced label span {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: var(--media-muted);
+            font-weight: 800;
+        }
+        .mte-view {
+            display: inline-flex;
+            border: 1px solid var(--media-line);
+            border-radius: 12px;
+            padding: 3px;
+            background: rgba(5, 15, 29, .78);
+        }
+        .mte-view .btn,
+        .enma-media-pro .mte-view .btn {
+            min-height: 34px;
+            border-radius: 9px !important;
+            background: transparent !important;
+            border-color: transparent !important;
+            color: var(--media-muted) !important;
+        }
+        .mte-view .btn.active,
+        .enma-media-pro .mte-view .btn.active {
+            background: rgba(61, 120, 216, .26) !important;
+            color: var(--media-text) !important;
+            outline: none !important;
+        }
+        .mte-pager {
+            margin: 0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .mte-pager .btn,
+        .enma-media-pro .mte-pager .btn {
+            min-height: 32px;
+            padding: 6px 10px !important;
+            background: rgba(16, 32, 51, .85) !important;
+            border: 1px solid var(--media-line) !important;
+            color: var(--media-body) !important;
+        }
+        .mte-pager .btn.active,
+        .enma-media-pro .mte-pager .btn.active {
+            background: rgba(61, 120, 216, .28) !important;
+            color: var(--media-text) !important;
+            outline: none !important;
+        }
+        .media-quick-filters .media-btn.active,
+        .enma-media-pro .media-quick-filters .btn.media-btn.active {
+            background: rgba(61, 120, 216, .22) !important;
+            border-color: rgba(124, 178, 255, .38) !important;
+            color: var(--media-text) !important;
+        }
+        .media-table-wrap {
+            overflow-x: auto;
+            border: 1px solid var(--media-line);
+            border-radius: 14px;
+            background: rgba(5, 15, 29, .58);
+        }
+        .media-table-wrap table {
+            min-width: 1120px;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .media-table-wrap th {
+            padding: 12px 14px;
+            background: rgba(14, 30, 50, .96) !important;
+            color: var(--media-text) !important;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+        .media-table-wrap td {
+            padding: 14px;
+            border-bottom-color: rgba(139, 169, 207, .14);
+            color: var(--media-body);
+            vertical-align: middle;
+        }
+        .media-table-wrap tbody tr {
+            background: rgba(9, 20, 35, .35) !important;
+        }
+        .media-table-wrap tbody tr:hover {
+            background: rgba(24, 48, 78, .68) !important;
+        }
+        .media-preview-cell { width: 124px; }
+        .media-thumb {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 104px;
+            height: 76px;
+            object-fit: cover;
+            border-radius: 12px;
+            border: 1px solid var(--media-line);
+            background: #07111f;
+            color: var(--media-muted);
+            font-size: 12px;
+            font-weight: 900;
+        }
+        .media-thumb-placeholder {
+            background: rgba(16, 32, 51, .92);
+        }
+        .media-title {
+            max-width: 240px;
+            color: var(--media-text);
+            font-size: 14px;
+            line-height: 1.35;
+        }
+        .media-meta {
+            margin-top: 4px;
+            color: var(--media-muted) !important;
+            font-size: 12px !important;
+            line-height: 1.4;
+        }
+        .media-used-badge,
+        .media-type-badge,
+        .mte-badge {
+            display: inline-flex;
+            align-items: center;
+            width: fit-content;
+            margin-top: 7px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--media-line);
+            background: rgba(16, 32, 51, .72);
+            color: var(--media-body);
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .media-used-badge,
+        .mte-badge.used {
+            color: #9cf2bb;
+            border-color: rgba(100, 214, 141, .42);
+            background: rgba(32, 117, 70, .16);
+        }
+        .mte-badge.unused {
+            color: #ffd09a;
+            border-color: rgba(242, 193, 141, .38);
+            background: rgba(125, 88, 48, .14);
+        }
+        .media-file-name,
+        .media-url {
+            display: block;
+            max-width: 260px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .media-url-cell { max-width: 300px; }
+        .media-url {
+            color: #9dccff !important;
+            font-size: 12px;
+            text-decoration: none;
+        }
+        .media-url:hover { text-decoration: underline; }
+        .media-actions-cell {
+            min-width: 150px;
+        }
+        .media-copy-status {
+            display: block;
+            min-height: 16px;
+            margin-top: 5px;
+        }
+        .media-delete-link {
+            margin-top: 8px;
+            padding: 0;
+            border: 0;
+            background: transparent;
+            color: #ff9aa5;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .mte-actions-menu {
+            margin-top: 8px;
+            position: relative;
+        }
+        .mte-actions-menu summary {
+            display: inline-flex;
+            align-items: center;
+            min-height: 32px;
+            padding: 6px 9px;
+            cursor: pointer;
+            border: 1px solid var(--media-line);
+            border-radius: 9px;
+            color: var(--media-body);
+            background: rgba(16, 32, 51, .68);
+            font-size: 12px;
+            font-weight: 800;
+            list-style: none;
+        }
+        .mte-actions-menu summary::-webkit-details-marker { display: none; }
+        .mte-actions-list {
+            display: grid;
+            gap: 7px;
+            margin-top: 8px;
+            min-width: 170px;
+            padding: 8px;
+            border: 1px solid var(--media-line);
+            border-radius: 12px;
+            background: #091727;
+            box-shadow: 0 14px 30px rgba(0, 0, 0, .26);
+        }
+        .mte-actions-list form {
+            display: block !important;
+        }
+        .mte-actions-list .btn,
+        .mte-actions-list button {
+            width: 100%;
+            justify-content: flex-start;
+            margin: 0 !important;
+        }
+        .mte-grid {
+            margin: 12px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 12px;
+        }
+        .mte-card {
+            border: 1px solid var(--media-line);
+            border-radius: 14px;
+            background: rgba(16, 32, 51, .86);
+            padding: 12px;
+        }
+        .mte-card h4 {
+            margin: 10px 0 6px;
+            color: var(--media-text);
+            font-size: 15px;
+            line-height: 1.35;
+        }
+        .mte-meta {
+            color: var(--media-muted);
+            font-size: 12px;
+            line-height: 1.45;
+        }
         .mte-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .mte-pager { margin: 10px 0; display: flex; gap: 6px; flex-wrap: wrap; }
-        .mte-pager .btn.active, .mte-view .btn.active { outline: 2px solid #4f95ff; }
-        .mte-actions-menu { margin-top: 6px; }
-        .mte-actions-menu summary { cursor: pointer; font-size: 12px; color: #9fb3c8; }
-        .mte-actions-list { display: grid; gap: 6px; margin-top: 6px; }
-        .mte-preview-modal { position: fixed; inset: 0; background: rgba(2,8,15,.72); z-index: 10000; align-items: center; justify-content: center; padding: 16px; }
-        .mte-preview-dialog { width: min(920px, 100%); background: #0f1f33; border: 1px solid #25415f; border-radius: 12px; padding: 14px; }
-        .mte-preview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-        .mte-preview-meta { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; }
-        .mte-dropzone { border: 1px dashed #40658f; border-radius: 10px; padding: 10px; margin: 0 0 12px; cursor: pointer; background: #10243a; }
-        .mte-dropzone.drag { border-color: #73a7eb; box-shadow: 0 0 0 2px rgba(115,167,235,.2); }
-        .mte-file-name { margin-top: 8px; font-size: 12px; color: #9fb3c8; }
-        .mte-file-preview { margin-top: 8px; max-width: 220px; max-height: 120px; border-radius: 8px; border: 1px solid #25415f; }
+        .mte-preview-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(2,8,15,.76);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .mte-preview-dialog {
+            width: min(920px, 100%);
+            background: #0b1829;
+            border: 1px solid var(--media-line);
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,.38);
+        }
+        .mte-preview-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .mte-preview-meta {
+            margin-top: 12px;
+            display: grid;
+            gap: 8px;
+            color: var(--media-body);
+            font-size: 13px;
+        }
+        .mte-p-image {
+            width: 100%;
+            max-height: 60vh;
+            object-fit: contain;
+            border-radius: 12px;
+            background: #07111f;
+            border: 1px solid var(--media-line);
+        }
+        .mte-dropzone {
+            border: 1px dashed rgba(143, 184, 242, .48);
+            border-radius: 14px;
+            padding: 16px;
+            margin: 0 0 14px;
+            cursor: pointer;
+            background: rgba(7, 17, 31, .66);
+            color: var(--media-body);
+        }
+        .mte-dropzone.drag { border-color: #8fb8f2; box-shadow: 0 0 0 3px rgba(95, 161, 255, .18); }
+        .mte-file-name { margin-top: 8px; font-size: 12px; color: var(--media-muted); }
+        .mte-file-preview { margin-top: 10px; max-width: 240px; max-height: 140px; border-radius: 10px; border: 1px solid var(--media-line); }
         @media (max-width: 980px) {
+          .home-health-grid,
+          #home-group-hero .home-admin-group-body,
+          #home-group-tiles .home-admin-group-body,
+          #home-group-banners .home-admin-group-body,
+          #home-group-goals-faq .home-admin-group-body,
+          #home-group-technical .home-admin-group-body,
+          #home-group-featured .home-admin-group-body {
+            grid-template-columns: 1fr !important;
+          }
+          #home-group-hero .home-admin-group-body > label,
+          #home-group-hero .home-admin-group-body > input,
+          #home-group-hero .home-admin-group-body > select,
+          #home-group-hero .home-admin-group-body > div,
+          #home-group-hero .home-admin-group-body > a,
+          #home_hero_image_preview,
+          #home_hero_image_quality {
+            grid-column: 1 !important;
+            grid-row: auto !important;
+          }
+          #home_hero_image_preview {
+            min-height: 190px;
+          }
           .media-toolbar-enhanced .mte-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .media-toolbar-enhanced .mte-row-2 { grid-template-columns: 1fr; }
+          .media-form-grid { grid-template-columns: 1fr; }
+          .media-server-search { grid-template-columns: 1fr; }
+          .media-section-head { display: block; }
           .mte-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 680px) {
+          .home-page-hero,
+          .home-editor-panel,
+          .home-prompt-panel {
+            border-radius: 12px !important;
+            padding: 14px !important;
+          }
+          .home-publish-bar .home-btn,
+          .home-sticky-actions .home-btn,
+          .home-live-publish-form .home-btn {
+            width: 100%;
+          }
+          .home-sticky-label {
+            width: 100%;
+            margin-right: 0;
+          }
+          .media-page-hero,
+          .media-panel {
+            border-radius: 12px !important;
+            padding: 14px !important;
+          }
+          .media-toolbar-enhanced .mte-row { grid-template-columns: 1fr; }
           .mte-grid { grid-template-columns: 1fr; }
-          .media-table-wrap table { min-width: 920px; }
+          .media-table-wrap table { min-width: 980px; }
+          .media-thumb { width: 92px; height: 68px; }
+          .media-quick-filters .media-btn,
+          .media-bulk-toolbar .media-btn,
+          .media-server-search .media-btn {
+            width: 100%;
+          }
         }
         @media (max-width: 980px) {
             .tabs {
@@ -3824,6 +4726,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
             <a class="tab <?= $activeTab === 'control' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=control')) ?>">Control</a>
             <a class="tab <?= $activeTab === 'overview' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=overview')) ?>">Resumen</a>
             <a class="tab <?= $activeTab === 'products' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=products')) ?>">Productos</a>
+            <a class="tab <?= $activeTab === 'home' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=home')) ?>">Home</a>
             <a class="tab <?= $activeTab === 'media' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=media')) ?>">Media</a>
             <a class="tab <?= $activeTab === 'posts' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=posts')) ?>">Publicaciones</a>
             <a class="tab <?= $activeTab === 'indexation' ? 'active' : '' ?>" href="<?= e(url('/enma/?tab=indexation')) ?>">Indexacion</a>
@@ -3839,6 +4742,8 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
             <div class="quick-actions">
                 <span class="muted" style="margin:0;font-size:12px;font-weight:700;">Accesos rapidos:</span>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=products#products-list')) ?>">Lista de productos</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=home')) ?>">Home settings</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=media')) ?>">Media library</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=products#products-not-found-actions')) ?>">Limpieza not found</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=indexation')) ?>">Seguimiento indexacion</a>
                 <a class="ops-link" href="<?= e(url('/enma/?tab=prompts')) ?>">Workspace prompts</a>
@@ -4209,38 +5114,46 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
               <?= $productsPagination ?>
               <?php endif; ?>
           </section>
-        <?php elseif ($activeTab === 'media'): ?>
-        <section class="box">
-            <h2>Media Library Workspace</h2>
-            <p class="muted" style="margin:0 0 10px;">Upload assets once and reuse their URLs in posts/guides quickly.</p>
-            <div class="ops-kpis">
-                <div class="ops-kpi"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allMedia)) ?></div></div>
-                <div class="ops-kpi"><div class="k">Total Assets</div><div class="v"><?= number_format($mediaTotal) ?></div></div>
-                <div class="ops-kpi"><div class="k">Current Page</div><div class="v"><?= number_format($mediaPage) ?>/<?= number_format($mediaTotalPages) ?></div></div>
-                <div class="ops-kpi"><div class="k">Table Status</div><div class="v" style="font-size:14px;line-height:1.3;"><?= $mediaTableReady ? 'Ready' : 'Missing' ?></div></div>
+        <?php elseif ($activeTab === 'home'): ?>
+        <section class="box home-page-hero">
+            <div class="home-page-heading">
+                <p class="home-eyebrow">Homepage Editor</p>
+                <h2>Home Settings Workspace</h2>
+                <p class="home-page-copy">Control the public homepage hero, promo tiles, banners, featured products, FAQ, and site-level visual settings.</p>
             </div>
-            <div class="ops-nav">
-                <a class="ops-link" href="#media-upload">Upload Asset</a>
-                <a class="ops-link" href="#media-list">Library List</a>
-                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-routines')) ?>">Sync Indexation Tracker</a>
+            <div class="ops-kpis home-stats-grid">
+                <div class="ops-kpi home-stat-card"><div class="k">Published Hero</div><div class="v home-status-text"><?= $homeVisualStatus['published']['hero'] ? 'Ready' : 'Missing' ?></div></div>
+                <div class="ops-kpi home-stat-card"><div class="k">Published Tile 1</div><div class="v home-status-text"><?= $homeVisualStatus['published']['tile1'] ? 'Ready' : 'Missing' ?></div></div>
+                <div class="ops-kpi home-stat-card"><div class="k">Published Tile 2</div><div class="v home-status-text"><?= $homeVisualStatus['published']['tile2'] ? 'Ready' : 'Missing' ?></div></div>
+                <div class="ops-kpi home-stat-card"><div class="k">Media Assets</div><div class="v"><?= number_format($mediaTotal) ?></div></div>
+            </div>
+            <div class="ops-nav home-section-nav">
+                <a class="ops-link" href="#home-hero-settings">Home Form</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=media#media-upload')) ?>">Upload Media</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=media#media-list')) ?>">Media Library</a>
             </div>
         </section>
 
-        <section id="home-hero-settings" class="box ops-anchor-offset">
-            <h2>Home Hero Settings</h2>
-            <p class="muted" style="margin:0 0 10px;">Control hero content, promo tiles, and featured home products. Use Media Library URLs in WEBP format when possible.</p>
+        <section id="home-hero-settings" class="box ops-anchor-offset home-editor-panel">
+            <div class="home-section-head">
+                <div>
+                    <p class="home-eyebrow">Main Editor</p>
+                    <h2>Home Hero Settings</h2>
+                    <p class="home-page-copy">Control hero content, promo tiles, and featured home products. Use Media Library URLs in WEBP format when possible.</p>
+                </div>
+            </div>
             <div class="home-help">
                 <strong>Recommended workflow:</strong> 1) Set Hero, 2) Set Tile 1/2, 3) Set Goals + FAQ, 4) Save Draft, 5) Publish when ready.
             </div>
-            <div class="home-section-nav">
+            <div class="home-section-nav home-local-nav">
                 <a class="ops-link" href="#home-group-hero">Hero</a>
                 <a class="ops-link" href="#home-group-tiles">Promo Tiles</a>
                 <a class="ops-link" href="#home-group-banners">Banners</a>
                 <a class="ops-link" href="#home-group-goals-faq">Goals + FAQ</a>
                 <a class="ops-link" href="#home-group-featured">Featured + Presets</a>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0 0 12px;">
-                <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
+            <div class="home-health-grid">
+                <div class="home-health-card">
                     <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Published</div>
                     <div style="margin-top:6px;font-size:13px;">
                         <span id="status_pub_hero" style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['published']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['published']['hero'] ? 'OK' : 'Missing' ?></span>
@@ -4248,7 +5161,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                         <span id="status_pub_tile2" style="display:inline-block;color:<?= $homeVisualStatus['published']['tile2'] ? '#166534' : '#9a3412' ?>;">Tile 2 <?= $homeVisualStatus['published']['tile2'] ? 'OK' : 'Missing' ?></span>
                     </div>
                 </div>
-                <div style="border:1px solid var(--line);border-radius:10px;padding:10px;background:#122238;">
+                <div class="home-health-card">
                     <div style="font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#1f3558;">Draft</div>
                     <div style="margin-top:6px;font-size:13px;">
                         <span style="display:inline-block;margin-right:8px;color:<?= $homeVisualStatus['draft']['hero'] ? '#166534' : '#9a3412' ?>;">Hero <?= $homeVisualStatus['draft']['hero'] ? 'OK' : 'Missing' ?></span>
@@ -4261,11 +5174,11 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                 <input type="hidden" name="action" value="save_home_hero_settings">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                 <input type="hidden" name="home_settings_mode" id="home_settings_mode" value="publish">
-                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-                    <button class="btn" type="button" id="load_live_settings">Load Published</button>
-                    <button class="btn" type="button" id="load_draft_settings">Load Draft</button>
-                    <button class="btn" type="submit" id="save_draft_btn">Save Draft</button>
-                    <button class="btn" type="submit" id="publish_btn">Publish To Home</button>
+                <div class="home-publish-bar">
+                    <button class="btn home-btn home-btn-secondary" type="button" id="load_live_settings">Load Published</button>
+                    <button class="btn home-btn home-btn-secondary" type="button" id="load_draft_settings">Load Draft</button>
+                    <button class="btn home-btn home-btn-secondary" type="submit" id="save_draft_btn">Save Draft</button>
+                    <button class="btn home-btn home-btn-primary" type="submit" id="publish_btn">Publish To Home</button>
                     <span id="home_dirty_indicator" class="home-dirty-indicator">Unsaved changes</span>
                 </div>
                 <div id="home-dup-warning" style="display:none;margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff4e5;border:1px solid #f0c48a;color:#8a3b00;font-size:12px;font-weight:700;"></div>
@@ -4281,7 +5194,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                 <input id="home_hero_subtitle" type="text" name="home_hero_subtitle" value="<?= e((string) ($homeHeroSettings['subtitle'] ?? '')) ?>" placeholder="Short value statement">
                 <label>Hero image URL (1x)</label>
                 <input id="home_hero_image" type="text" name="home_hero_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" placeholder="/assets/img/optimized_1.webp or https://...">
-                <button class="btn" type="button" style="margin-top:6px;" data-open-media-picker-for="hero">Choose from Media Library</button>
+                <a class="btn" href="<?= e(url('/enma/?tab=media#media-list')) ?>" style="margin-top:6px;">Open Media Library</a>
                 <label>Hero image URL (2x, optional)</label>
                 <input id="home_hero_image_2x" type="text" name="home_hero_image_2x" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['image_2x'] ?? '')) ?>" placeholder="/assets/img/optimized_2.webp or https://...">
                 <img id="home_hero_image_preview" src="<?= e((string) ($homeHeroSettings['image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
@@ -4327,12 +5240,13 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                 <details class="home-admin-group" id="home-group-tiles" open>
                     <summary>Promo Tiles</summary>
                     <div class="home-admin-group-body">
+                <div class="home-tile-card">
                 <h3 style="margin:14px 0 8px;">Promo Tile 1</h3>
                 <input id="home_promo_tile_1_title" type="text" name="home_promo_tile_1_title" value="<?= e((string) ($homeHeroSettings['tile_1_title'] ?? '')) ?>" placeholder="Start Stargazing Now">
                 <input type="text" name="home_promo_tile_1_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_eyebrow', '')) ?>" placeholder="Tile 1 eyebrow">
                 <input type="text" name="home_promo_tile_1_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_1_subtitle', '')) ?>" placeholder="Tile 1 subtitle">
                 <input id="home_promo_tile_1_image" type="text" name="home_promo_tile_1_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
-                <button class="btn" type="button" style="margin:6px 0 0;" data-open-media-picker-for="tile1">Choose from Media Library</button>
+                <a class="btn" href="<?= e(url('/enma/?tab=media#media-list')) ?>" style="margin:6px 0 0;">Open Media Library</a>
                 <img id="home_tile_1_image_preview" src="<?= e((string) ($homeHeroSettings['tile_1_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_1_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
                 <div id="home_tile_1_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -4351,13 +5265,15 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                     <select name="home_promo_tile_1_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t1Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
                     <select name="home_promo_tile_1_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t1Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
                 </div>
+                </div>
 
+                <div class="home-tile-card">
                 <h3 style="margin:14px 0 8px;">Promo Tile 2</h3>
                 <input id="home_promo_tile_2_title" type="text" name="home_promo_tile_2_title" value="<?= e((string) ($homeHeroSettings['tile_2_title'] ?? '')) ?>" placeholder="Create Your Masterpiece">
                 <input type="text" name="home_promo_tile_2_eyebrow" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_eyebrow', '')) ?>" placeholder="Tile 2 eyebrow">
                 <input type="text" name="home_promo_tile_2_subtitle" value="<?= e(site_setting_get($pdo, 'home_promo_tile_2_subtitle', '')) ?>" placeholder="Tile 2 subtitle">
                 <input id="home_promo_tile_2_image" type="text" name="home_promo_tile_2_image" list="media-image-urls" value="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" placeholder="/assets/uploads/media/....webp">
-                <button class="btn" type="button" style="margin:6px 0 0;" data-open-media-picker-for="tile2">Choose from Media Library</button>
+                <a class="btn" href="<?= e(url('/enma/?tab=media#media-list')) ?>" style="margin:6px 0 0;">Open Media Library</a>
                 <img id="home_tile_2_image_preview" src="<?= e((string) ($homeHeroSettings['tile_2_image'] ?? '')) ?>" alt="" style="max-width:220px;max-height:120px;border-radius:8px;border:1px solid #d7e0ed;display:<?= trim((string) ($homeHeroSettings['tile_2_image'] ?? '')) !== '' ? 'block' : 'none' ?>;">
                 <div id="home_tile_2_image_quality" style="display:none;font-size:12px;color:#8a3b00;font-weight:700;margin-top:4px;"></div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -4375,6 +5291,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                     <select name="home_promo_tile_2_text_position"><?php foreach (['left','center','right','bottom-left','bottom-center','bottom-right'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Pos === $opt ? 'selected' : '' ?>><?= e('Tile2 '.$opt) ?></option><?php endforeach; ?></select>
                     <select name="home_promo_tile_2_overlay_strength"><?php foreach (['none','light','medium','dark'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Overlay === $opt ? 'selected' : '' ?>><?= e('Overlay '.$opt) ?></option><?php endforeach; ?></select>
                     <select name="home_promo_tile_2_layout_size"><?php foreach (['full','half','third'] as $opt): ?><option value="<?= e($opt) ?>" <?= $t2Size === $opt ? 'selected' : '' ?>><?= e('Size '.$opt) ?></option><?php endforeach; ?></select>
+                </div>
                 </div>
                     </div>
                 </details>
@@ -4515,20 +5432,26 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                     </div>
                 </details>
                 </div>
-                <div class="sticky-save-bar" style="position:sticky;bottom:8px;z-index:20;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#122238;box-shadow:0 8px 16px rgba(0,0,0,.25);display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn" type="submit" id="save_draft_btn_sticky">Save Draft</button>
-                    <button class="btn" type="submit" id="publish_btn_sticky">Publish To Home</button>
+                <div class="sticky-save-bar home-sticky-actions">
+                    <span class="home-sticky-label">Homepage changes</span>
+                    <button class="btn home-btn home-btn-secondary" type="submit" id="save_draft_btn_sticky">Save Draft</button>
+                    <button class="btn home-btn home-btn-primary" type="submit" id="publish_btn_sticky">Publish To Home</button>
                 </div>
             </form>
-            <form method="post" style="margin-top:8px;">
+            <form method="post" class="home-live-publish-form">
                 <input type="hidden" name="action" value="home_publish_draft">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <button class="btn" type="submit">Publish Draft to Live (One Click)</button>
+                <button class="btn home-btn home-btn-live" type="submit">Publish Draft to Live (One Click)</button>
             </form>
 
-            <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#122238;">
-                <h3 style="margin:0 0 8px;">Image Prompt Shortcuts</h3>
-                <p class="muted" style="margin:0 0 10px;">Copy, generate image, upload here, then click Use in Hero/Tile buttons in Media Library.</p>
+            <div class="home-prompt-panel">
+                <div class="home-section-head">
+                    <div>
+                        <p class="home-eyebrow">Utility</p>
+                        <h3>Image Prompt Shortcuts</h3>
+                        <p class="home-page-copy">Copy a prompt, generate the image, upload it in Media, then use the Media Library buttons to assign it to Hero or Tile slots.</p>
+                    </div>
+                </div>
                 <label>Prompt Variant</label>
                 <select id="prompt_variant">
                     <option value="cinematic">Cinematic</option>
@@ -4539,52 +5462,18 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
 
                 <label>Hero Image Prompt</label>
                 <textarea id="prompt_home_hero" rows="4" readonly>Ultra-detailed astrophotography-style hero background for a beginner telescope website, cinematic Milky Way over mountains, a modern telescope in foreground, high contrast, dark blue and orange accents, premium ecommerce look, no logos, no text, 16:9 composition, realistic lighting, web-ready.</textarea>
-                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_home_hero" data-copy-status="prompt_home_hero_status">Copy Hero Prompt</button>
+                <button class="btn home-btn home-btn-secondary" type="button" data-copy-target="prompt_home_hero" data-copy-status="prompt_home_hero_status">Copy Hero Prompt</button>
                 <div id="prompt_home_hero_status" class="copy-status" style="display:block;margin-top:4px;"></div>
 
                 <label style="margin-top:12px;">Promo Tile 1 Prompt</label>
                 <textarea id="prompt_tile_1" rows="4" readonly>High-quality lifestyle astronomy image, person setting up a beginner telescope outdoors at dusk, warm natural light, actionable beginner vibe, shallow depth of field, premium brand visual style, no logos, no text, 16:9 crop-safe for tile card.</textarea>
-                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_tile_1" data-copy-status="prompt_tile_1_status">Copy Tile 1 Prompt</button>
+                <button class="btn home-btn home-btn-secondary" type="button" data-copy-target="prompt_tile_1" data-copy-status="prompt_tile_1_status">Copy Tile 1 Prompt</button>
                 <div id="prompt_tile_1_status" class="copy-status" style="display:block;margin-top:4px;"></div>
 
                 <label style="margin-top:12px;">Promo Tile 2 Prompt</label>
                 <textarea id="prompt_tile_2" rows="4" readonly>Stunning deep-space nebula scene with rich detail, vivid but natural colors, astrophotography inspiration mood, clean composition with dark areas for text overlay, no logos, no text, premium ecommerce campaign aesthetic, 16:9 crop-safe.</textarea>
-                <button class="btn" type="button" style="margin-top:6px;" data-copy-target="prompt_tile_2" data-copy-status="prompt_tile_2_status">Copy Tile 2 Prompt</button>
+                <button class="btn home-btn home-btn-secondary" type="button" data-copy-target="prompt_tile_2" data-copy-status="prompt_tile_2_status">Copy Tile 2 Prompt</button>
                 <div id="prompt_tile_2_status" class="copy-status" style="display:block;margin-top:4px;"></div>
-            </div>
-
-            <div style="margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#122238;">
-                <h3 style="margin:0 0 8px;">Quick Upload for Home Visuals</h3>
-                <p class="muted" style="margin:0 0 10px;">Upload from here directly. JPG/PNG/GIF will auto-convert to WEBP and appear in Media Library.</p>
-                <form method="post" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="media_upload">
-                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                    <input type="hidden" name="quick_assign_autosave" value="1">
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                        <div>
-                            <label>Title (optional)</label>
-                            <input type="text" name="media_title" placeholder="e.g. Home hero visual">
-                        </div>
-                        <div>
-                            <label>Alt Text (optional)</label>
-                            <input type="text" name="media_alt_text" placeholder="Accessible description">
-                        </div>
-                    </div>
-                    <label>Notes (optional)</label>
-                    <textarea name="media_notes" rows="2" placeholder="Hero / Tile 1 / Tile 2"></textarea>
-                    <label>Assign After Upload</label>
-                    <select name="quick_assign_target">
-                        <option value="">None</option>
-                        <option value="hero">Hero</option>
-                        <option value="tile1">Tile 1</option>
-                        <option value="tile2">Tile 2</option>
-                        <option value="logo">Logo</option>
-                        <option value="ico">ICO/Favicon</option>
-                    </select>
-                    <label>File</label>
-                    <input type="file" name="media_file" required style="padding:6px;">
-                    <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
-                </form>
             </div>
 
             <?php if ($mediaImageOptions !== []): ?>
@@ -4606,15 +5495,41 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
             <?php endif; ?>
         </section>
 
-        <section id="media-upload" class="box ops-anchor-offset">
-            <h2>Upload Media</h2>
+        <?php elseif ($activeTab === 'media'): ?>
+        <section class="box media-page-hero">
+            <div class="media-page-heading">
+                <p class="media-eyebrow">Admin Media</p>
+                <h2>Media Library Workspace</h2>
+                <p class="media-page-copy">Upload assets once, search the library, copy URLs, and assign image assets to homepage slots when needed.</p>
+            </div>
+            <div class="ops-kpis media-stats-grid">
+                <div class="ops-kpi media-stat-card"><div class="k">Visible Rows</div><div class="v"><?= number_format(count($allMedia)) ?></div></div>
+                <div class="ops-kpi media-stat-card"><div class="k">Total Assets</div><div class="v"><?= number_format($mediaTotal) ?></div></div>
+                <div class="ops-kpi media-stat-card"><div class="k">Current Page</div><div class="v"><?= number_format($mediaPage) ?>/<?= number_format($mediaTotalPages) ?></div></div>
+                <div class="ops-kpi media-stat-card"><div class="k">Table Status</div><div class="v media-status-text"><?= $mediaTableReady ? 'Ready' : 'Missing' ?></div></div>
+            </div>
+            <div class="ops-nav media-section-nav">
+                <a class="ops-link" href="#media-upload">Upload Asset</a>
+                <a class="ops-link" href="#media-list">Library List</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=home')) ?>">Home Settings</a>
+                <a class="ops-link" href="<?= e(url('/enma/?tab=maintenance#ops-routines')) ?>">Sync Indexation Tracker</a>
+            </div>
+        </section>
+
+        <section id="media-upload" class="box ops-anchor-offset media-panel media-upload-panel">
+            <div class="media-section-head">
+                <div>
+                    <p class="media-eyebrow">Upload</p>
+                    <h2>Upload Media</h2>
+                </div>
+            </div>
             <?php if (!$mediaTableReady): ?>
                 <div class="error">Media table not found yet. It is created automatically on first upload attempt.</div>
             <?php endif; ?>
-            <form method="post" enctype="multipart/form-data">
+            <form method="post" enctype="multipart/form-data" id="media-upload-form-main" class="media-upload-form">
                 <input type="hidden" name="action" value="media_upload">
                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                <div class="media-form-grid">
                     <div>
                         <label>Title (optional)</label>
                         <input type="text" name="media_title" placeholder="e.g. Celestron NexStar hero image">
@@ -4627,28 +5542,34 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                 <label>Notes (optional)</label>
                 <textarea name="media_notes" rows="2" placeholder="Usage notes, source, etc."></textarea>
                 <label>File</label>
-                <input type="file" name="media_file" required style="padding:6px;">
-                <button class="btn" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
+                <input id="media_file_main" class="media-file-input" type="file" name="media_file" required>
+                <button class="btn media-btn media-btn-primary" type="submit" <?= !$mediaTableReady ? 'disabled' : '' ?>>Upload to Media Library</button>
             </form>
-            <p class="muted" style="margin:10px 0 0;">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB). JPG/PNG/GIF/WEBP uploads are compressed and saved as WEBP.</p>
+            <p class="muted media-help-text">Allowed: JPG, PNG, WEBP, GIF, SVG, MP4, WEBM, MOV, PDF, TXT, ZIP (max 25MB). JPG/PNG/GIF/WEBP uploads are compressed and saved as WEBP.</p>
         </section>
 
-        <section id="media-list" class="box ops-anchor-offset">
-            <h2>Media Assets</h2>
-            <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px;">
+        <section id="media-list" class="box ops-anchor-offset media-panel media-assets-panel">
+            <div class="media-section-head">
+                <div>
+                    <p class="media-eyebrow">Library</p>
+                    <h2>Media Assets</h2>
+                </div>
+                <span class="muted media-result-count"><?= number_format($mediaTotal) ?> total assets</span>
+            </div>
+            <form method="get" class="media-server-search">
                 <input type="hidden" name="tab" value="media">
-                <input type="text" name="media_q" value="<?= e($mediaSearch) ?>" placeholder="Search title, file name, URL, MIME..." style="min-width:280px;">
-                <button class="btn" type="submit">Search</button>
+                <input type="text" name="media_q" value="<?= e($mediaSearch) ?>" placeholder="Search title, file name, URL, MIME...">
+                <button class="btn media-btn media-btn-primary" type="submit">Search</button>
                 <?php if ($mediaSearch !== ''): ?>
-                    <a class="tab" href="<?= e(url('/enma/?tab=media')) ?>">Clear</a>
+                    <a class="tab media-btn media-btn-secondary" href="<?= e(url('/enma/?tab=media')) ?>">Clear</a>
                 <?php endif; ?>
             </form>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;">
-                <button class="btn" type="button" data-media-filter="all">All</button>
-                <button class="btn" type="button" data-media-filter="recent">Recent</button>
-                <button class="btn" type="button" data-media-filter="webp">Only WEBP</button>
-                <button class="btn" type="button" data-media-filter="landscape">Landscape 16:9+</button>
-                <button class="btn" type="button" data-media-filter="used">Used In Home</button>
+            <div class="media-quick-filters" aria-label="Quick media filters">
+                <button class="btn media-btn media-btn-muted active" type="button" data-media-filter="all">All</button>
+                <button class="btn media-btn media-btn-muted" type="button" data-media-filter="recent">Recent</button>
+                <button class="btn media-btn media-btn-muted" type="button" data-media-filter="webp">Only WEBP</button>
+                <button class="btn media-btn media-btn-muted" type="button" data-media-filter="landscape">Landscape 16:9+</button>
+                <button class="btn media-btn media-btn-muted" type="button" data-media-filter="used">Used In Home</button>
             </div>
             <?php if (!$mediaTableReady): ?>
                 <div class="empty">Media table not ready yet. Upload one file to initialize it automatically.</div>
@@ -4660,12 +5581,13 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                     <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                     <div id="media-bulk-selected-inputs"></div>
                 </form>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 10px;">
-                    <button class="btn" type="button" id="media-select-all-visible">Select visible</button>
-                    <button class="btn" type="button" id="media-clear-selection">Clear selection</button>
-                    <button class="btn" type="button" id="media-delete-selected">Delete selected</button>
+                <div class="media-bulk-toolbar">
+                    <button class="btn media-btn media-btn-secondary" type="button" id="media-select-all-visible">Select visible</button>
+                    <button class="btn media-btn media-btn-secondary" type="button" id="media-clear-selection">Clear selection</button>
+                    <button class="btn media-btn media-btn-danger" type="button" id="media-delete-selected">Delete selected</button>
                     <span class="muted" id="media-selected-count">0 selected</span>
                 </div>
+                <div class="media-table-wrap">
                 <table>
                     <thead>
                     <tr>
@@ -4709,47 +5631,46 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                         $isUsedInHome = isset($homeUsedImageUrls[$mediaUrl]);
                         ?>
                         <tr data-media-row="1" data-recent="<?= $isRecentMedia ? '1' : '0' ?>" data-webp="<?= $isWebp ? '1' : '0' ?>" data-landscape="<?= $isLandscape ? '1' : '0' ?>" data-used="<?= $isUsedInHome ? '1' : '0' ?>" data-search="<?= e(strtolower($title . ' ' . $originalName . ' ' . $mimeType . ' ' . $mediaUrl)) ?>">
-                            <td><input type="checkbox" value="<?= $mediaId ?>" class="media-select"></td>
+                            <td><input type="checkbox" value="<?= $mediaId ?>" class="media-select" aria-label="Select media asset <?= $mediaId ?>"></td>
                             <td><?= $mediaId ?></td>
-                            <td style="width:100px;">
+                            <td class="media-preview-cell">
                                 <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
-                                    <img src="<?= e($mediaUrl) ?>" alt="<?= e($title !== '' ? $title : $originalName) ?>" style="display:block;width:84px;height:64px;object-fit:contain;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;" loading="lazy">
+                                    <img class="media-thumb" src="<?= e($mediaUrl) ?>" alt="<?= e($title !== '' ? $title : $originalName) ?>" loading="lazy">
                                 <?php elseif ($mediaType === 'video'): ?>
-                                    <div style="display:flex;align-items:center;justify-content:center;width:84px;height:64px;border-radius:8px;border:1px solid #e2e8f0;background:#0f172a;color:#fff;font-size:11px;font-weight:700;">VIDEO</div>
+                                    <div class="media-thumb media-thumb-placeholder">VIDEO</div>
                                 <?php else: ?>
-                                    <div style="display:flex;align-items:center;justify-content:center;width:84px;height:64px;border-radius:8px;border:1px solid #e2e8f0;background:#f1f5f9;color:#334155;font-size:11px;font-weight:700;">FILE</div>
+                                    <div class="media-thumb media-thumb-placeholder">FILE</div>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <div><strong><?= e($title !== '' ? $title : '(untitled)') ?></strong></div>
-                                <div class="muted" style="font-size:12px;"><?= e($media['created_at'] ?? '') ?></div>
+                                <div class="media-title"><strong><?= e($title !== '' ? $title : '(untitled)') ?></strong></div>
+                                <div class="muted media-meta"><?= e($media['created_at'] ?? '') ?></div>
                                 <?php if ($isUsedInHome): ?>
-                                    <div style="font-size:11px;font-weight:700;color:#134b8a;">Used in Home</div>
+                                    <div class="media-used-badge">Used in Home</div>
                                 <?php endif; ?>
                             </td>
-                            <td><?= e(strtoupper($mediaType)) ?></td>
+                            <td><span class="media-type-badge"><?= e(strtoupper($mediaType)) ?></span></td>
                             <td>
-                                <div><?= e($originalName) ?></div>
-                                <div class="muted" style="font-size:12px;"><?= e($mimeType) ?> | <?= number_format($sizeBytes / 1024, 1) ?> KB</div>
+                                <div class="media-file-name" title="<?= e($originalName) ?>"><?= e($originalName) ?></div>
+                                <div class="muted media-meta"><?= e($mimeType) ?> | <?= number_format($sizeBytes / 1024, 1) ?> KB</div>
                             </td>
-                            <td style="max-width:280px;">
-                                <a href="<?= e($mediaUrl) ?>" target="_blank" rel="noopener noreferrer" style="font-size:12px;word-break:break-all;"><?= e($mediaUrl) ?></a>
+                            <td class="media-url-cell">
+                                <a class="media-url" href="<?= e($mediaUrl) ?>" target="_blank" rel="noopener noreferrer" title="<?= e($mediaUrl) ?>"><?= e($mediaUrl) ?></a>
                             </td>
-                            <td>
+                            <td class="media-actions-cell">
                                 <button
-                                    class="btn"
+                                    class="btn media-btn media-btn-copy"
                                     type="button"
-                                    style="padding:6px 10px;font-size:12px;margin-right:6px;"
                                     data-copy-text="<?= e($mediaUrl) ?>"
                                     data-copy-status="<?= e($copyStatusId) ?>"
                                 >Copy URL</button>
                                 <?php if ($mediaType === 'image' && $mediaUrl !== ''): ?>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="hero" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Hero</button>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 1</button>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="tile2" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 2</button>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="logo" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as Logo</button>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-media-assign="ico" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as ICO</button>
-                                    <button class="btn" type="button" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;" data-open-media-picker="1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Select</button>
+                                    <button class="btn media-btn media-btn-muted" type="button" data-media-assign="hero" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Hero</button>
+                                    <button class="btn media-btn media-btn-muted" type="button" data-media-assign="tile1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 1</button>
+                                    <button class="btn media-btn media-btn-muted" type="button" data-media-assign="tile2" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use in Tile 2</button>
+                                    <button class="btn media-btn media-btn-muted" type="button" data-media-assign="logo" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as Logo</button>
+                                    <button class="btn media-btn media-btn-muted" type="button" data-media-assign="ico" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Use as ICO</button>
+                                    <button class="btn media-btn media-btn-secondary" type="button" data-open-media-picker="1" data-media-url="<?= e($mediaUrl) ?>" data-media-title="<?= e($title !== '' ? $title : $originalName) ?>">Select</button>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
                                         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
@@ -4757,7 +5678,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                                         <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
                                         <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
                                         <input type="hidden" name="assign_mode" value="publish">
-                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Hero + Save</button>
+                                        <button class="btn media-btn media-btn-secondary" type="submit">Set Hero + Save</button>
                                     </form>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
@@ -4766,7 +5687,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                                         <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
                                         <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
                                         <input type="hidden" name="assign_mode" value="publish">
-                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Tile 1 + Save</button>
+                                        <button class="btn media-btn media-btn-secondary" type="submit">Set Tile 1 + Save</button>
                                     </form>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
@@ -4775,7 +5696,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                                         <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
                                         <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
                                         <input type="hidden" name="assign_mode" value="publish">
-                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Tile 2 + Save</button>
+                                        <button class="btn media-btn media-btn-secondary" type="submit">Set Tile 2 + Save</button>
                                     </form>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
@@ -4784,7 +5705,7 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                                         <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
                                         <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
                                         <input type="hidden" name="assign_mode" value="publish">
-                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set Logo + Save</button>
+                                        <button class="btn media-btn media-btn-secondary" type="submit">Set Logo + Save</button>
                                     </form>
                                     <form method="post" style="display:inline;">
                                         <input type="hidden" name="action" value="home_media_assign">
@@ -4793,21 +5714,22 @@ $enmaThemeJsVersion = is_file($enmaThemeJsPath) ? (string) filemtime($enmaThemeJ
                                         <input type="hidden" name="assign_url" value="<?= e($mediaUrl) ?>">
                                         <input type="hidden" name="assign_title" value="<?= e($title !== '' ? $title : $originalName) ?>">
                                         <input type="hidden" name="assign_mode" value="publish">
-                                        <button class="btn" type="submit" style="padding:6px 10px;font-size:12px;margin:6px 6px 0 0;">Set ICO + Save</button>
+                                        <button class="btn media-btn media-btn-secondary" type="submit">Set ICO + Save</button>
                                     </form>
                                 <?php endif; ?>
                                 <form method="post" style="display:inline;" onsubmit="return confirm('Delete this media asset?');">
                                     <input type="hidden" name="action" value="media_delete">
                                     <input type="hidden" name="id" value="<?= $mediaId ?>">
                                     <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                    <button type="submit" style="background:none;border:none;color:#d00;cursor:pointer;padding:0;font-size:12px;">Delete</button>
+                                    <button class="media-delete-link" type="submit">Delete</button>
                                 </form>
-                                <div id="<?= e($copyStatusId) ?>" class="copy-status" style="display:block;margin-top:4px;"></div>
+                                <div id="<?= e($copyStatusId) ?>" class="copy-status media-copy-status"></div>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                </div>
                 <?= $mediaPagination ?>
             <?php endif; ?>
         </section>

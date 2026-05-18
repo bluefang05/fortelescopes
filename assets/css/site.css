@@ -1,9 +1,9 @@
 /* Fortelescopes stylesheet entrypoint. Keep import order stable (cascade-sensitive). */
-@import url("/assets/css/site.base.css?v=20260517b");
-@import url("/assets/css/site.responsive-core.css?v=20260517b");
-@import url("/assets/css/site.theme-dark.css?v=20260517b");
-@import url("/assets/css/site.home-refresh.css?v=20260517b");
-@import url("/assets/css/site.responsive-home.css?v=20260517b");
-@import url("/assets/css/site.legacy-overrides.css?v=20260517b");
-@import url("/assets/css/site.utilities.css?v=20260517b");
+@import url("/assets/css/site.base.css?v=20260517c");
+@import url("/assets/css/site.responsive-core.css?v=20260517c");
+@import url("/assets/css/site.theme-dark.css?v=20260517c");
+@import url("/assets/css/site.home-refresh.css?v=20260517c");
+@import url("/assets/css/site.responsive-home.css?v=20260517c");
+@import url("/assets/css/site.legacy-overrides.css?v=20260517c");
+@import url("/assets/css/site.utilities.css?v=20260517c");
 

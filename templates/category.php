@@ -108,20 +108,32 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
 <?php endif; ?>
 
 <?php if ($tiers !== []): ?>
-    <section class="panel u-mt-18">
+    <section class="panel u-mt-18 category-quick-compare">
         <h2 class="section-title u-mt-0">Quick Comparison</h2>
         <div class="compare-table">
             <div class="compare-row">
                 <div class="compare-label">Top</div>
-                <div class="compare-value"><span class="pill ok">Top</span> <?= e($tiers['top']['title']) ?> - <?= e(product_best_for($tiers['top'])) ?></div>
+                <div class="compare-value">
+                    <span class="pill ok">Top</span>
+                    <strong class="compare-product-title"><?= e($tiers['top']['title']) ?></strong>
+                    <span class="compare-rationale"><?= e(product_best_for($tiers['top'])) ?></span>
+                </div>
             </div>
             <div class="compare-row">
                 <div class="compare-label">Budget</div>
-                <div class="compare-value"><span class="pill ok">Budget</span> <?= e($tiers['budget']['title']) ?> - <?= e(product_best_for($tiers['budget'])) ?></div>
+                <div class="compare-value">
+                    <span class="pill ok">Budget</span>
+                    <strong class="compare-product-title"><?= e($tiers['budget']['title']) ?></strong>
+                    <span class="compare-rationale"><?= e(product_best_for($tiers['budget'])) ?></span>
+                </div>
             </div>
             <div class="compare-row">
                 <div class="compare-label">Premium</div>
-                <div class="compare-value"><span class="pill warn">Premium</span> <?= e($tiers['premium']['title']) ?> - <?= e(product_best_for($tiers['premium'])) ?></div>
+                <div class="compare-value">
+                    <span class="pill warn">Premium</span>
+                    <strong class="compare-product-title"><?= e($tiers['premium']['title']) ?></strong>
+                    <span class="compare-rationale"><?= e(product_best_for($tiers['premium'])) ?></span>
+                </div>
             </div>
         </div>
     </section>
@@ -134,25 +146,25 @@ $buildCategoryPageUrl = static function (int $page) use ($categoryPath): string 
     <p class="muted u-mt-10 u-fs-13"><a href="<?= e(url('/guides')) ?>">See all astronomy buying guides</a></p>
 </section>
 
-<section class="panel u-mt-18">
+<section class="panel faq-panel u-mt-18">
     <h2 class="section-title u-mt-0">Frequently asked questions</h2>
     <?php if (($data['categoryName'] ?? '') === 'Telescopes'): ?>
-        <details class="faq-detail">
-            <summary class="faq-summary">What should I look for in a beginner telescope?</summary>
-            <p class="muted faq-answer">Look for a telescope that is easy to set up, stable enough to use comfortably, and realistic for your space and schedule. The <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner guide</a> explains those tradeoffs in more detail.</p>
+        <details>
+            <summary>What should I look for in a beginner telescope?</summary>
+            <p class="muted">Look for a telescope that is easy to set up, stable enough to use comfortably, and realistic for your space and schedule. The <a href="<?= e(url('/best-beginner-telescopes')) ?>">beginner guide</a> explains those tradeoffs in more detail.</p>
         </details>
-        <details class="faq-detail">
-            <summary class="faq-summary">Is a bigger telescope always better?</summary>
-            <p class="muted faq-answer">No. A bigger telescope can show more, but a simpler model often wins if it is easier to move, store, and use often enough to build a real observing habit.</p>
+        <details>
+            <summary>Is a bigger telescope always better?</summary>
+            <p class="muted">No. A bigger telescope can show more, but a simpler model often wins if it is easier to move, store, and use often enough to build a real observing habit.</p>
         </details>
     <?php else: ?>
-        <details class="faq-detail">
-            <summary class="faq-summary">Which telescope accessory should I buy first?</summary>
-            <p class="muted faq-answer">Buy the accessory that solves the clearest problem in your sessions, such as comfort, alignment, or magnification flexibility. The <a href="<?= e(url('/best-telescope-accessories')) ?>">accessories guide</a> is the best starting point if you are unsure.</p>
+        <details>
+            <summary>Which telescope accessory should I buy first?</summary>
+            <p class="muted">Buy the accessory that solves the clearest problem in your sessions, such as comfort, alignment, or magnification flexibility. The <a href="<?= e(url('/best-telescope-accessories')) ?>">accessories guide</a> is the best starting point if you are unsure.</p>
         </details>
-        <details class="faq-detail">
-            <summary class="faq-summary">Should beginners buy accessory kits?</summary>
-            <p class="muted faq-answer">Only if the kit clearly matches your telescope and includes items you will actually use. In many cases, one targeted upgrade is more useful than a bundle.</p>
+        <details>
+            <summary>Should beginners buy accessory kits?</summary>
+            <p class="muted">Only if the kit clearly matches your telescope and includes items you will actually use. In many cases, one targeted upgrade is more useful than a bundle.</p>
         </details>
     <?php endif; ?>
 </section>
